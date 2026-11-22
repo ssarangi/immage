@@ -7068,6 +7068,7 @@ export default function App() {
         </div>
         <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findLocked && layout.find} rightPanel={rightPanel}
                  onToggleFind={toggleFind}
+                 onToggleGrid={() => { if (!croppingRef.current) setGrid(!gridRef.current); }}
                  onFindMenu={immich ? showResultsMenu : undefined}
                  savedMenu={(button) => <SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
                                                     onManage={() => setManageSaved(true)} button={button} />}

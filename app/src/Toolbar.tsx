@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
-import { BanIcon, FilterIcon, MagnifierIcon, PanelIcon, ResetIcon, SlidersIcon, StarIcon, icon } from "./icons";
+import { BanIcon, FilterIcon, LibraryIcon, MagnifierIcon, PanelIcon, ResetIcon, SlidersIcon, StarIcon, icon } from "./icons";
 import { effectiveFilter, clearAll, findCount, serverPickers, setStars, withFilter, type FindState } from "./findModel";
 import { LABEL_COLORS } from "./library";
 import { Layout, PanelKey } from "./layoutPrefs";
@@ -99,9 +99,10 @@ export function GridZoomBar({ size, min, max, standard, onSize }: {
 // the bar under the filmstrip: rate and reject the open image, filter the
 // folder, and show or hide the side panels and the filmstrip
 export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind, onFindMenu, savedMenu,
-                   layout, zoomBar, viewTools, onLayout, ref, pin, grid, rightPanel }: {
+                   layout, zoomBar, viewTools, onLayout, ref, pin, grid, onToggleGrid, rightPanel }: {
   ref: React.RefObject<HTMLDivElement | null>;
   viewTools: React.ReactNode;               // undo, redo, before/after, compare
+  onToggleGrid: () => void;                 // grid and filmstrip, as the Library button on the rail does
   grid: boolean;                            // the magnifier shows only in the grid, the one view it opens the lightbox in
   pin: React.ReactNode;
   find: FindState;                          // what is searched and filtered: the stars, flags and labels set it
@@ -149,6 +150,13 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
   };
   return (
     <div className="toolbar" ref={ref}>
+      {/* first and labelled: the rail's Library icon was the only way back to the grid */}
+      <div className="tool-group">
+        <button className={`tool grid-toggle${grid ? " on" : ""}`} aria-pressed={grid}
+                title={t(grid ? "library.toolbar.filmstrip" : "library.toolbar.grid")} onClick={onToggleGrid}>
+          <LibraryIcon /><span>{t("library.toolbar.gridShort")}</span>
+        </button>
+      </div>
       <div className={`tool-group filter${filtering ? " active" : ""}`}>
         <button className={`tool${filtering ? " on" : ""}`} title={filtering ? t("library.toolbar.clearFilters") : t("library.toolbar.noFilters")}
                 onClick={clearFilters}><FilterIcon /></button>

@@ -3512,6 +3512,7 @@
   "library.toolbar.withoutLabel": "images sans étiquette",
   "library.toolbar.showEveryPhoto": "réafficher toutes les photos",
   "library.toolbar.filmstrip": "retour à la pellicule (G, Échap)",
+  "library.toolbar.gridShort": "Grille",
   "library.toolbar.grid": "vue en grille (G)",
   "library.toolbar.culling": "Aperçu de tri (F)",
   "library.toolbar.libraryPanel": "panneau de la bibliothèque",

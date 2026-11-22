@@ -3132,3 +3132,7 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .cull-region-box.good .cull-pin { background: #2f7d42; } .cull-region-box.bad .cull-pin { background: #b3363b; }
 .cull-region-label { position: absolute; left: 0; top: 100%; margin-top: 2px; max-width: 100%; padding: 0 5px; font-size: var(--fs-micro); white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; color: #fff; background: #000c; border-radius: 3px; }
+
+/* the Grid button at the start of the bottom toolbar */
+.tool.grid-toggle { width: auto; padding: 0 9px; gap: 6px; border-radius: 7px; font-size: var(--fs-small); white-space: nowrap; }
+.tool.grid-toggle.on { background: var(--inset); color: var(--accent); }

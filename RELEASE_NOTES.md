@@ -7,6 +7,10 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- **Grid button:** the toolbar under the filmstrip starts with a labelled Grid
+  button that switches between the grid and the filmstrip, as the Library
+  button on the rail and G do, so an open photo no longer needs its folder
+  clicked again to get back to the grid.
 - **Auto Cull:** click Cull in the grid toolbar, or choose Photo > Auto Cull,
   to find blurry and duplicate photos in the selection or the listed photos.
   Choose the shoot type, how many duplicates to reject, the highlight share

@@ -3512,6 +3512,7 @@
   "library.toolbar.withoutLabel": "images without a label",
   "library.toolbar.showEveryPhoto": "show every photo again",
   "library.toolbar.filmstrip": "back to the filmstrip (G, Esc)",
+  "library.toolbar.gridShort": "Grid",
   "library.toolbar.grid": "grid view (G)",
   "library.toolbar.culling": "Culling preview (F)",
   "library.toolbar.libraryPanel": "library panel",
