@@ -1,5 +1,6 @@
 
 import { AgxPresetLoader } from "./AgxPresetDialog";
+import { gridEntries } from "./statsGrid";
 import { settings } from "./settings";
 import { FolderEdits } from "./folderEdits";
 import { useAgxProfiles } from "./agxProfiles";
@@ -22,7 +23,7 @@ import { FolderMoveDialog } from "./FolderMoveDialog";
 import { MoveDialog } from "./MoveDialog";
 import { pressPhoto } from "./photoDrag";
 import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./captureTime";
-import { Fragment, Profiler, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Profiler, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -86,6 +87,8 @@ import { baseName, parentDir, within } from "./paths";
 import { isEngineExit, reopenPlan, reopening, START as ENGINE_START, step as engineStep, wait as engineWait,
          type EngineEvent, type EngineState, type Notice as EngineNotice } from "./engineState";
 import { ImportView } from "./ImportView";
+
+const Statistics = lazy(() => import("./Statistics"));
 import type { ImportResult } from "@immporter/embed";
 import { MaskOverlay, type BrushSettings, type MaskTool, type ObjectPrompt } from "./MaskOverlay";
 import { MasksPanel, type AiKind, type ToolTarget } from "./MasksPanel";
@@ -144,7 +147,7 @@ import { CellCanvas, Filmstrip, INFO_MODE_KEY, InfoOverlay, ThumbCanvas, ThumbPr
 import { ActivityBar, JobActivity, Notice, keepPointer } from "./ActivityBar";
 import { FileMenu, TRASH, hdrBrackets, panoFrames } from "./FileMenu";
 import { RenameDialog } from "./RenameDialog";
-import { BeforeAfterIcon, CompareIcon, CropIcon, DriveIcon, ExportIcon, FilmIcon, FilmSimIcon, FlipIcon, FoldIcon, FolderIcon, GearIcon, HealIcon, HelpIcon, ImportIcon, KeyboardIcon, LayersIcon, LibraryIcon, ModulesIcon, NetworkIcon, PinIcon, PresetsIcon, PrintIcon, RefreshIcon, RotateIcon, RulerIcon, SlidersIcon, UndoIcon, ZonesIcon, icon } from "./icons";
+import { BeforeAfterIcon, CompareIcon, CropIcon, DriveIcon, ExportIcon, FilmIcon, FilmSimIcon, FlipIcon, FoldIcon, FolderIcon, GearIcon, HealIcon, HelpIcon, ImportIcon, KeyboardIcon, LayersIcon, LibraryIcon, ModulesIcon, NetworkIcon, PinIcon, PresetsIcon, PrintIcon, RefreshIcon, RotateIcon, RulerIcon, SlidersIcon, StatsIcon, UndoIcon, ZonesIcon, icon } from "./icons";
 import { HistogramView, SCOPE_MODES, loadScope } from "./HistogramView";
 import { Navigator } from "./Navigator";
 import { PanelView, UPRIGHT_ICONS, UPRIGHT_TITLES, WBTools, isMono, presetValues, sampleSpot } from "./PanelView";
@@ -656,6 +659,11 @@ export default function App() {
   const [importOpen, setImportOpen] = useState(false);
   const importOpenRef = useRef(false);
   importOpenRef.current = importOpen;
+  // Statistics: a full-window overlay like the importer; it keeps the editor mounted underneath
+  const [statsOpen, setStatsOpen] = useState(false);
+  const statsOpenRef = useRef(false);
+  statsOpenRef.current = statsOpen;
+  const statsButton = useRef<HTMLButtonElement>(null);
   const endTour = () => setTouring(false);
   // the tour points at both side panels, the filmstrip and the Adjustments
   // panels, so they show while it runs
@@ -3337,6 +3345,24 @@ export default function App() {
   const importDone = (r: ImportResult) => {
     if (r.root && r.summary.imported > 0) addPathToLibrary(r.root);
   };
+  // Statistics' "Open in grid": the photos its filter matched, shown as search results are. The Rust side
+  // turns the handles into entries (stats_grid_entries); a photo then opens by its handle as a search hit does
+  const showStatsResult = async (ids: string[], title: string) => {
+    if (!ids.length) return;
+    try {
+      const { entries: list } = await gridEntries(ids, (h) => commands.statsGridEntries(h));
+      if (!list.length) { setStatus(t("app.status.statsEmpty")); return; }
+      combined.current?.cancel();
+      loader.current?.clear();
+      setReading(null);
+      setGrid(true);
+      updateImages(list);
+      loader.current?.request(list.map((i) => i.imgid));
+      setStatus(t("app.status.statsResult", { count: list.length.toLocaleString(), filter: title }));
+    } catch (e) {
+      setStatus(t("app.status.error", { error: e }));
+    }
+  };
   // "Show in Immage": back to the editor, on the first photo imported (the
   // oldest), in its folder; with nothing new copied, the folder most files
   // were found in
@@ -3414,7 +3440,7 @@ export default function App() {
       }
     }
     if (document.querySelector(".modal-backdrop") && id !== "quit" && id !== "about" && id !== "user-guide") return;
-    if (importOpenRef.current && !["preferences", "shortcuts", "quit", "about", "user-guide"].includes(id)) return;
+    if ((importOpenRef.current || statsOpenRef.current) && !["preferences", "shortcuts", "quit", "about", "user-guide"].includes(id)) return;
     const last = lastKeyActionRef.current;
     if (last && last.id === id && performance.now() - last.t < 150) return;
     menuActionsRef.current[id]?.();
@@ -6080,6 +6106,7 @@ export default function App() {
       },
       "preferences": () => { setPrefsOpen(true); },
       "import": () => { setImportOpen(true); },
+      "stats": () => { setStatsOpen(true); },
       "undo": () => { stepHistory(true); },
       "redo": () => { stepHistory(false); },
       // in the grid, the thumbnails' size rather than the photo hidden under it
@@ -6157,7 +6184,7 @@ export default function App() {
       if (document.querySelector(".modal-backdrop")) return;
       if (fieldKeeps(t, e.key)) return;
       // the import screen has its own keys; Preferences still opens over it
-      if (importOpenRef.current && !(cmd(e) && (e.key === "," || e.code === "Slash"))) return;
+      if ((importOpenRef.current || statsOpenRef.current) && !(cmd(e) && (e.key === "," || e.code === "Slash"))) return;
       // Alt+1 to Alt+9 open the saved Find filters, by code as Option types characters on macOS
       // (a text field or a dialog having the keyboard is handled above)
       if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.repeat) {
@@ -7573,6 +7600,8 @@ export default function App() {
         {/* in the order of the work: bring photos in, edit them, send them out */}
         <button className={`tool${importOpen ? " on" : ""}`} title={keys(t("app.rail.import"))} data-tour="import"
                 onClick={() => setImportOpen(true)}><ImportIcon /></button>
+        <button className={`tool${statsOpen ? " on" : ""}`} title={t("app.rail.stats")} ref={statsButton}
+                onClick={() => setStatsOpen(true)}><StatsIcon /></button>
         {/* the library: the grid of the folder's photos, and back to the filmstrip */}
         <button className={`tool library-toggle${grid ? " on" : ""}`} data-tour="library"
                 title={t(grid ? "library.toolbar.filmstrip" : "library.toolbar.grid")}
@@ -7725,6 +7754,15 @@ export default function App() {
     {importOpen && (
       <ImportView onClose={() => setImportOpen(false)} onImportDone={importDone} onShowImported={showImported}
                   onOpenSettings={openImmichPrefs} />
+    )}
+    {statsOpen && (
+      <Suspense fallback={null}>
+        <Statistics currentFolder={folder} onAddFolders={() => { setStatsOpen(false); void addFolder(); }}
+                    onClose={() => { setStatsOpen(false); requestAnimationFrame(() => statsButton.current?.focus()); }}
+                    onLearnMore={() => menuActionsRef.current["user-guide"]?.()}
+                    onOpenPhoto={(p) => { setStatsOpen(false); void openLaunched(p.path); }}
+                    onOpenInGrid={(ids, title) => { setStatsOpen(false); void showStatsResult(ids, title); }} />
+      </Suspense>
     )}
     {touring && <Tour onClose={endTour} />}
     {dropping && <div className="drop-target"><span>{t("app.dropTarget")}</span></div>}

@@ -146,7 +146,7 @@ fn validate_vector(values: &[f32]) -> Result<(), String> {
     }
     Ok(())
 }
-fn cached_image(raw: &str, path: &str, version: u32) -> Option<LibraryImage> {
+pub(crate) fn cached_image(raw: &str, path: &str, version: u32) -> Option<LibraryImage> {
     let mut value: serde_json::Value = serde_json::from_str(raw).ok()?;
     value.as_object_mut()?.insert("imgid".into(), serde_json::json!(0));
     let image: LibraryImage = serde_json::from_value(value).ok()?;

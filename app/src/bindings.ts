@@ -19,6 +19,45 @@ export const commands = {
 	 */
 	searchAnalysisStatus: () => __TAURI_INVOKE<AnalysisProgress>("search_analysis_status"),
 	searchCacheClear: (rebuild: boolean) => __TAURI_INVOKE<null>("search_cache_clear", { rebuild }),
+	/**  Every source with where it is now; relinks a volume that was remounted elsewhere. */
+	sourcesList: () => __TAURI_INVOKE<SourceStatus[]>("sources_list"),
+	/**  What a folder is, before it is added. */
+	sourceDetect: (path: string) => __TAURI_INVOKE<SourceDetect>("source_detect", { path }),
+	/**  A few seconds of read-only listing, to tell the user what to expect. */
+	sourceSpeedTest: (path: string) => __TAURI_INVOKE<SpeedTest>("source_speed_test", { path }),
+	sourceAdd: (args: SourceAdd) => __TAURI_INVOKE<Source>("source_add", { args }),
+	sourceUpdate: (id: number, patch: SourcePatch) => __TAURI_INVOKE<null>("source_update", { id, patch }),
+	/**  With `dry_run` only what removing would forget; otherwise removes. Never touches a file. */
+	sourceRemove: (id: number, dryRun: boolean) => __TAURI_INVOKE<RemovePreview>("source_remove", { id, dryRun }),
+	sourceRelink: (id: number, newPath: string, dryRun: boolean) => __TAURI_INVOKE<RelinkCheck>("source_relink", { id, newPath, dryRun }),
+	/**
+	 *  Starts scanning the given sources one after another (one NAS at a time);
+	 *  returns at once. Progress arrives as events.
+	 */
+	scanStart: (sourceIds: number[], light: boolean) => __TAURI_INVOKE<null>("scan_start", { sourceIds, light }),
+	/**  `job_id` None means every running scan. */
+	jobPause: (jobId: number | null) => __TAURI_INVOKE<null>("job_pause", { jobId }),
+	jobResume: (jobId: number | null) => __TAURI_INVOKE<null>("job_resume", { jobId }),
+	/**  Stops for good: the run is closed `cancelled` and a later scan starts afresh. */
+	jobCancel: (jobId: number | null) => __TAURI_INVOKE<null>("job_cancel", { jobId }),
+	/**  The last progress of every running scan. */
+	jobsActive: () => __TAURI_INVOKE<Progress[]>("jobs_active"),
+	catalogStatus: () => __TAURI_INVOKE<CatalogStatus>("catalog_status"),
+	/**
+	 *  The statistics of a scope under a filter. `sections` picks the blocks; an
+	 *  etag still current answers `{ notModified: true }`.
+	 */
+	statsQuery: (req: StatsRequest) => __TAURI_INVOKE<StatsReply>("stats_query", { req }),
+	/**  One map cell's side panel. */
+	statsPlace: (key: string, filter: StatsFilter, scope: StatsScope) => __TAURI_INVOKE<PlaceDetail>("stats_place", { key, filter, scope }),
+	/**  The next page of top images from a cursor `stats_query` or this command gave. */
+	statsTopPage: (cursor: string) => __TAURI_INVOKE<TopPageReply>("stats_top_page", { cursor }),
+	/**  Handles of every photo the scope and filter match, for "Open N in grid". */
+	statsOpenInGrid: (scope: StatsScope, filter: StatsFilter) => __TAURI_INVOKE<GridIds>("stats_open_in_grid", { scope, filter }),
+	/**  The grid's entries for handles from `stats_open_in_grid` (at most 20,000). */
+	statsGridEntries: (ids: string[]) => __TAURI_INVOKE<LibraryImage[]>("stats_grid_entries", { ids }),
+	/**  Cheap and polled while indexing: library-wide counts without building the index. */
+	statsCoverage: () => __TAURI_INVOKE<Coverage>("stats_coverage"),
 	searchModelStatus: () => __TAURI_INVOKE<ModelStatus>("search_model_status"),
 	/**  Diagnostic only. Uses an already opted-in local package, never fetches one. */
 	searchModelProbe: () => __TAURI_INVOKE<ProbeReply>("search_model_probe"),
@@ -329,6 +368,31 @@ export type AnalysisProgress = {
 	paused: boolean,
 };
 
+export type ApertureDef = {
+	id: ApertureGroupId,
+	label: string,
+	fromF: number | null,
+	toF: number | null,
+	name: string,
+};
+
+export type ApertureGroupId = "a1" | "a2" | "a3" | "a4" | "a5";
+
+export type ApertureRow = {
+	id: ApertureGroupId,
+	n: number,
+	top: number,
+	cover: PhotoRef | null,
+};
+
+export type AspectClassId = "16:9" | "3:2" | "4:3" | "1:1" | "5:4" | "portrait" | "pano" | "other";
+
+export type AspectCount = {
+	id: AspectClassId,
+	n: number,
+	top: number,
+};
+
 export type Asset = {
 	id: string,
 	name: string,
@@ -352,6 +416,19 @@ export type AssetExif = {
 	focal: number | null,
 	datetime: string | null,
 };
+
+export type Availability = 
+/**  Mounted and reachable: where the source's root is now. */
+{ state: "Online"; detail: {
+	mount_point: string,
+	abs_root: string,
+} } | 
+/**  Behind an idle automount: not known to be away, not touched. */
+{ state: "Asleep"; detail: {
+	mount_point: string,
+} } | { state: "Offline"; detail: {
+	reason: string,
+} };
 
 export type BackupComponent = {
 	id: string,
@@ -381,6 +458,28 @@ export type BackupSummary = {
 	components: BackupHeld[],
 };
 
+export type BodyRow = {
+	key: string,
+	maker: string,
+	model: string,
+	n: number,
+	top: number,
+	keeperRate: KeeperRate,
+	cover: PhotoRef | null,
+	firstShot: string | null,
+	lastShot: string | null,
+	serials: number,
+	topLens: string | null,
+	topPlace: string | null,
+};
+
+export type BodyTimeline = {
+	body: string,
+	first: string,
+	last: string,
+	perYear: number[],
+};
+
 export type BuildInfo = {
 	app: string,
 	commit: string | null,
@@ -394,6 +493,20 @@ export type BundleFile = {
 export type BundleView = {
 	files: BundleFile[],
 	counts: { [key in string]: number },
+};
+
+export type CameraYear = {
+	year: number,
+	n: number,
+	cumulative: number,
+};
+
+export type Cameras = {
+	known: number,
+	makers: MakerRow[],
+	bodies: BodyRow[],
+	years: CameraYear[],
+	timeline: BodyTimeline[] | null,
 };
 
 export type CaptureTimeEntry = {
@@ -411,6 +524,18 @@ export type CaptureTimeUpdate = {
 
 export type CaptureTimesReply = {
 	updates: CaptureTimeUpdate[],
+};
+
+export type CatalogStatus = {
+	path: string,
+	schema: number,
+	bytes: number,
+	photos: number,
+	missing: number,
+	sources: number,
+	online: number,
+	offline: number,
+	jobs_running: number,
 };
 
 export type ChannelStats = {
@@ -432,6 +557,8 @@ export type ChosenFile = {
 	label?: string | null,
 	hash: number | null,
 };
+
+export type ColorLabel = "red" | "yellow" | "green" | "blue" | "purple";
 
 export type ColorProfiles = {
 	input: ([string, number])[],
@@ -459,6 +586,11 @@ export type Config = {
 	localPath: string,
 };
 
+export type Count = {
+	n: number,
+	top: number,
+};
+
 export type Counts = {
 	assets: number,
 	variants: number,
@@ -466,6 +598,19 @@ export type Counts = {
 	analyses: number,
 	analysed_photos: number,
 };
+
+export type Coverage = {
+	indexed: number,
+	total: number | null,
+	pending: number,
+	roots: number,
+	pendingRoots: PendingRoot[],
+	paused: boolean,
+	maxAgeSec: number,
+	state: CoverageState,
+};
+
+export type CoverageState = "ready" | "indexing" | "paused" | "no-roots" | "empty";
 
 export type CritiqueRegion = {
 	label: string,
@@ -677,6 +822,12 @@ export type CullTarget = {
 	version?: number,
 };
 
+export type Defs = {
+	focal: FocalDef[],
+	aperture: ApertureDef[],
+	shutter: ShutterDef[],
+};
+
 export type DepthMap = {
 	width: number,
 	height: number,
@@ -750,7 +901,39 @@ export type ExportReply = {
 	album?: string | null,
 };
 
+export type Exposure = {
+	known: ExposureKnown,
+	aperture: ApertureRow[],
+	shutter: ShutterRow[],
+	iso: IsoRow[],
+	median: ExposureMedian,
+	apertureByShutter: number[][] | null,
+};
+
+export type ExposureKnown = {
+	aperture: number,
+	shutter: number,
+	iso: number,
+};
+
+export type ExposureMedian = {
+	fNumber: number | null,
+	shutterSec: number | null,
+	iso: number | null,
+};
+
+export type FavouriteFocal = {
+	mm: number,
+	share: number | null,
+	topShare: number | null,
+};
+
 export type FetchState = "idle" | "running" | "done" | "failed";
+
+export type FileTypeCount = {
+	type: string,
+	n: number,
+};
 
 export type FilmFetch = {
 	state: FetchState,
@@ -780,6 +963,35 @@ export type FilmStock = {
 export type FilmStocks = {
 	pack: FilmPack | null,
 	stocks: FilmStock[],
+};
+
+export type FocalBucketId = "uw" | "wide" | "normal" | "portrait" | "tele" | "super";
+
+export type FocalBucketRow = {
+	id: FocalBucketId,
+	n: number,
+	top: number,
+	cover: PhotoRef | null,
+	modalMm: number,
+};
+
+export type FocalDef = {
+	id: FocalBucketId,
+	label: string,
+	fromMm: number | null,
+	toMm: number | null,
+};
+
+export type FocalHist = {
+	bins: ([number, number, number])[],
+	modalMm: number | null,
+};
+
+export type FocalRange = {
+	minMm: number | null,
+	maxMm: number | null,
+	modalMm: number | null,
+	modalShare: number | null,
 };
 
 export type FolderConflict = {
@@ -833,6 +1045,12 @@ export type FontFamily = {
 export type FoundPreset = {
 	name: string,
 	params: { [key in string]: number },
+};
+
+export type Gear = {
+	bodies: number,
+	lenses: number,
+	makers: number,
 };
 
 export type GeminiCritique = {
@@ -909,6 +1127,11 @@ export type GridFilter = {
 	shutter?: string[],
 };
 
+export type GridIds = {
+	ids: string[],
+	complete: boolean,
+};
+
 export type HdrReply = {
 	path: string,
 	image: LibraryImage,
@@ -924,6 +1147,19 @@ export type HistoryItem = {
 	fixed?: boolean | null,
 	masked?: boolean | null,
 };
+
+export type HourMonth = {
+	hour: number,
+	month: number,
+};
+
+export type Insight = {
+	id: InsightId,
+	params: { [key in string]: ParamValue },
+	apply: StatsFilter | null,
+};
+
+export type InsightId = "keeper-body" | "keeper-lens" | "favourite-focal" | "best-aperture" | "peak-month" | "handheld-share" | "golden-hour";
 
 export type Instance = {
 	op: string,
@@ -948,6 +1184,32 @@ export type InstanceReply = {
 	instances: Instance[],
 };
 
+export type IsoBinId = "100" | "200" | "400" | "800" | "1600" | "3200" | "6400+";
+
+export type IsoRow = {
+	id: IsoBinId,
+	n: number,
+	top: number,
+};
+
+export type KeeperRate = {
+	top: number,
+	n: number,
+};
+
+export type KeyCount = {
+	key: string,
+	n: number,
+};
+
+export type LabelCounts = {
+	red: number,
+	yellow: number,
+	green: number,
+	blue: number,
+	purple: number,
+};
+
 export type Lens = {
 	name: string,
 	maker: string,
@@ -958,6 +1220,25 @@ export type LensMenu = {
 	auto: string,
 	pick: number,
 	lenses: Lens[],
+};
+
+export type LensRow = {
+	name: string,
+	maker: string | null,
+	n: number,
+	top: number,
+	keeperRate: KeeperRate,
+	focalRange: FocalRange | null,
+	isPrime: boolean,
+	cover: PhotoRef | null,
+};
+
+export type Lenses = {
+	known: number,
+	lenses: LensRow[],
+	focal: FocalHist,
+	focalByBucket: FocalBucketRow[],
+	zoomUsage: ZoomUsage[] | null,
 };
 
 export type LibraryImage = {
@@ -1039,6 +1320,13 @@ export type LutFiles = {
 	files: ChosenFile[],
 };
 
+export type MakerRow = {
+	maker: string,
+	n: number,
+	top: number,
+	bodies: number,
+};
+
 export type MapView = {
 	x: number,
 	y: number,
@@ -1060,6 +1348,18 @@ export type MaskInstance = {
 	extra?: boolean,
 	state: ModuleState,
 	params: { [key in string]: number },
+};
+
+export type Matches = {
+	n: number,
+	top: number,
+};
+
+export type MedianSetup = {
+	focalMm: number | null,
+	fNumber: number | null,
+	shutterSec: number | null,
+	iso: number | null,
 };
 
 export type MemoryBudget = {
@@ -1221,6 +1521,11 @@ export type MoveSummary = {
 	cancelled: boolean,
 };
 
+export type NameCount = {
+	name: string,
+	n: number,
+};
+
 export type Named = {
 	id: string,
 	name: string,
@@ -1237,6 +1542,10 @@ export type NativeRole = "about" | "services" | "hide" | "hideOthers" | "showAll
 
 export type NewSpot = { type: "circle"; x: number; y: number; r: number; mode: SpotMode; feather: number; opacity: number } | { type: "brush"; points: ([number, number])[]; size: number; mode: SpotMode; feather: number; opacity: number };
 
+export type NotModified = {
+	notModified: boolean,
+};
+
 export type OpenReply = {
 	imgid: number,
 	sensor_width: number,
@@ -1248,6 +1557,26 @@ export type OpenReply = {
 	raw: boolean,
 	sensor: string | null,
 	fresh: boolean,
+};
+
+export type Overview = {
+	matches: Matches,
+	photos: number,
+	folders: number,
+	firstYear: number | null,
+	lastYear: number | null,
+	perYear: YearCount[],
+	ratingDist: [number, number, number, number, number, number],
+	rejected: number,
+	labels: LabelCounts,
+	gear: Gear,
+	favouriteFocal: FavouriteFocal | null,
+	medianSetup: MedianSetup,
+	peak: Peak,
+	fileTypes: FileTypeCount[],
+	edited: number,
+	insights: Insight[],
+	aspect: AspectCount[],
 };
 
 export type PageValues = {
@@ -1275,6 +1604,8 @@ export type PanoReply = {
 	used: number,
 	frames: number,
 };
+
+export type ParamValue = string | number | null;
 
 export type ParityDe = {
 	mean: number,
@@ -1322,6 +1653,36 @@ export type PathMap = {
 	local?: string,
 };
 
+export type Peak = {
+	hour: number | null,
+	month: number | null,
+	monthN: number,
+};
+
+export type PendingRoot = {
+	folder: string,
+	pending: number,
+};
+
+export type PhotoRef = {
+	id: string,
+	path: string,
+	thumb: ThumbRef,
+	rating: number,
+	rejected: boolean,
+	label: ColorLabel | null,
+	body: string | null,
+	lens: string | null,
+	focalMm: number | null,
+	fNumber: number | null,
+	shutterSec: number | null,
+	iso: number | null,
+	taken: string | null,
+	place: string | null,
+	width: number | null,
+	height: number | null,
+};
+
 export type PickerStats = {
 	min: [number, number, number],
 	mean: [number, number, number],
@@ -1334,6 +1695,49 @@ export type Place = {
 	latitude: number,
 	longitude: number,
 	bounds?: [number, number, number, number] | null,
+};
+
+export type PlaceCell = {
+	key: string,
+	lat: number | null,
+	lng: number | null,
+	n: number,
+	top: number,
+	solo?: PhotoRef | null,
+	name?: string | null,
+};
+
+export type PlaceDetail = {
+	key: string,
+	name: string | null,
+	lat: number | null,
+	lng: number | null,
+	radiusKm: number | null,
+	n: number,
+	top: number,
+	firstShot: string | null,
+	lastShot: string | null,
+	topBody: KeyCount | null,
+	topLens: NameCount | null,
+	modalFocalMm: number | null,
+	months: number[],
+	photos: PhotoRef[],
+};
+
+export type Places = {
+	known: number,
+	total: number,
+	zoom: number,
+	bbox: [number | null, number | null, number | null, number | null] | null,
+	cells: PlaceCell[],
+	heat: ([number | null, number | null, number | null])[] | null,
+	top: PlaceCell[],
+};
+
+export type PlacesView = {
+	zoom: number,
+	bbox: [number | null, number | null, number | null, number | null] | null,
+	heat: boolean | null,
 };
 
 export type PlanUnit = {
@@ -1459,11 +1863,49 @@ export type ProbeReply = {
 	elapsed_ms: number | null,
 };
 
+export type Progress = {
+	source_id: number,
+	job_id: number,
+	run_id: number,
+	/**  `finding` while walking, then `done`. */
+	phase: string,
+	dirs_done: number,
+	dirs_queued: number,
+	found: number,
+	new: number,
+	changed: number,
+	unchanged: number,
+	errors: number,
+	elapsed_s: number | null,
+	rate_per_s: number | null,
+	/**
+	 *  A range (low, high) in seconds, once the rate is steady and the last
+	 *  scan's size is known; never while paused.
+	 */
+	eta_s: [number, number] | null,
+	current_dir: string | null,
+	paused: boolean,
+};
+
 export type Refine = {
 	feather: number,
 	blur: number,
 	detail: number,
 	contrast: number,
+};
+
+/**
+ *  Explicit relink: point a source at `new_path`. With `dry_run` only checks
+ *  that up to `SAMPLE` known photos exist there. `exists` is the file check.
+ */
+export type RelinkCheck = {
+	sample_matched: number,
+	of: number,
+};
+
+export type RemovePreview = {
+	photos: number,
+	dirs: number,
 };
 
 export type RenameItem = {
@@ -1607,6 +2049,101 @@ export type SharedImport = {
 	failed: string[],
 };
 
+export type ShutterDef = {
+	id: ShutterRegimeId,
+	label: string,
+	from: number | null,
+	to: number | null,
+	caption: string,
+};
+
+export type ShutterRegimeId = "freeze" | "fast" | "handheld" | "slow" | "motion" | "long";
+
+export type ShutterRow = {
+	id: ShutterRegimeId,
+	n: number,
+	top: number,
+	cover: PhotoRef | null,
+};
+
+export type Source = {
+	id: number,
+	name: string,
+	kind: string,
+	volume_key: string,
+	fs_type: string,
+	host: string | null,
+	host_hash: string | null,
+	share: string | null,
+	mount_path: string | null,
+	rel_root: string,
+	enabled: boolean,
+	treat_as_network: boolean | null,
+	scan_policy: string,
+	include_subfolders: boolean,
+	dir_skip: boolean,
+	state: string,
+	error: string | null,
+	last_scan_start: number | null,
+	last_scan_end: number | null,
+	last_ok: number | null,
+	created_at: number,
+	photos: number,
+	missing: number,
+};
+
+export type SourceAdd = {
+	path: string,
+	name: string | null,
+	/**  "launch", "manual" or "every=6h". */
+	policy: string,
+	include_subfolders: boolean,
+	index_now: boolean,
+	allow_offline: boolean,
+};
+
+/**  What `source_detect` learned of a folder before it is added. */
+export type SourceDetect = {
+	/**  "Network share, SMB (host, share)", "Drive (exfat)" or "Local disk". */
+	storage: string,
+	kind: string,
+	protocol: string | null,
+	host: string | null,
+	share: string | null,
+	fs_type: string,
+	mount_path: string,
+	/**  The folder answered and is a directory. */
+	readable: boolean,
+	/**  Behind an idle automount: adding it is allowed offline. */
+	asleep: boolean,
+	/**  An existing source this one would overlap. */
+	overlaps: number | null,
+};
+
+export type SourcePatch = {
+	name: string | null,
+	policy: string | null,
+	enabled: boolean | null,
+	/**  "auto", "yes" or "no". */
+	treat_as_network: string | null,
+	dir_skip: boolean | null,
+};
+
+export type SourceStatus = {
+	source: Source,
+	availability: Availability,
+};
+
+export type SpeedTest = {
+	listing_per_s: number | null,
+	/**  Reading headers is measured by the metadata phase; always null for now. */
+	reading_per_s: number | null,
+	/**  "fast", "good", "slow", "very_slow" or "failed". */
+	verdict: string,
+	sampled: number,
+	elapsed_s: number | null,
+};
+
 export type Spot = { type: "circle"; x: number; y: number; r: number; mode: SpotMode; sx: number; sy: number; feather: number; opacity: number } | { type: "brush"; points: ([number, number])[]; size: number; mode: SpotMode; sx: number; sy: number; feather: number; opacity: number };
 
 export type SpotMode = "heal" | "clone";
@@ -1615,6 +2152,56 @@ export type SpotSource = {
 	sx: number,
 	sy: number,
 };
+
+export type StatsFilter = {
+	minRating?: number,
+	onlyTop?: boolean,
+	labels?: ColorLabel[] | null,
+	makers?: string[] | null,
+	bodies?: string[] | null,
+	lenses?: string[] | null,
+	years?: number[] | null,
+	months?: number[] | null,
+	hours?: number[] | null,
+	weekdays?: number[] | null,
+	focalBuckets?: FocalBucketId[] | null,
+	apertureGroups?: ApertureGroupId[] | null,
+	shutterRegimes?: ShutterRegimeId[] | null,
+	isoBins?: IsoBinId[] | null,
+	aspect?: AspectClassId[] | null,
+	fileTypes?: string[] | null,
+	place?: string[] | null,
+	edited?: boolean | null,
+};
+
+export type StatsReply = StatsResponse | NotModified;
+
+export type StatsRequest = {
+	scope: StatsScope,
+	filter: StatsFilter,
+	sections: StatsSection[],
+	yearMode: YearMode | null,
+	etag: string | null,
+	places: PlacesView | null,
+};
+
+export type StatsResponse = {
+	etag: string,
+	generatedAt: string,
+	coverage: Coverage,
+	defs: Defs,
+	overview?: Overview | null,
+	cameras?: Cameras | null,
+	lenses?: Lenses | null,
+	exposure?: Exposure | null,
+	time?: TimeStats | null,
+	places?: Places | null,
+	top?: TopImages | null,
+};
+
+export type StatsScope = { kind: "library" } | { kind: "folder"; folder: string; includeSubfolders: boolean } | { kind: "dateRange"; from: string; to: string };
+
+export type StatsSection = "overview" | "cameras" | "lenses" | "exposure" | "time" | "places" | "top";
 
 export type Status = {
 	queued: number,
@@ -1630,6 +2217,18 @@ export type SubFolder = {
 	has_children: boolean,
 };
 
+export type ThumbRef = { kind: "cache"; id: string } | { kind: "none" };
+
+export type TimeStats = {
+	known: number,
+	hours: Count[],
+	months: Count[],
+	years: YearCount[],
+	weekdays: Count[] | null,
+	month_by_hour: number[][] | null,
+	peak: HourMonth,
+};
+
 export type Timing = {
 	label: string,
 	kind: string,
@@ -1642,6 +2241,23 @@ export type Timing = {
 
 export type ToneKeyReply = {
 	ev: number,
+};
+
+export type TopImages = {
+	total: number,
+	items: PhotoRef[],
+	page: TopPage,
+	byRating: [number, number, number, number, number, number],
+	byLabel: LabelCounts,
+};
+
+export type TopPage = {
+	next: string | null,
+};
+
+export type TopPageReply = {
+	items: PhotoRef[],
+	next: string | null,
 };
 
 export type UprightReply = {
@@ -1686,4 +2302,19 @@ export type WebviewRenderer = {
 	external: boolean,
 	mesa: boolean,
 	nvidia: boolean,
+};
+
+export type YearCount = {
+	year: number,
+	n: number,
+	top: number,
+};
+
+export type YearMode = "that-year" | "cumulative";
+
+export type ZoomUsage = {
+	lens: string,
+	minMm: number | null,
+	maxMm: number | null,
+	bins: number[],
 };

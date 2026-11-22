@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later
+     Copyright (C) 2026 the Immage authors -->
+<!-- Dev-only harness: the real Statistics view on fixture data (a synthetic library), in a plain browser:
+     npm run dev, then /harness/statistics.html?state=ready. Not an entry of the production build.
+     See statistics.tsx for the parameters. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Statistics harness</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <pre id="report" hidden></pre>
+    <script type="module" src="/harness/statistics.tsx"></script>
+  </body>
+</html>

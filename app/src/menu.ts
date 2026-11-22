@@ -18,7 +18,7 @@ export type ActionId =
   | "rate-0" | "rate-1" | "rate-2" | "rate-3" | "rate-4" | "rate-5"
   | "label-red" | "label-yellow" | "label-green" | "label-blue" | "reject"
   | "zoom-in" | "zoom-out" | "zoom-toggle" | "fullscreen-preview" | "culling-preview" | "grid" | "before-after" | "compare"
-  | "hide-panels" | "clipping" | "next-scope" | "info-overlay" | "canvas" | "soft-proof" | "perf-overlay"
+  | "stats" | "hide-panels" | "clipping" | "next-scope" | "info-overlay" | "canvas" | "soft-proof" | "perf-overlay"
   | "shortcuts" | "user-guide" | "support-bundle" | "about";
 
 export type Platform = "mac" | "other";
@@ -40,7 +40,7 @@ export const ACTION_IDS: readonly ActionId[] = [
   "rate-0", "rate-1", "rate-2", "rate-3", "rate-4", "rate-5",
   "label-red", "label-yellow", "label-green", "label-blue", "reject",
   "zoom-in", "zoom-out", "zoom-toggle", "fullscreen-preview", "culling-preview", "grid", "before-after", "compare",
-  "hide-panels", "clipping", "next-scope", "info-overlay", "canvas", "soft-proof", "perf-overlay",
+  "stats", "hide-panels", "clipping", "next-scope", "info-overlay", "canvas", "soft-proof", "perf-overlay",
   "shortcuts", "user-guide", "support-bundle", "about",
 ];
 
@@ -119,7 +119,8 @@ export const MENUS: Menu[] = [
       item("culling-preview", t("menu.culling-preview"), "F"),
       item("grid", t("menu.grid"), "G"),
       item("before-after", t("menu.before-after"), "Y"),
-      item("compare", t("menu.compare"), "C"), sep(),
+      item("compare", t("menu.compare"), "C"),
+      item("stats", t("menu.stats")), sep(),
       item("hide-panels", t("menu.hide-panels"), "Tab"),
       item("clipping", t("menu.clipping"), "J"),
       item("next-scope", t("menu.next-scope"), "H"),

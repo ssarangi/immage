@@ -18,6 +18,7 @@ in, edit them, send them out.
 | Button | What it opens |
 | --- | --- |
 | **Import** | the importer (⇧⌘I). See [Import](import.md). |
+| **Statistics** | cameras, lenses and focal lengths across the library (View > Statistics). See [Statistics](statistics.md). |
 | **Library** | the grid view of the folder (G); click again to return to the filmstrip. In the grid, Find fills the right-hand panel. See [Library](library.md). |
 | **Adjustments** | the develop panels. See [Adjustments](adjustments.md). |
 | **Crop** | the crop tool (R); a second click applies it. See [Crop](crop.md). |

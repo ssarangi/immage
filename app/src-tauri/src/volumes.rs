@@ -8,7 +8,7 @@
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{mpsc, LazyLock, Mutex};
+use std::sync::{mpsc, Arc, Condvar, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 #[derive(Serialize, Clone, Debug, PartialEq, specta::Type)]
@@ -79,56 +79,118 @@ pub fn on_network(path: &Path) -> bool { drive_of(path).is_some_and(|v| v.networ
 // how long a drive has to answer, and how long an answer is trusted for
 const DRIVE_WAIT: Duration = Duration::from_secs(3);
 const DRIVE_FRESH: Duration = Duration::from_secs(2);
+// threads that ask drives; a stat that never returns holds one for good, so
+// the count (not the number of callers) bounds the leak
+const PROBERS: usize = 4;
 
 #[derive(Default)]
 struct Drive {
     stuck: bool,
     answered: Option<Instant>,
+    // a stat is in flight for this drive: later callers wait for it
+    // instead of starting another
+    probing: bool,
 }
 
 // drives by mount point. a share whose server has gone away but is still
 // mounted holds stat() and readdir() in the kernel for good, as can a
-// failing disk, so a stat is tried on a thread of its own first. while it
+// failing disk, so a stat is tried on a worker thread first. while it
 // waits, the drive is stuck and is not tried again; it answers again when
 // that stat returns
 static DRIVES: LazyLock<Mutex<HashMap<String, Drive>>> = LazyLock::new(Default::default);
+static DRIVE_CHANGED: Condvar = Condvar::new();
+
+type ProbeJob = Box<dyn FnOnce() + Send>;
+
+// PROBERS threads, started on first use and reused for every stat
+static PROBE_POOL: LazyLock<Mutex<mpsc::Sender<ProbeJob>>> = LazyLock::new(|| {
+    let (tx, rx) = mpsc::channel::<ProbeJob>();
+    let rx = Arc::new(Mutex::new(rx));
+    for i in 0..PROBERS {
+        let rx = rx.clone();
+        let _ = std::thread::Builder::new().name(format!("drive-probe-{i}")).spawn(move || loop {
+            let job = rx.lock().unwrap().recv();
+            match job {
+                Ok(job) => job(),
+                Err(_) => break,
+            }
+        });
+    }
+    Mutex::new(tx)
+});
 
 // whether the path can be touched without waiting for ever: its drive has
 // answered a stat within DRIVE_WAIT
 pub fn answering(path: &Path) -> bool {
     let drive = drive_of(path).map(|v| v.mount).unwrap_or_default();
+    let at = path.to_path_buf();
+    answering_with(&drive, DRIVE_WAIT, move || {
+        // not found is an answer too
+        let _ = std::fs::metadata(&at);
+    })
+}
+
+// answering() with the stat and the wait given. one stat per drive is ever
+// in flight, however many callers ask meanwhile, and it runs on the shared
+// worker threads, so a drive that never answers costs one worker, not a
+// thread per caller
+pub(crate) fn answering_with(drive: &str, wait: Duration, stat: impl FnOnce() + Send + 'static) -> bool {
+    let mut drives = DRIVES.lock().unwrap();
     {
-        let mut drives = DRIVES.lock().unwrap();
-        let s = drives.entry(drive.clone()).or_default();
+        let s = drives.entry(drive.to_string()).or_default();
         if s.stuck {
             return false;
         }
         if s.answered.is_some_and(|t| t.elapsed() < DRIVE_FRESH) {
             return true;
         }
+        if !s.probing {
+            s.probing = true;
+            let key = drive.to_string();
+            let job: ProbeJob = Box::new(move || {
+                stat();
+                let mut drives = DRIVES.lock().unwrap();
+                let s = drives.entry(key).or_default();
+                s.probing = false;
+                s.stuck = false;
+                s.answered = Some(Instant::now());
+                DRIVE_CHANGED.notify_all();
+            });
+            if PROBE_POOL.lock().unwrap().send(job).is_err() {
+                s.probing = false;
+                return false;
+            }
+        }
     }
-    let (tx, rx) = mpsc::channel();
-    let (at, key) = (path.to_path_buf(), drive.clone());
-    std::thread::spawn(move || {
-        // not found is an answer too
-        let _ = std::fs::metadata(&at);
-        let mut drives = DRIVES.lock().unwrap();
-        let s = drives.entry(key).or_default();
-        s.stuck = false;
-        s.answered = Some(Instant::now());
-        let _ = tx.send(());
-    });
-    if rx.recv_timeout(DRIVE_WAIT).is_ok() {
-        return true;
+    let until = Instant::now() + wait;
+    loop {
+        if !drives.get(drive).is_some_and(|s| s.probing) {
+            return true;
+        }
+        let left = until.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            // under the lock the stat's worker answers with, so a late answer is never overwritten
+            drives.entry(drive.to_string()).or_default().stuck = true;
+            return false;
+        }
+        drives = DRIVE_CHANGED.wait_timeout(drives, left).unwrap().0;
     }
-    // under the lock the stat's thread answers with, so a late answer is
-    // never overwritten
-    let mut drives = DRIVES.lock().unwrap();
-    if rx.try_recv().is_ok() {
-        return true;
+}
+
+// whether the path is under an automount that has nothing mounted yet (or
+// again): touching it would mount the share, so a poll should not. Linux only
+#[allow(dead_code)] // for the catalog's light mount poll
+pub fn autofs_idle(path: &Path) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        let Ok(table) = std::fs::read_to_string("/proc/self/mounts") else { return false };
+        mount_of(&table, path).is_some_and(|(_, _, fs)| fs == "autofs")
     }
-    drives.entry(drive).or_default().stuck = true;
-    false
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = path;
+        false
+    }
 }
 
 // the server in a mount's source: //user@nas.local/Pictures, nas:/export,
@@ -254,14 +316,25 @@ fn mount_of(table: &str, path: &Path) -> Option<(String, String, String)> {
 }
 
 #[cfg(any(target_os = "linux", test))]
-fn is_network_fs(fs: &str) -> bool {
-    matches!(fs, "nfs" | "nfs4" | "cifs" | "smb3" | "smbfs" | "fuse.sshfs" | "sshfs" | "davfs" | "fuse.rclone" | "9p")
+pub(crate) fn is_network_fs(fs: &str) -> bool {
+    // pooling and cluster file systems count too: any of them may be slow or
+    // away. an autofs entry says nothing of what is behind it, so it is
+    // treated as a network too (from_table) until something is mounted there
+    matches!(
+        fs,
+        "nfs" | "nfs4" | "cifs" | "smb3" | "smbfs" | "fuse.sshfs" | "sshfs" | "davfs" | "fuse.rclone" | "9p"
+            | "fuse.gvfsd-fuse" | "fuse.mergerfs" | "ceph" | "fuse.ceph" | "glusterfs" | "fuse.glusterfs"
+            | "lustre" | "afs" | "fuse.davfs" | "fuse.davfs2" | "fuse.s3fs" | "fuse.gcsfuse" | "fuse.smbnetfs"
+            | "fuse.cryfs" | "fuse.encfs"
+    ) || fs.starts_with("fuse.rclone") || fs.starts_with("nfs") || fs.starts_with("ceph")
 }
 
 #[cfg(any(target_os = "linux", test))]
 fn from_table(table: &str, path: &Path) -> Option<Volume> {
     let (source, mount, fs) = mount_of(table, path)?;
-    let network = is_network_fs(&fs);
+    // autofs: the share is only mounted while it is in use; until then ask
+    // nothing of it, and treat it as the network it most likely is
+    let network = is_network_fs(&fs) || fs == "autofs";
     let name = if mount == "/" { "Computer".into() } else { last_component(&mount) };
     Some(Volume { path: String::new(), mount, name, host: if network { host_of(&source) } else { None }, network, online: true })
 }
@@ -387,6 +460,68 @@ nas:/export/photos /mnt/My\\040Photos nfs4 rw 0 0
         assert!(start.elapsed() < Duration::from_millis(100));
         DRIVES.lock().unwrap().remove(&drive);
         assert!(answering(&dir));
+    }
+
+    const AUTOFS_IDLE: &str = "\
+/dev/nvme0n1p2 / ext4 rw,relatime 0 0
+systemd-1 /mnt/synology/Photos_Backup autofs rw,relatime,fd=44,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=19873 0 0
+";
+    const AUTOFS_MOUNTED: &str = "\
+/dev/nvme0n1p2 / ext4 rw,relatime 0 0
+systemd-1 /mnt/synology/Photos_Backup autofs rw,relatime,fd=44,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=19873 0 0
+//SynologyDS220.local/Photos/Photos_Backup /mnt/synology/Photos_Backup cifs rw,relatime,vers=3.0,cache=strict,soft,actimeo=1 0 0
+";
+
+    // the mounted share is what the path is on; an idle automount is a network too
+    #[test]
+    fn autofs_is_asked_what_is_behind_it() {
+        let p = Path::new("/mnt/synology/Photos_Backup/2023/Japan");
+        let v = from_table(AUTOFS_MOUNTED, p).unwrap();
+        assert!(v.network);
+        assert_eq!(v.host.as_deref(), Some("SynologyDS220.local"));
+        let idle = from_table(AUTOFS_IDLE, p).unwrap();
+        assert!(idle.network, "nothing mounted yet: assume the network it most likely is");
+        assert_eq!(idle.mount, "/mnt/synology/Photos_Backup");
+        assert_eq!(mount_of(AUTOFS_IDLE, p).unwrap().2, "autofs");
+        assert_eq!(mount_of(AUTOFS_MOUNTED, p).unwrap().2, "cifs");
+    }
+
+    #[test]
+    fn more_network_file_systems() {
+        for fs in ["fuse.gvfsd-fuse", "fuse.mergerfs", "ceph", "glusterfs", "lustre", "fuse.rclone", "fuse.rclone-mount", "nfs4"] {
+            assert!(is_network_fs(fs), "{fs}");
+        }
+        for fs in ["ext4", "btrfs", "xfs", "vfat", "exfat", "tmpfs", "fuse.portal"] {
+            assert!(!is_network_fs(fs), "{fs}");
+        }
+    }
+
+    // many callers on one stuck drive start one stat, on a pooled worker
+    #[test]
+    fn a_stuck_drive_costs_one_stat_not_a_thread_per_caller() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let started = Arc::new(AtomicUsize::new(0));
+        let key = "test-drive-pool";
+        let handles: Vec<_> = (0..16).map(|_| {
+            let started = started.clone();
+            std::thread::spawn(move || {
+                answering_with(key, Duration::from_millis(100), move || {
+                    started.fetch_add(1, Ordering::SeqCst);
+                    std::thread::sleep(Duration::from_millis(600));
+                })
+            })
+        }).collect();
+        let answers: Vec<bool> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        assert!(answers.iter().all(|a| !a), "a slow stat is not an answer");
+        assert_eq!(started.load(Ordering::SeqCst), 1);
+        // while stuck nobody waits
+        let t = Instant::now();
+        assert!(!answering_with(key, Duration::from_secs(5), || panic!("must not stat a stuck drive")));
+        assert!(t.elapsed() < Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(700));
+        // it answered in the end, and that answer is fresh
+        assert!(answering_with(key, Duration::from_secs(5), || panic!("fresh answer, no new stat")));
+        DRIVES.lock().unwrap().remove(key);
     }
 
     #[test]

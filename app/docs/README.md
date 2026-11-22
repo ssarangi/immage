@@ -48,6 +48,10 @@ is also on the [Immage website](https://immage.photo/guide/).
   filtering, virtual copies, metadata and keywords
 - [Import](import.md): copying photos off a card, verified, without
   duplicates
+- [Statistics](statistics.md): your cameras, lenses and focal lengths, and
+  which of them make your keepers; click anything to filter
+- [Catalog command line](catalog-cli.md): `immage catalog` indexes folders and
+  network shares from a terminal, safely, with resumable scans
 - [Immage Accelerator (Experimental)](immage-accelerator.md): browse and filter photos on a
   mapped network share using the NAS index.
 - [Immich](immich.md): connecting your server, searching it, exporting to

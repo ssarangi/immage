@@ -7,6 +7,22 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- **Catalog command line:** `immage catalog` adds folders as sources, finds
+  their photos and keeps a durable local catalog of names, sizes and modified
+  times, from a terminal or over SSH, without opening a window. It tells a
+  network share by the server and share, not by where it is mounted, so a share
+  remounted at another path is the same source; works with an idle automount;
+  lists folders two at a time with a deadline each; and resumes a scan that was
+  stopped. A folder that does not answer is reported and never counts as empty,
+  and photos are marked missing only after a scan that finished cleanly with the
+  volume online throughout. See the Catalog command line guide.
+- **Statistics:** a new view, from the chart button on the rail or View >
+  Statistics, shows your library as numbers: a coverage line, six summary
+  cards, camera makers and bodies with their keeper rates, and lenses with a
+  focal-length field-of-view fan. Click any bar, slice or wedge to filter
+  every chart, then open the matching photos (up to 20,000) in the grid. Scope it to the
+  library, a folder or a date range, and choose which rating counts as a top
+  image.
 - **Grid button:** the toolbar under the filmstrip starts with a labelled Grid
   button that switches between the grid and the filmstrip, as the Library
   button on the rail and G do, so an open photo no longer needs its folder
@@ -44,6 +60,13 @@ Improvements
   verdict, factors, switch and Keep, Reject and Make best buttons, are
   redrawn. The camera previews toggle moved to the bottom bar, Critique left
   the top bar, and Escape releases a pinned region before closing the preview.
+
+Performance
+
+- **Indexing large folders:** storing photo metadata in the search index no
+  longer slows down as the index grows. A batch of 20,000 photos took 9 seconds
+  (30 seconds when many photos shared a fingerprint) and now takes 1.6 seconds,
+  at a steady 80 microseconds per photo.
 
 ## 0.47.1
 

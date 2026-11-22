@@ -81,7 +81,7 @@ Front end ([`app/src`](../../src)):
 - [BackupDialog.tsx](../../src/BackupDialog.tsx): the Back Up and Restore dialog under Preferences > General, over backup.rs.
 - [SelectMenu.tsx](../../src/SelectMenu.tsx): the app-drawn list every `<select>` opens (see architecture.md)
 - [menu.ts](../../src/menu.ts): the File/Edit/Photo/View/Help menus, once for both platforms; [MenuBar.tsx](../../src/MenuBar.tsx) draws them in the title strip on Windows and Linux; `menu_set` in app_cmds.rs builds the macOS menu bar, its clicks come back as the `menu` event to `runMenuAction` in App.tsx; [actions.ts](../../src/actions.ts) is the table of key chords that run those same actions
-- [Preferences.tsx](../../src/Preferences.tsx), [PrefsUI.tsx](../../src/PrefsUI.tsx); [histogram.ts](../../src/histogram.ts), [probe.ts](../../src/probe.ts); [perf.ts](../../src/perf.ts), [PerfHud.tsx](../../src/PerfHud.tsx); [aiModel.ts](../../src/aiModel.ts); [ImportView.tsx](../../src/ImportView.tsx) (the importer); [styles.css](../../src/styles.css)
+- [Preferences.tsx](../../src/Preferences.tsx), [PrefsUI.tsx](../../src/PrefsUI.tsx); [histogram.ts](../../src/histogram.ts), [probe.ts](../../src/probe.ts); [perf.ts](../../src/perf.ts), [PerfHud.tsx](../../src/PerfHud.tsx); [aiModel.ts](../../src/aiModel.ts); [ImportView.tsx](../../src/ImportView.tsx) (the importer); Statistics: [Statistics.tsx](../../src/Statistics.tsx) (lazy overlay, its fonts and [statistics.css](../../src/statistics.css) load with it), [statsModel.ts](../../src/statsModel.ts) and [statsMath.ts](../../src/statsMath.ts) (pure state, request and chart arithmetic, tested by verify/stats-model.test.mjs), [statsStore.ts](../../src/statsStore.ts) (state and the data hook), [statsApi.ts](../../src/statsApi.ts) (what the view asks of Rust; `statsCommands` in commands.ts), sections and charts in [stats/](../../src/stats); dev harness `app/harness/statistics.html` on fixtures, and verify/stats-shift.test.mjs (no layout shift); [styles.css](../../src/styles.css)
 
 Rust ([`app/src-tauri/src`](../../src-tauri/src)):
 
@@ -114,6 +114,26 @@ Auto cull (Rust): [cull.rs](../../src-tauri/src/cull.rs) (Laplacian sharpness, e
 
 - Add a file to its line here and its entry in [architecture.md](architecture.md); keep this map short, as it is read at the start of every session.
 - Refer to code by symbol, not line number.
+
+Statistics (the view is documented by the front end): [stats.rs](../../src-tauri/src/stats.rs)
+(pure aggregation: buckets, cross-filter masks, quadkey cells, unit tests in `src/stats/tests.rs`,
+benchmark `cargo test --release benchmark_300k -- --ignored --nocapture`),
+[stats_cmds.rs](../../src-tauri/src/stats_cmds.rs) (`stats_*` commands, the in-memory index over
+`SearchCache::stats_page`, the `stats_dirty` event), [typed_stats.rs](../../src-tauri/src/typed_stats.rs)
+(request and reply types).
+
+Catalog (C1/C2, Rust only so far; plan in notes/nas-catalog-plan.md, notes in notes/catalog-backend-notes.md):
+[catalog_db.rs](../../src-tauri/src/catalog_db.rs) (`catalog.sqlite`, migration `LADDER`, one writer
+thread, `DirBatch`, `finish_run` sweep, jobs and runs),
+[catalog_sources.rs](../../src-tauri/src/catalog_sources.rs) (`MountTable` from mountinfo, `VolumeId`,
+sources CRUD, `availability`, `reconcile`, `relink`),
+[catalog_scan.rs](../../src-tauri/src/catalog_scan.rs) (`run_scan`, `ScanFs`/`RealFs`, `ScanControl`, checkpoints;
+tests in `catalog_scan_tests.rs` with the fault-injecting `catalog_fakefs.rs`; benchmark `bench_500k`),
+[catalog_cli.rs](../../src-tauri/src/catalog_cli.rs) (`immage catalog ...`, run from `main()` before Tauri; user guide
+[catalog-cli.md](../catalog-cli.md)), [catalog_cmds.rs](../../src-tauri/src/catalog_cmds.rs) and
+[typed_catalog.rs](../../src-tauri/src/typed_catalog.rs) (typed commands and the `catalog://scan-progress` /
+`catalog://scan-finished` events). volumes.rs: `answering()` runs on a bounded pool, `is_network_fs` knows
+autofs-behind, gvfs, mergerfs, ceph, gluster, lustre and rclone.
 
 Support bundle: [scrub.rs](../../src-tauri/src/scrub.rs) (the scrubber),
 [support_bundle.rs](../../src-tauri/src/support_bundle.rs) (`support_bundle_*` commands, zip),

@@ -10,5 +10,6 @@
 // fails when a file other than bindings.ts imports `invoke`.
 //
 // binary replies (mapTile, later frames) come back as an ArrayBuffer
-export { commands } from "./bindings";
+import { commands } from "./bindings";
+export { commands };
 export type * from "./bindings";

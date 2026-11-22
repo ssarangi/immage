@@ -16,6 +16,9 @@ mod clip_text;
 mod clip_image;
 mod clip_infer;
 mod search_cmds;
+mod stats;
+mod stats_cmds;
+mod typed_stats;
 mod search_filters;
 mod local_search;
 mod local_search_cmds;
@@ -39,6 +42,14 @@ mod renderer;
 mod pinch;
 mod pinch_math;
 mod volumes;
+mod catalog_db;
+mod catalog_sources;
+mod catalog_scan;
+mod catalog_cli;
+mod catalog_cmds;
+mod typed_catalog;
+#[cfg(test)]
+mod catalog_fakefs;
 mod scrub;
 mod support_bundle;
 mod backup;
@@ -179,6 +190,10 @@ fn defer_window_creation(context: &mut tauri::Context<tauri::Wry>) {
 }
 
 fn main() {
+    // `immage catalog ...` runs headless: before Tauri, GTK or any window exists
+    if let Some(code) = catalog_cli::maybe_run() {
+        std::process::exit(code);
+    }
     let mut context = tauri::generate_context!();
     // before GTK and WebKit start, and before any other thread
     #[cfg(target_os = "linux")]

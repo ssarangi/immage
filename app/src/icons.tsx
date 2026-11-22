@@ -119,3 +119,6 @@ export const AnalysisCheckIcon = () => (
     <path d="M4.3 7.2l1.9 1.9 3.5-3.7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
+
+// Statistics: three bars on a baseline
+export const StatsIcon = () => icon(<><path d="M4 20h16" /><rect x="5.5" y="11" width="3.5" height="9" rx="1" /><rect x="10.5" y="5" width="3.5" height="15" rx="1" /><rect x="15.5" y="9" width="3.5" height="11" rx="1" /></>);

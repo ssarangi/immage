@@ -364,10 +364,13 @@ impl SearchCache {
             )
             .and_then(|variant| {
                 if let Some(json) = item.metadata {
+                    // EXISTS looks the asset up by its key. `asset_id IN (SELECT ..)` was an uncorrelated
+                    // subquery: SQLite scanned `assets` for the fingerprint (and built a temporary index of
+                    // every match) once per row, so a batch cost O(rows in the cache) per item
                     tx.execute(
                         "UPDATE variants SET metadata_json=?4 WHERE id=?1 AND edited_fingerprint=?3
                          AND metadata_json IS NOT ?4
-                         AND asset_id IN (SELECT id FROM assets WHERE original_fingerprint=?2)",
+                         AND EXISTS (SELECT 1 FROM assets WHERE assets.id=variants.asset_id AND assets.original_fingerprint=?2)",
                         params![variant.id, item.original, item.edited, json],
                     )
                     .map_err(|e| e.to_string())?;
@@ -703,7 +706,7 @@ impl SearchCache {
             .map_err(|_| "search cache lock poisoned")?
             .execute(
                 "UPDATE variants SET metadata_json=?4 WHERE id=?1 AND edited_fingerprint=?3
-             AND asset_id IN (SELECT id FROM assets WHERE original_fingerprint=?2)",
+             AND EXISTS (SELECT 1 FROM assets WHERE assets.id=variants.asset_id AND assets.original_fingerprint=?2)",
                 params![variant_id, original, edited, metadata],
             )
             .map(|n| n == 1)
@@ -782,6 +785,53 @@ impl SearchCache {
             });
         }
         Ok(result)
+    }
+    /// One page of original photos for Statistics, in id order after `after`.
+    /// The lock is held for one page only, so the indexer is never starved.
+    pub fn stats_page(&self, after: i64, limit: u32) -> Result<Vec<crate::stats::RawRow>, String> {
+        let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
+        let mut query = db
+            .prepare_cached(
+                "SELECT v.id,a.path,v.capture_time_ns,v.capture_time_raw,v.timezone_offset_seconds,v.metadata_json
+                 FROM variants v JOIN assets a ON a.id=v.asset_id
+                 WHERE v.id>?1 AND v.copy_key='' ORDER BY v.id LIMIT ?2",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = query
+            .query_map(params![after, limit], |r| {
+                Ok(crate::stats::RawRow {
+                    variant_id: r.get(0)?,
+                    path: r.get(1)?,
+                    capture_time_ns: r.get(2)?,
+                    capture_time_raw: r.get(3)?,
+                    timezone_offset_seconds: r.get(4)?,
+                    metadata: r.get(5)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+    /// The stored metadata of the original (not a virtual copy) of each path, in the order asked:
+    /// one lock and one prepared statement for the whole list. `None` for a path the cache
+    /// does not know or has not analysed.
+    pub fn original_metadata(&self, paths: &[&str]) -> Result<Vec<Option<String>>, String> {
+        let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
+        let mut query = db
+            .prepare_cached(
+                "SELECT v.metadata_json FROM assets a JOIN variants v ON v.asset_id=a.id
+                 WHERE a.path=?1 AND v.copy_key=''",
+            )
+            .map_err(|e| e.to_string())?;
+        paths
+            .iter()
+            .map(|p| {
+                query
+                    .query_row([p], |r| r.get::<_, Option<String>>(0))
+                    .optional()
+                    .map(Option::flatten)
+                    .map_err(|e| e.to_string())
+            })
+            .collect()
     }
     pub fn image_query(
         &self,
@@ -1608,5 +1658,33 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("sqlite-wal"));
         let _ = std::fs::remove_file(path.with_extension("sqlite-shm"));
+    }
+
+    /// Super-linear growth shows as a rising time per row.
+    /// `cargo +1.98.0 test --locked --release upsert_metadata_batch_scaling -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn upsert_metadata_batch_scaling() {
+        for (label, shared) in [("distinct fingerprints (a real library)", false), ("one shared fingerprint", true)] {
+            println!("{label}");
+            for n in [2_000usize, 5_000, 10_000, 20_000] {
+                let dir = tempfile::tempdir().unwrap();
+                let cache = SearchCache::open(&dir.path().join("b.sqlite")).unwrap();
+                let paths: Vec<String> = (0..n).map(|i| format!("/lib/f{}/img{i}.jpg", i % 40)).collect();
+                let prints: Vec<String> = (0..n).map(|i| if shared { "o".into() } else { format!("o{i}") }).collect();
+                let meta = r#"{"rating":3,"exif":{"maker":"SONY","model":"A7"}}"#;
+                let items: Vec<BatchItem> = (0..n)
+                    .map(|i| BatchItem { path: &paths[i], copy_key: "", original: &prints[i], edited: "e", capture_time_ns: None,
+                                         capture_time_raw: None, timezone_offset_seconds: None, metadata: Some(meta) })
+                    .collect();
+                let t = std::time::Instant::now();
+                // the folder-browse path hands over a folder's worth at a time
+                for chunk in items.chunks(500) {
+                    cache.upsert_metadata_batch(chunk).unwrap();
+                }
+                let dt = t.elapsed();
+                println!("  n={n:>6}  {:>9.1} ms  {:>7.1} us/row", dt.as_secs_f64() * 1e3, dt.as_secs_f64() * 1e6 / n as f64);
+            }
+        }
     }
 }
