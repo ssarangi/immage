@@ -29,6 +29,9 @@ export interface StatsApi {
   mapTile(z: number, x: number, y: number): Promise<ArrayBuffer>;
 }
 
+/** the one size the disk cache holds (the grid's THUMB_SIZE, the catalog thumbnail job's GRID_SIZE) */
+const CACHED_THUMB_SIZE = 240;
+
 export const commandsApi: StatsApi = {
   async query(req) { return normalizeReply(await commands.statsQuery({ yearMode: null, etag: null, ...req, places: req.places ? { bbox: null, heat: null, ...req.places } : null })); },
   coverage: () => commands.statsCoverage(),
@@ -39,8 +42,11 @@ export const commandsApi: StatsApi = {
     void import("@tauri-apps/api/event").then(({ listen }) => listen("stats_dirty", cb)).then((un) => { if (gone) un(); else off = un; }).catch(() => {});
     return () => { gone = true; off?.(); };
   },
-  async thumb(photo, size) {
-    const buf = await commands.thumbCached(photo.path, 0, size, false, false);
+  async thumb(photo, _size) {
+    // thumb_cached only answers for sizes the grid (and the catalog's thumbnail job) wrote
+    // to the disk cache, which is GRID_SIZE: asking for a larger one always misses and
+    // leaves every card an empty box. The cards scale the 240 px picture to their box.
+    const buf = await commands.thumbCached(photo.path, 0, CACHED_THUMB_SIZE, false, false);
     return buf.byteLength ? URL.createObjectURL(new Blob([buf], { type: "image/jpeg" })) : null;
   },
   async setPaused(paused) { await commands.searchPause(paused); },
