@@ -3141,3 +3141,6 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 /* the Grid button at the start of the bottom toolbar */
 .tool.grid-toggle { width: auto; padding: 0 9px; gap: 6px; border-radius: 7px; font-size: var(--fs-small); white-space: nowrap; }
 .tool.grid-toggle.on { background: var(--inset); color: var(--accent); }
+.cull-edge { position: absolute; pointer-events: auto; cursor: pointer; }
+.cull-edge.t, .cull-edge.b { left: -4px; right: -4px; height: 8px; } .cull-edge.t { top: -6px; } .cull-edge.b { bottom: -6px; }
+.cull-edge.l, .cull-edge.r { top: -4px; bottom: -4px; width: 8px; } .cull-edge.l { left: -6px; } .cull-edge.r { right: -6px; }

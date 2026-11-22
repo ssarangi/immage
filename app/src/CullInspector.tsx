@@ -77,7 +77,13 @@ export function CullOverlay({ critique, sel, onSel, decision }: {
           onClick={(e) => { e.stopPropagation(); onSel({ ...sel, pinned: sel.pinned === i ? null : i }); }}>
           {i + 1}{g.positive ? <Check size={9} aria-hidden="true" /> : <AlertCircle size={9} aria-hidden="true" />}
         </button>
-        {on && <span className="cull-region-label">{g.label}</span>}
+        {on && <>
+          {/* only the outline takes the pointer, so clicking inside the region still zooms the photo */}
+          {(["t", "r", "b", "l"] as const).map((side) => <span key={side} className={`cull-edge ${side}`}
+            onPointerEnter={() => onSel({ ...sel, hot: i })} onPointerLeave={() => onSel({ ...sel, hot: null })}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onSel({ ...sel, pinned: sel.pinned === i ? null : i }); }} />)}
+          <span className="cull-region-label">{g.label}</span></>}
       </div>;
     })}
   </div>;

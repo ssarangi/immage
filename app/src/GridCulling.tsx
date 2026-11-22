@@ -8,7 +8,7 @@ import { commands, type CullChange } from "./commands";
 import { CullOverlay, CullSide, NO_SEL, overrideDecision, useCritique, type Sel, type Tab } from "./CullInspector";
 import { reviewKey } from "./cullModel";
 import { cullState, useDecision, useReviewing } from "./cullStore";
-import { cullingKey, fallbackPhoto, pickCullingTarget, fitLightbox, keywordTargets, previewNeighbors, PreviewQueue, wheelZoom } from "./culling";
+import { cullingKey, fallbackPhoto, pickCritiqueTarget, pickCullingTarget, fitLightbox, keywordTargets, previewNeighbors, PreviewQueue, wheelZoom } from "./culling";
 import { LABEL_COLORS, fetchCachedThumb, fetchThumb, fileKind, type ImageEntry } from "./library";
 import { KeywordingPanel, parseKeyword } from "./Keywording";
 import { ZoomBar } from "./Toolbar";
@@ -169,7 +169,8 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
   useEffect(() => {
     const open = (event: Event) => {
       if (document.querySelector(".modal-backdrop")) return;
-      const target = cullingTarget((event as CustomEvent<{ imgid?: number }>).detail?.imgid) ?? images[0];
+      const asked = (event as CustomEvent<{ imgid?: number } | null>).detail?.imgid;
+      const target = pickCritiqueTarget(images, asked, hoveredPhoto(), anchor, selection, activeEditorId);
       if (!target) return;
       direction.current = 1; setTabChosen("critique"); wantCritique.current = target.imgid; setPhoto(target.imgid);
     };

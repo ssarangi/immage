@@ -360,3 +360,14 @@ test('the lightbox falls back to the photo now at the same position, else the la
   assert.equal(fallbackPhoto(list, 7), 12);
   assert.equal(fallbackPhoto([], 0), null);
 });
+
+import { pickCritiqueTarget } from '../app/src/culling.ts';
+test('critique target: asked, hovered, selection, then the open photo, then the first', () => {
+  const l = [{imgid: 1}, {imgid: 2}, {imgid: 3}];
+  assert.equal(pickCritiqueTarget(l, 3, null, null, new Set(), 2).imgid, 3);
+  assert.equal(pickCritiqueTarget(l, undefined, '2', null, new Set([1]), 3).imgid, 2);
+  assert.equal(pickCritiqueTarget(l, undefined, null, null, new Set([3]), 2).imgid, 3);
+  assert.equal(pickCritiqueTarget(l, undefined, null, null, new Set(), 2).imgid, 2);
+  assert.equal(pickCritiqueTarget(l, undefined, null, null, new Set(), 9).imgid, 1);
+  assert.equal(pickCritiqueTarget([], undefined, null, null, new Set(), undefined), undefined);
+});

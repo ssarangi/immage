@@ -91,6 +91,17 @@ export function pickCullingTarget<T extends { imgid: number }>(
     ?? images.find(i => i.imgid === anchor && selection.has(i.imgid)) ?? images.find(i => selection.has(i.imgid));
 }
 
+// The photo a critique opens on, when the menu or the shortcut gives none: the
+// one asked for, else the hovered one, the selection, the photo open in the
+// editor, and last the first in the grid.
+export function pickCritiqueTarget<T extends { imgid: number }>(
+  images: T[], asked: number | undefined, hovered: string | null | undefined, anchor: number | null,
+  selection: Set<number>, active: number | undefined,
+): T | undefined {
+  return pickCullingTarget(images, asked, hovered, anchor, selection)
+    ?? images.find(i => i.imgid === active) ?? images[0];
+}
+
 export function cullingKey(k: string, s: {
   photo: number | null; keywordsOpen: boolean; writing: boolean; blocked: boolean; modalOpen: boolean;
   hasTarget: boolean; hasCurrent: boolean;
