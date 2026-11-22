@@ -366,3 +366,17 @@ impl crate::catalog_meta_job::MetaFs for FakeFs {
         r
     }
 }
+
+impl crate::catalog_bench::BenchFs for FakeFs {
+    fn stat_file(&self, rel: &str, _deadline: Duration) -> Result<u64, FsError> {
+        if !self.online.load(Ordering::SeqCst) {
+            return Err(FsError::Io("not connected".into()));
+        }
+        let lat = *self.latency.lock().unwrap();
+        if !lat.is_zero() {
+            std::thread::sleep(lat);
+        }
+        let (dir, name) = rel.rsplit_once('/').unwrap_or(("", rel));
+        self.tree.lock().unwrap().get(dir).and_then(|l| l.iter().find(|e| e.name == name).map(|e| e.size)).ok_or(FsError::NotFound)
+    }
+}

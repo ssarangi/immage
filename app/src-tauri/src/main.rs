@@ -63,6 +63,7 @@ mod catalog_thumb_job;
 mod catalog_meta_fixtures;
 mod typed_catalog;
 #[cfg(test)]
+mod catalog_bench;
 mod catalog_fakefs;
 mod scrub;
 mod support_bundle;

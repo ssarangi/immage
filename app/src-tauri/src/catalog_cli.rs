@@ -13,7 +13,7 @@ use crate::catalog_db::{CatalogDb, CatalogError, FILE, SCHEMA_VERSION};
 use crate::catalog_meta_job::{coverage, run_metadata, MetaConfig, MetaProgress, MetaReport};
 use crate::catalog_thumb_job::{run_thumbnails, ThumbProgress, ThumbReport};
 use crate::catalog_thumbs::{self as thumbs, Signals, Store, ThumbConfig, WholeJpegs};
-use crate::catalog_scan::{run_scan, Progress, RealFs, ScanConfig, ScanControl, ScanOptions, ScanReport};
+use crate::catalog_scan::{run_scan, Progress, RealFs, ScanFs, ScanConfig, ScanControl, ScanOptions, ScanReport};
 use crate::catalog_sources::{
     self as sources, add_source, availability, find_source, host_hash, list_sources, reconcile, system_uuid_of, AddError,
     AddOptions, Availability, MountTable, Source,
@@ -90,6 +90,7 @@ struct Args {
 const WITH_VALUE: &[&str] = &[
     "--db", "--catalog", "--concurrency", "--name", "--policy", "--source", "--size", "--first-read", "--store", "--cache", "--cache-limit",
     "--whole-jpegs", "--decode-workers", "--quality", "--store-limit",
+    "--max-files", "--duration", "--latency-limit-ms", "--out", "--scratch", "--preview-sample",
 ];
 // in the spec but not built yet: refused with a clear message (exit 2)
 const RESERVED: &[&str] = &["--keep-annotations", "--read-only", "--regenerate"];
@@ -425,6 +426,21 @@ read error never marks a source offline or a photo missing. Ctrl-C keeps the pro
 Example: immage catalog thumbnails --all --whole-jpegs no
 ";
 
+const HELP_BENCH: &str = "\
+Usage: immage catalog bench <folder|source> [--concurrency N] [--max-files N] [--duration SECONDS]
+                            [--latency-limit-ms MS] [--preview-sample N] [--out BASE] [--scratch DIR]
+Measures how this folder behaves under the catalog's pipelines and writes BASE.json and BASE.txt
+(default immage-catalog-bench-<time>, in the current folder, which must not be inside the measured
+folder). It lists folders, stats files, reads the first 64 KB (then 256 KB, 1 MB when the format needs
+it) of up to --max-files photos (default 5000) and the embedded preview of a few per format, within
+--duration seconds (default 300). The folder is only read: nothing is written to it, the catalog is not
+opened, and SQLite write cost is measured in a scratch database in --scratch (default the system temp
+folder, which must be local) that is deleted. When a window of reads is slower than --latency-limit-ms
+(p95, default 500) it uses fewer workers and pauses; it does not stop. The report has counts, sizes,
+latencies and file extensions only, no file or folder names. Use a release build.
+Example: immage catalog bench /mnt/synology/Photos --max-files 3000 --duration 240
+";
+
 const HELP_SCAN: &str = "\
 Usage: immage catalog scan [<source>...|--all] [--light] [--concurrency N] [--metadata] [--metadata-only]
                            [--thumbnails] [--no-thumbnails]
@@ -461,6 +477,7 @@ pub fn run(raw: Vec<String>, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             "scan" | "rescan" => HELP_SCAN,
             "metadata" => HELP_METADATA,
             "thumbnails" => HELP_THUMBNAILS,
+            "bench" => HELP_BENCH,
             _ => HELP,
         });
         return EXIT_OK;
@@ -475,6 +492,7 @@ pub fn run(raw: Vec<String>, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
         "status" => cmd_status(&args, &mut o),
         "verify" => cmd_verify(&args, &mut o),
         "thumbnails" => cmd_thumbnails(&args, &mut o),
+        "bench" => cmd_bench(&args, &mut o),
         "rebuild" | "backup" | "restore" => {
             o.warn(format!("immage catalog {cmd} is not available in this version yet."));
             EXIT_FAIL
@@ -1478,6 +1496,119 @@ fn report_verify(o: &mut Out, checks: Vec<(String, bool, String, bool)>, fixed: 
 #[allow(dead_code)]
 pub fn log_host(host: &str) -> String {
     host_hash(host)
+}
+
+/// The folder `bench` measures: a directory path, or a source's folder.
+fn bench_target(args: &Args, o: &mut Out, key: &str) -> Result<PathBuf, i32> {
+    let p = Path::new(key);
+    if p.is_dir() {
+        return Ok(sources::normalize(p));
+    }
+    let list = CatalogDb::reader(&args.db_path()).ok().and_then(|c| list_sources(&c).ok()).unwrap_or_default();
+    let Some(src) = list.iter().find(|s| s.id.to_string() == key).or_else(|| list.iter().find(|s| s.name.eq_ignore_ascii_case(key))) else {
+        o.warn(format!("\"{key}\" is not a folder or a source."));
+        return Err(EXIT_USAGE);
+    };
+    match checked_availability(&MountTable::current(), src) {
+        Availability::Online { abs_root, .. } => Ok(PathBuf::from(abs_root)),
+        other => {
+            o.warn(format!("Source \"{}\" is {}.", src.name, other.word()));
+            Err(EXIT_OFFLINE)
+        }
+    }
+}
+
+fn cmd_bench(args: &Args, o: &mut Out) -> i32 {
+    use crate::catalog_bench::{mount_facts, render_report, run_bench, BenchConfig};
+    let Some(key) = args.positional.get(1) else {
+        o.warn("Give a folder or a source: immage catalog bench <folder|source>");
+        return EXIT_USAGE;
+    };
+    let num = |name: &str| -> Result<Option<f64>, String> {
+        match args.value(name).map(|v| v.parse::<f64>()) {
+            None => Ok(None),
+            Some(Ok(n)) if n > 0.0 => Ok(Some(n)),
+            _ => Err(format!("{name} needs a positive number.")),
+        }
+    };
+    let nums = (num("--max-files"), num("--duration"), num("--latency-limit-ms"), num("--preview-sample"));
+    let (max_files, duration, limit, psample) = match nums {
+        (Ok(a), Ok(b), Ok(c), Ok(d)) => (a, b, c, d),
+        (a, b, c, d) => {
+            for e in [a, b, c, d].into_iter().filter_map(Result::err) {
+                o.warn(e);
+            }
+            return EXIT_USAGE;
+        }
+    };
+    let root = match bench_target(args, o, key) {
+        Ok(r) => r,
+        Err(c) => return c,
+    };
+    let table = MountTable::current();
+    let mount = mount_facts(&table, &root);
+    let network = mount["network"] == true;
+    let scratch = args.value("--scratch").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    if table.top_at(&scratch).is_some_and(|e| sources::is_network_class(&e.fs_type)) {
+        o.warn("The scratch folder is on a network share; SQLite needs a local disk. Use --scratch <local folder>.");
+        return EXIT_USAGE;
+    }
+    let base = args.value("--out").map(PathBuf::from).unwrap_or_else(|| {
+        PathBuf::from(format!("immage-catalog-bench-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())))
+    });
+    let out_dir = base.parent().filter(|p| !p.as_os_str().is_empty()).map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
+    if std::fs::canonicalize(&out_dir).is_ok_and(|d| d.starts_with(std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone()))) {
+        o.warn("The report would be written inside the measured folder; Immage never writes there. Use --out <path elsewhere>.");
+        return EXIT_USAGE;
+    }
+    let fs = RealFs::new(root.clone());
+    if !fs.online() {
+        o.warn(format!("{} does not answer.", root.display()));
+        return EXIT_OFFLINE;
+    }
+    let mut cfg = BenchConfig::new(network, scratch);
+    if let Some(n) = args.concurrency {
+        cfg.concurrency = n;
+    }
+    if let Some(n) = max_files {
+        cfg.max_files = n as usize;
+    }
+    if let Some(n) = duration {
+        cfg.duration = Duration::from_secs_f64(n);
+    }
+    if let Some(n) = limit {
+        cfg.latency_limit_ms = n;
+    }
+    if let Some(n) = psample {
+        cfg.thumb_sample = n as usize;
+    }
+    if cfg!(debug_assertions) {
+        o.warn("This is a debug build: its numbers are not representative. Build with --release.");
+    }
+    install_sigint();
+    o.warn(format!("Benchmarking {} (read only, up to {} s, {} workers, Ctrl-C ends it and still writes the report).", mount["fs_type"].as_str().unwrap_or("folder"), cfg.duration.as_secs(), cfg.concurrency));
+    let v = match run_bench(&fs, &root, mount, &cfg, Box::new(|| INTERRUPTED.load(Ordering::SeqCst))) {
+        Ok(v) => v,
+        Err(e) => {
+            o.warn(e);
+            return EXIT_FAIL;
+        }
+    };
+    let _ = std::fs::create_dir_all(&out_dir);
+    let (jp, tp) = (base.with_extension("json"), base.with_extension("txt"));
+    let text = render_report(&v);
+    let json_text = serde_json::to_string_pretty(&v).unwrap_or_default();
+    if let Err(e) = std::fs::write(&jp, json_text).and_then(|_| std::fs::write(&tp, &text)) {
+        o.warn(format!("Cannot write the report: {e}"));
+        return EXIT_FAIL;
+    }
+    if o.json {
+        o.data(&v);
+    } else {
+        o.say(&text);
+    }
+    o.warn(format!("Wrote {} and {}", jp.display(), tp.display()));
+    if INTERRUPTED.load(Ordering::SeqCst) { EXIT_INTERRUPTED } else { EXIT_OK }
 }
 
 #[cfg(test)]
