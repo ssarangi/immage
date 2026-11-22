@@ -28,8 +28,14 @@ Improvements
   A confidence change applies to analysed photos at once. Keywords Immage added
   are marked **AI** in Keywording, listed under **AI keywords** in Find's Keywords
   row, and can be reviewed and removed one by one or all together without
-  touching your own keywords. The model is freed from memory when there is
-  nothing left to analyse.
+  touching your own keywords. The model runs in its own process that ends when
+  there is nothing left to analyse, so its memory (about 3 GB) returns to the
+  system, and it waits instead of starting when the Memory level or free memory
+  cannot hold it. Photos are tagged from their own file (a JPEG, or a RAW
+  file's embedded preview) instead of a full render, the most rated and recent
+  first, rejected ones never, and a photo that looks like one already analysed
+  in its folder takes that photo's tags (Share tags within a burst, on by
+  default).
 - **Statistics:** a new view, from the chart button on the rail or View >
   Statistics, shows your library as numbers: a coverage line, six summary
   cards, camera makers and bodies with their keeper rates, lenses with a

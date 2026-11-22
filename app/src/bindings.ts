@@ -134,6 +134,11 @@ export const commands = {
 	 *  the background without analysing again.
 	 */
 	keywordsThresholdSet: (percent: number) => __TAURI_INVOKE<number>("keywords_threshold_set", { percent }),
+	/**
+	 *  Turns burst sharing on or off: with it on, a photo that looks like one already analysed in its folder
+	 *  takes that photo's tags instead of being analysed itself.
+	 */
+	keywordsBurstSet: (on: boolean) => __TAURI_INVOKE<boolean>("keywords_burst_set", { on }),
 	/**  The keywords the analysis attached, most used first: the review list and Find's AI tags. */
 	keywordsAiList: (limit: number) => __TAURI_INVOKE<TagCount[]>("keywords_ai_list", { limit }),
 	/**  The keywords the analysis attached to one photo (Keywording marks them AI). */
@@ -1345,6 +1350,15 @@ export type KeywordsSummary = {
 	infer_ms: number | null,
 	/**  The engine's memory while it held the model, megabytes, once measured. */
 	memory_mb: number | null,
+	/**  Photos share a burst mate's tags instead of being analysed (setting). */
+	burst: boolean,
+	/**  Photos that carry tags copied from a burst mate. */
+	copied: number,
+	/**
+	 *  Why photos wait without being analysed: "level" (the Memory level cannot hold the model)
+	 *  or "free" (too little memory is free now).
+	 */
+	blocked: string | null,
 };
 
 export type LabelCounts = {

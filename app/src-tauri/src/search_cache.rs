@@ -23,6 +23,14 @@ pub struct Asset {
     pub original_fingerprint: String,
 }
 
+/// An asset with what its background analysis is ordered by.
+#[derive(Debug, Clone)]
+pub struct AssetMeta {
+    pub asset: Asset,
+    pub capture_time_ns: Option<i64>,
+    pub metadata_json: Option<String>,
+}
+
 /// The FROM and WHERE of a pending analysis, shared by `pending_analyses` and
 /// `pending_analysis_paths` so the count and the work never disagree.
 macro_rules! pending_analysis_from {
@@ -908,6 +916,28 @@ impl SearchCache {
         let rows = q
             .query_map(params![after, limit.min(1024)], |r| {
                 Ok(Asset { id: r.get(0)?, path: r.get(1)?, original_fingerprint: r.get(2)? })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+    /// Like `assets_after`, with what the Auto-keywords scan orders by: the capture time and the
+    /// metadata record (stars and the reject flag) of the photo itself, not a virtual copy.
+    pub fn assets_after_meta(&self, after: i64, limit: u32) -> Result<Vec<AssetMeta>, String> {
+        let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
+        let mut q = db
+            .prepare(
+                "SELECT a.id,a.path,a.original_fingerprint,v.capture_time_ns,v.metadata_json
+                 FROM assets a LEFT JOIN variants v ON v.asset_id=a.id AND v.copy_key=''
+                 WHERE a.id>?1 ORDER BY a.id LIMIT ?2",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = q
+            .query_map(params![after, limit.min(2048)], |r| {
+                Ok(AssetMeta {
+                    asset: Asset { id: r.get(0)?, path: r.get(1)?, original_fingerprint: r.get(2)? },
+                    capture_time_ns: r.get(3)?,
+                    metadata_json: r.get(4)?,
+                })
             })
             .map_err(|e| e.to_string())?;
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())

@@ -240,20 +240,34 @@ describe, and runs on this computer.
   automatically** is off until you turn it on, and cannot be turned on until
   the model is installed and whole. Once on, Immage works through the photos in
   your library's folders in the background, one at a time, on the processor (not
-  the graphics card): it renders each photo at analysis size, asks RAM++ what it
-  sees, stores every tag it is fairly sure of, and **adds the confident ones to
+  the graphics card): it takes each photo's picture from the file itself (a
+  JPEG, or the preview inside a RAW file, decoded once and shared; a photo with
+  no usable preview is rendered by the editing engine instead), asks RAM++ what
+  it sees, stores every tag it is fairly sure of, and **adds the confident ones to
   the photo's keywords and its XMP sidecar**, so Keywording, Find and other
   programs see them. Your own keywords are never changed or removed, and a
-  keyword you already had is never claimed as an automatic one. The model is
-  loaded when the first photo is analysed and freed again shortly after the
-  backlog is empty or the switch is turned off; while loaded it uses about 3 GB
-  of memory. The standing line below the switch says how many photos are
+  keyword you already had is never claimed as an automatic one. The model
+  runs in its own short-lived process, started by the first photo and ended
+  about 20 seconds after the backlog is empty or the switch is turned off, so
+  its roughly 3 GB of memory goes back to the system. It is not started when the
+  Memory level (Preferences > Performance) allows less than about 3.6 GB or
+  less than that is free; the photos then wait, untouched, and the line below
+  the switch says why. The order of work is the photos with the most stars
+  first, then the most recent, then those Auto Cull marked blurry; rejected
+  photos are not analysed. The standing line below the switch says how many photos are
   analysed and how many wait, and the one **Pause / Resume** covers it, as it does
   Smart search.
   - **Keyword confidence** (40 to 95%, 70% by default): a tag becomes a keyword
     when the model is at least this sure of it. Lower finds more tags, and more
     wrong ones. Changing it applies to photos already analysed at once, without
     analysing them again, adding or taking off only keywords Immage added.
+  - **Share tags within a burst** (on by default): a photo that looks like one
+    already analysed in its folder (the same near-duplicate match Auto Cull
+    uses) takes that photo's tags instead of being analysed again, so a burst
+    costs one analysis. A photo that was analysed itself always keeps its own
+    tags, and a copied photo can be re-analysed by changing the file. The row
+    says how many photos took tags this way. Turn it off to analyse every
+    photo on its own.
   - **Keyword language** and speed: the line shows the measured time per photo on
     this computer (about two seconds for the model itself on an 8-core
     processor) and the memory used while the model is loaded.

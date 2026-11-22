@@ -2,19 +2,33 @@
 // Copyright (C) 2026 the Immage authors
 
 //! Auto-keywords in the background: finds photos of the library that have no result for
-//! the current model, runs RAM++ on each in the engine (one serial CPU worker, engine/tags.c),
+//! the current model, runs RAM++ on each (in a short-lived helper engine process, engine/tags.c),
 //! stores the tags (tags_store.rs) and attaches the confident ones as darktable keywords.
 //! It runs only while the model is installed AND the "Add keywords automatically" switch is
 //! on, on the shared analysis queue (so the one Pause covers it), never more than two photos
-//! ahead of the worker, and frees the 1.8 GB model when the backlog is empty.
+//! ahead of the worker.
+//!
+//! The 1.8 GB model lives in its own `darktable-engine` process, started by the first photo and
+//! ended 20 s after the backlog is empty (or the switch goes off), so its memory goes back to
+//! the operating system; it is not started when the Memory level or the free memory cannot
+//! hold it (the photo stays pending and the page says why).
+//!
+//! A photo's picture comes from the file itself (a JPEG, or the preview inside a RAW,
+//! analysis_image.rs), decoded once and shared; only a photo with no usable preview is rendered
+//! by the main engine. With the burst setting on, a photo that looks like one already analysed in
+//! its folder (cull.rs's perceptual hash) takes that photo's tags instead of being analysed.
+//! The scan orders the backlog: rated and recent photos first, rejected ones never, ones Auto
+//! Cull marked blurry last.
 use crate::{
+    analysis_image::Shared,
     analysis_queue::{AnalysisQueue, Job},
-    engine::Tagged,
+    engine::{Engine, Tagged},
     frame_output::FrameOutput,
+    memory_budget,
     ram_models::{self, Models},
     search_analysis::{library_selection, now_ms, selected, AnalysisProgress, SHARE_QUIET},
-    search_cache::SearchCache,
-    tags_store::TagStore,
+    search_cache::{AssetMeta, SearchCache},
+    tags_store::{Origin, TagStore},
 };
 use serde_json::{json, Value};
 use std::{
@@ -22,7 +36,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering},
         Arc, Mutex,
     },
     time::{Duration, Instant},
@@ -38,8 +52,17 @@ const ACTIVE_FOR_MS: u64 = 15_000;
 const PAGE: u32 = 256;
 /// Photos handed to the queue at once; the engine worker takes one at a time.
 const AHEAD: usize = 2;
-/// The model is freed after this long without a photo to analyse.
-const UNLOAD_AFTER: Duration = Duration::from_secs(45);
+/// Photos looked at in one scan, to put the most wanted first.
+const WINDOW: usize = 1500;
+/// The helper process is ended after this long without a photo to analyse.
+const UNLOAD_AFTER: Duration = Duration::from_secs(20);
+/// What the model needs while loaded, in megabytes (measured: 2.8 to 3.3 GB resident, plus a picture).
+pub const NEED_MB: u64 = 3600;
+
+/// Why the helper was not started (0 means it was, or no photo asked).
+pub const BLOCK_NONE: u8 = 0;
+pub const BLOCK_LEVEL: u8 = 1;
+pub const BLOCK_FREE: u8 = 2;
 
 /// What the status poll reads: memory only, like the Smart search service's.
 pub struct Progress {
@@ -49,10 +72,15 @@ pub struct Progress {
     running: AtomicUsize,
     last_work_ms: AtomicU64,
     wanted_ms: AtomicU64,
-    /// Milliseconds per photo of the last one analysed (the engine's inference alone).
+    /// Milliseconds of the last inference.
     last_infer_ms: AtomicU64,
-    /// Peak resident memory of the app, in kB, last time a photo finished (Linux).
+    /// Resident memory of the helper process, kB, last time a photo finished.
     last_rss_kb: AtomicU64,
+    blocked: AtomicU8,
+    /// Photos analysed from their own file / rendered by the engine / given a burst mate's tags.
+    from_file: AtomicU64,
+    rendered: AtomicU64,
+    copied: AtomicU64,
 }
 impl Progress {
     fn new() -> Self {
@@ -65,6 +93,10 @@ impl Progress {
             wanted_ms: AtomicU64::new(0),
             last_infer_ms: AtomicU64::new(0),
             last_rss_kb: AtomicU64::new(0),
+            blocked: AtomicU8::new(BLOCK_NONE),
+            from_file: AtomicU64::new(0),
+            rendered: AtomicU64::new(0),
+            copied: AtomicU64::new(0),
         }
     }
     fn count_requested(&self) -> bool {
@@ -92,10 +124,12 @@ impl Drop for RunGuard {
 pub struct Control {
     stop: Arc<AtomicBool>,
     progress: Arc<Progress>,
+    helper: Arc<Helper>,
 }
 impl Control {
     pub fn stop(&self) {
         self.stop.store(true, Ordering::Release);
+        self.helper.end();
     }
     /// For the status command: memory only. Asking also keeps the backlog counted for a while.
     pub fn status(&self, paused: bool) -> AnalysisProgress {
@@ -113,11 +147,26 @@ impl Control {
             paused,
         }
     }
-    /// The last measured inference time and process memory, for the card's speed line.
+    /// The last measured inference time and the helper's memory, for the card's speed line.
     pub fn speed(&self) -> (Option<u32>, Option<u64>) {
         let ms = self.progress.last_infer_ms.load(Ordering::Acquire);
         let kb = self.progress.last_rss_kb.load(Ordering::Acquire);
         ((ms > 0).then_some(ms as u32), (kb > 0).then_some(kb))
+    }
+    /// Why photos are waiting without being analysed: the Memory level is too low, or too little is free.
+    pub fn blocked(&self) -> u8 {
+        self.progress.blocked.load(Ordering::Acquire)
+    }
+    #[cfg(test)]
+    /// The helper process's id while it runs (it holds the model), 0 otherwise.
+    pub fn helper_pid(&self) -> u32 {
+        if self.helper.running() { self.helper.pid.load(Ordering::Acquire) } else { 0 }
+    }
+    #[cfg(test)]
+    /// Photos analysed from their file, rendered by the engine, and given a burst mate's tags.
+    pub fn sources(&self) -> (u64, u64, u64) {
+        let p = &self.progress;
+        (p.from_file.load(Ordering::Acquire), p.rendered.load(Ordering::Acquire), p.copied.load(Ordering::Acquire))
     }
 }
 impl Drop for Control {
@@ -126,22 +175,85 @@ impl Drop for Control {
     }
 }
 
+/// The helper `darktable-engine` that holds the model. Started by the first photo that needs it,
+/// ended by `end` (a quit and exit), so its memory returns to the operating system.
+pub struct Helper {
+    bin: PathBuf,
+    dir: PathBuf,
+    engine: Mutex<Option<Engine>>,
+    pid: AtomicU32,
+}
+impl Helper {
+    fn new(bin: PathBuf, runtime: &Path) -> Self {
+        Helper { bin, dir: runtime.join("tags-engine"), engine: Mutex::new(None), pid: AtomicU32::new(0) }
+    }
+    fn running(&self) -> bool {
+        self.engine.lock().unwrap().is_some()
+    }
+    fn tagged(&self) -> Result<Tagged, String> {
+        let mut engine = self.engine.lock().unwrap();
+        if engine.is_none() {
+            let started = Engine::spawn(&self.bin, &self.dir, &self.dir.join("models")).map_err(|e| format!("cannot start the keyword engine: {e}"))?;
+            self.pid.store(started.pid().unwrap_or(0), Ordering::Release);
+            *engine = Some(started);
+        }
+        Ok(engine.as_ref().unwrap().tagged())
+    }
+    /// The helper's resident memory in kB (Linux), 0 when it is not running or elsewhere.
+    pub fn rss_kb(&self) -> u64 {
+        rss_of(self.pid.load(Ordering::Acquire))
+    }
+    pub fn end(&self) {
+        // dropping the engine quits the process
+        let taken = self.engine.lock().unwrap().take();
+        drop(taken);
+        self.pid.store(0, Ordering::Release);
+    }
+}
+
+/// Resident memory of a process in kB from /proc (Linux); 0 for none, or on other systems.
+pub fn rss_of(pid: u32) -> u64 {
+    if pid == 0 || !cfg!(target_os = "linux") {
+        return 0;
+    }
+    std::fs::read_to_string(format!("/proc/{pid}/status"))
+        .ok()
+        .and_then(|s| s.lines().find_map(|l| l.strip_prefix("VmRSS:").and_then(|v| v.split_whitespace().next()).and_then(|v| v.parse().ok())))
+        .unwrap_or(0)
+}
+
+/// Whether the model can be loaded now: the Memory level's budget must hold it, and so must what is free.
+pub fn memory_gate(total_mb: u64, available_mb: u64, level: &str) -> u8 {
+    if memory_budget::compute(total_mb, level).budget_mb < NEED_MB {
+        BLOCK_LEVEL
+    } else if available_mb < NEED_MB {
+        BLOCK_FREE
+    } else {
+        BLOCK_NONE
+    }
+}
+fn memory_now(runtime: &Path) -> u8 {
+    use sysinfo::{MemoryRefreshKind, RefreshKind, System};
+    let sys = System::new_with_specifics(RefreshKind::nothing().with_memory(MemoryRefreshKind::nothing().with_ram()));
+    memory_gate(sys.total_memory() >> 20, sys.available_memory() >> 20, &crate::engine::resource_level(runtime))
+}
+
 struct Service {
     cache: Arc<SearchCache>,
     models: Arc<Models>,
     store: Arc<TagStore>,
     queue: Arc<AnalysisQueue>,
     engine: Tagged,
+    helper: Arc<Helper>,
     apply: Applier,
     output: Arc<FrameOutput>,
+    shared: Shared,
     runtime: PathBuf,
     cursor: AtomicI64,
     stop: Arc<AtomicBool>,
     progress: Arc<Progress>,
     /// Paths handed to the queue and not finished; at most AHEAD.
     inflight: Mutex<HashSet<String>>,
-    /// The engine holds the model (a photo was analysed and no unload was sent since).
-    loaded: AtomicBool,
     idle_since: Mutex<Option<Instant>>,
 }
 
@@ -152,12 +264,14 @@ pub fn start(
     store: Arc<TagStore>,
     queue: Arc<AnalysisQueue>,
     engine: Tagged,
+    engine_bin: PathBuf,
     apply: Applier,
     output: Arc<FrameOutput>,
     runtime: PathBuf,
 ) -> Control {
     let stop = Arc::new(AtomicBool::new(false));
     let progress = Arc::new(Progress::new());
+    let helper = Arc::new(Helper::new(engine_bin, &runtime));
     if let Some(cache) = cache {
         let service = Arc::new(Service {
             cache,
@@ -165,19 +279,44 @@ pub fn start(
             store,
             queue,
             engine,
+            helper: helper.clone(),
             apply,
             output,
+            shared: Shared::new(),
             runtime,
             cursor: AtomicI64::new(0),
             stop: stop.clone(),
             progress: progress.clone(),
             inflight: Mutex::default(),
-            loaded: AtomicBool::new(false),
             idle_since: Mutex::new(None),
         });
         std::thread::spawn(move || service.run());
     }
-    Control { stop, progress }
+    Control { stop, progress, helper }
+}
+
+/// How wanted a photo is: rated and recent first, ones Auto Cull marked blurry last.
+/// Rejected photos never get this far.
+pub fn priority(metadata_json: Option<&str>, capture_ns: Option<i64>, blurry: bool) -> Option<(u8, i64, i64)> {
+    let meta: Value = metadata_json.and_then(|m| serde_json::from_str(m).ok()).unwrap_or(Value::Null);
+    if meta["rejected"].as_bool() == Some(true) {
+        return None;
+    }
+    let rating = meta["rating"].as_i64().unwrap_or(0).clamp(0, 5);
+    Some((u8::from(!blurry), rating, capture_ns.unwrap_or(0)))
+}
+
+/// Paths a finished Auto Cull marked blurry (and the user has not overridden), read from cull.sqlite.
+fn blurry_paths(runtime: &Path) -> HashSet<String> {
+    let path = runtime.join("cull.sqlite");
+    if !path.is_file() {
+        return HashSet::new();
+    }
+    let Ok(db) = rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY) else { return HashSet::new() };
+    let Ok(mut q) = db.prepare("SELECT DISTINCT path FROM cull_decisions WHERE reason='blurry' AND COALESCE(final_status,proposed)='reject'") else {
+        return HashSet::new();
+    };
+    q.query_map([], |r| r.get::<_, String>(0)).map(|rows| rows.flatten().collect()).unwrap_or_default()
 }
 
 impl Service {
@@ -211,17 +350,18 @@ impl Service {
                 }
             } else {
                 p.pending.store(-1, Ordering::Release);
+                p.blocked.store(BLOCK_NONE, Ordering::Release);
                 last_scan = None;
                 last_count = None;
             }
-            self.maybe_unload(installed && enabled);
+            self.maybe_end_helper(installed && enabled);
             std::thread::sleep(Duration::from_secs(1));
         }
     }
 
-    // frees the model once there has been nothing to analyse for a while, or the switch is off
-    fn maybe_unload(self: &Arc<Self>, active: bool) {
-        if !self.loaded.load(Ordering::Acquire) {
+    // ends the helper process once there has been nothing to analyse for a while, or the switch is off
+    fn maybe_end_helper(&self, active: bool) {
+        if !self.helper.running() {
             return;
         }
         let busy = !self.inflight.lock().unwrap().is_empty();
@@ -234,12 +374,7 @@ impl Service {
         if !active || since.elapsed() >= UNLOAD_AFTER {
             *idle = None;
             drop(idle);
-            self.loaded.store(false, Ordering::Release);
-            let next = self.clone();
-            self.queue.submit("tags:unload".into(), move |_| {
-                let tag = next.engine.tag();
-                let _ = next.engine.request(tag, json!({"cmd":"tags_analyze","unload":true}));
-            });
+            self.helper.end();
         }
     }
 
@@ -308,33 +443,48 @@ impl Service {
                 return Ok(());
             }
         }
-        let mut after = self.cursor.load(Ordering::Acquire);
-        for _ in 0..64 {
+        let blurry = blurry_paths(&self.runtime);
+        let start = self.cursor.load(Ordering::Acquire);
+        let (mut after, mut lead, mut leading) = (start, start, true);
+        let mut wanted: Vec<((u8, i64, i64), AssetMeta)> = Vec::new();
+        let mut end = false;
+        while wanted.len() < WINDOW && !end {
             if job.cancelled() || self.stop.load(Ordering::Acquire) {
                 return Ok(());
             }
-            let rows = self.cache.assets_after(after, 64)?;
-            if rows.is_empty() {
-                self.cursor.store(0, Ordering::Release);
-                return Ok(());
-            }
-            for row in &rows {
-                after = row.id;
-                let path = Path::new(&row.path);
-                if !selected(path, &selection)
-                    || self.store.is_current(&row.path, &row.original_fingerprint, ram_models::MODEL_VERSION)?
-                    || (quiet < SHARE_QUIET && crate::volumes::on_network(path))
-                {
+            let rows = self.cache.assets_after_meta(after, PAGE)?;
+            end = (rows.len() as u32) < PAGE;
+            for m in rows {
+                after = m.asset.id;
+                let a = &m.asset;
+                let path = Path::new(&a.path);
+                let current = !selected(path, &selection) || self.store.is_current(&a.path, &a.original_fingerprint, ram_models::MODEL_VERSION)?;
+                if current {
+                    if leading {
+                        lead = a.id;
+                    }
                     continue;
                 }
-                if !self.offer(row.path.clone(), Some(row.original_fingerprint.clone())) {
-                    // the worker is busy: continue from this photo at the next scan
-                    self.cursor.store(row.id - 1, Ordering::Release);
-                    return Ok(());
+                leading = false;
+                if quiet < SHARE_QUIET && crate::volumes::on_network(path) {
+                    continue;
+                }
+                if let Some(p) = priority(m.metadata_json.as_deref(), m.capture_time_ns, blurry.contains(&a.path)) {
+                    wanted.push((p, m));
                 }
             }
-            self.cursor.store(after, Ordering::Release);
         }
+        if wanted.is_empty() {
+            self.cursor.store(if end { 0 } else { lead }, Ordering::Release);
+            return Ok(());
+        }
+        wanted.sort_by(|a, b| b.0.cmp(&a.0));
+        for (_, m) in wanted {
+            if job.cancelled() || !self.offer(m.asset.path, Some(m.asset.original_fingerprint)) {
+                break;
+            }
+        }
+        self.cursor.store(lead, Ordering::Release);
         Ok(())
     }
 
@@ -344,6 +494,52 @@ impl Service {
             return None;
         }
         crate::cache::listed_metadata_fingerprints(&Mutex::new(crate::cache::Listed::default()), p, 0).map(|(original, _)| original)
+    }
+
+    /// The photo's small picture: from its own file when it has a usable one, else rendered by
+    /// the main engine (and kept for the next analysis of this photo).
+    fn picture(&self, path: &str, fingerprint: &str, imgid: &dyn Fn() -> i64) -> Result<Arc<image::RgbImage>, String> {
+        if let Some((img, _)) = self.shared.get(path, fingerprint) {
+            self.progress.from_file.fetch_add(1, Ordering::AcqRel);
+            return Ok(img);
+        }
+        let tag = self.engine.tag();
+        let out = self.output.path(&format!("tags-{tag}.jpg"));
+        let preview = (|| {
+            self.engine.request(tag, json!({"cmd":"analysis_preview","imgid":imgid(),"subject":"original","out":out}))?;
+            FrameOutput::read(&out).map_err(|e| e.to_string())
+        })();
+        self.output.remove(&out);
+        let mut reader = image::ImageReader::new(std::io::Cursor::new(preview?));
+        reader.set_format(image::ImageFormat::Jpeg);
+        let mut limits = image::Limits::default();
+        limits.max_image_width = Some(1024);
+        limits.max_image_height = Some(1024);
+        limits.max_alloc = Some(16 * 1024 * 1024);
+        reader.limits(limits);
+        let img = Arc::new(reader.decode().map_err(|e| e.to_string())?.to_rgb8());
+        self.shared.put(path, fingerprint, img.clone());
+        self.progress.rendered.fetch_add(1, Ordering::AcqRel);
+        Ok(img)
+    }
+
+    /// The analysed photo of the same folder this one looks like (a burst), if any.
+    fn burst_mate(&self, path: &str, hash: &str) -> Option<String> {
+        let mine = crate::cull::hash_from_string(hash)?;
+        let limit = crate::cull_plan::CullSettings::default().similarity_threshold;
+        let dir = Path::new(path).parent()?.to_str()?;
+        let mut best: Option<(u32, String)> = None;
+        for (p, h) in self.store.representatives(dir, ram_models::MODEL_VERSION).ok()? {
+            if p == path {
+                continue;
+            }
+            if let Some(d) = crate::cull::hash_from_string(&h).map(|o| mine.dist(&o)).filter(|d| *d <= limit) {
+                if best.as_ref().is_none_or(|(n, _)| d < *n) {
+                    best = Some((d, p));
+                }
+            }
+        }
+        best.map(|(_, p)| p)
     }
 
     fn analyze(&self, path: &str, fingerprint: &str, job: &Job) -> Result<(), String> {
@@ -358,43 +554,59 @@ impl Service {
         }
         let (root, vocabulary) = self.models.package()?;
         let running = RunGuard::new(&self.progress);
-        let imgid = self.engine.cached_photo(path, 0);
-        let tag = self.engine.tag();
-        let out = self.output.path(&format!("tags-{tag}.jpg"));
-        let preview = (|| {
-            self.engine.request(tag, json!({"cmd":"analysis_preview","imgid":imgid,"subject":"original","out":out}))?;
-            FrameOutput::read(&out).map_err(|e| e.to_string())
-        })();
-        self.output.remove(&out);
-        let preview = preview?;
+        let imgid = std::cell::Cell::new(0i64);
+        let imgid_of = || {
+            if imgid.get() == 0 {
+                imgid.set(self.engine.cached_photo(path, 0));
+            }
+            imgid.get()
+        };
+        let rgb = self.picture(path, fingerprint, &imgid_of)?;
         if job.cancelled() {
             return Ok(());
         }
-        let mut reader = image::ImageReader::new(std::io::Cursor::new(preview));
-        reader.set_format(image::ImageFormat::Jpeg);
-        let mut limits = image::Limits::default();
-        limits.max_image_width = Some(1024);
-        limits.max_image_height = Some(1024);
-        limits.max_alloc = Some(16 * 1024 * 1024);
-        reader.limits(limits);
-        let rgb = reader.decode().map_err(|e| e.to_string())?.to_rgb8();
+        let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+        // the near-duplicate hash and quality of this picture: found a burst mate, or kept for later ones
+        let analysed = crate::cull::analyze(&rgb);
+        let hash = crate::cull::hash_to_string(&analysed.hash);
+        if self.models.burst() {
+            if let Some(mate) = self.burst_mate(path, &hash) {
+                let tags: Vec<(String, f32)> =
+                    self.store.tags(&mate)?.into_iter().filter(|t| t.confidence > 0.0).map(|t| (t.name, t.confidence)).collect();
+                let origin = Origin { hash: Some(&hash), quality: Some(analysed.result.quality_score), propagated_from: Some(&mate) };
+                if let Some(true) = job.commit(|| self.store.put_with(path, fingerprint, ram_models::MODEL_VERSION, &tags, secs, &origin)).transpose()? {
+                    self.progress.copied.fetch_add(1, Ordering::AcqRel);
+                    running.stored();
+                    return self.decide(path, imgid_of());
+                }
+                return Ok(());
+            }
+        }
+        // the model's own process, if the memory allows it
+        if !self.helper.running() {
+            let block = memory_now(&self.runtime);
+            self.progress.blocked.store(block, Ordering::Release);
+            if block != BLOCK_NONE {
+                return Ok(());
+            }
+        }
+        self.progress.blocked.store(BLOCK_NONE, Ordering::Release);
+        let helper = self.helper.tagged()?;
         let tensor = ram_models::preprocess(rgb.as_raw(), rgb.width(), rgb.height())?;
-        let logits = infer(&self.engine, &self.runtime, &root, &tensor, &self.progress)?;
-        self.loaded.store(true, Ordering::Release);
+        let logits = infer(&helper, &self.runtime, &root, &tensor, &self.progress)?;
         let found = vocabulary.select(&logits)?;
         if job.cancelled() || self.fingerprint_now(path).as_deref() != Some(fingerprint) {
             return Ok(());
         }
         let stored: Vec<(String, f32)> = found.iter().map(|t| (t.name.clone(), t.confidence)).collect();
-        let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
-        let committed = job.commit(|| self.store.put(path, fingerprint, ram_models::MODEL_VERSION, &stored, secs));
-        match committed {
-            Some(r) => r?,
+        let origin = Origin { hash: Some(&hash), quality: Some(analysed.result.quality_score), propagated_from: None };
+        match job.commit(|| self.store.put_with(path, fingerprint, ram_models::MODEL_VERSION, &stored, secs, &origin)) {
+            Some(r) => r.map(|_| ())?,
             None => return Ok(()),
         }
         running.stored();
-        self.progress.last_rss_kb.store(resident_kb(), Ordering::Release);
-        self.decide(path, imgid)
+        self.progress.last_rss_kb.store(self.helper.rss_kb(), Ordering::Release);
+        self.decide(path, imgid_of())
     }
 
     fn reapply(&self, path: &str, job: &Job) -> Result<(), String> {
@@ -424,7 +636,7 @@ impl Service {
     }
 }
 
-/// One RAM++ inference in the engine's CPU worker; returns the logits.
+/// One RAM++ inference in the helper engine's CPU worker; returns the logits.
 fn infer(engine: &Tagged, runtime: &Path, root: &Path, tensor: &[f32], progress: &Progress) -> Result<Vec<f32>, String> {
     if tensor.len() != 3 * 384 * 384 || tensor.iter().any(|n| !n.is_finite()) {
         return Err("Invalid RAM++ tensor".into());
@@ -463,44 +675,55 @@ fn infer(engine: &Tagged, runtime: &Path, root: &Path, tensor: &[f32], progress:
         .collect()
 }
 
-/// Resident memory of the engine child process in kB (Linux, read from /proc); 0 elsewhere.
-/// The engine holds the model, so its figure is the one that matters.
-fn resident_kb() -> u64 {
-    #[cfg(target_os = "linux")]
-    {
-        // the engine child is the one holding the model; ask the process table for its children
-        let me = std::process::id();
-        let mut total = 0u64;
-        if let Ok(entries) = std::fs::read_dir("/proc") {
-            for entry in entries.flatten() {
-                let Some(pid) = entry.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else { continue };
-                let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else { continue };
-                let after = stat.rsplit(')').next().unwrap_or("");
-                let fields: Vec<&str> = after.split_whitespace().collect();
-                if fields.get(1).and_then(|p| p.parse::<u32>().ok()) == Some(me) && stat.contains("darktable-engin") {
-                    if let Ok(status) = std::fs::read_to_string(format!("/proc/{pid}/status")) {
-                        total += status
-                            .lines()
-                            .find_map(|l| l.strip_prefix("VmRSS:"))
-                            .and_then(|v| v.split_whitespace().next())
-                            .and_then(|v| v.parse::<u64>().ok())
-                            .unwrap_or(0);
-                    }
-                }
-            }
-        }
-        total
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        0
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::Instant;
+
+    #[test]
+    fn the_backlog_is_ordered_by_stars_then_recency_with_blurry_last_and_rejected_never() {
+        let meta = |rating: i64, rejected: bool| Some(format!("{{\"rating\":{rating},\"rejected\":{rejected}}}"));
+        let p = |m: Option<String>, t: Option<i64>, blurry| priority(m.as_deref(), t, blurry);
+        assert_eq!(p(meta(0, true), Some(5), false), None, "rejected photos are never analysed");
+        let five_old = p(meta(5, false), Some(1), false).unwrap();
+        let five_new = p(meta(5, false), Some(9), false).unwrap();
+        let unrated_new = p(None, Some(99), false).unwrap();
+        let blurry_five = p(meta(5, false), Some(99), true).unwrap();
+        let mut order = vec![("unrated_new", unrated_new), ("blurry_five", blurry_five), ("five_old", five_old), ("five_new", five_new)];
+        order.sort_by(|a, b| b.1.cmp(&a.1));
+        assert_eq!(order.iter().map(|o| o.0).collect::<Vec<_>>(), ["five_new", "five_old", "unrated_new", "blurry_five"]);
+        // a record that is missing or garbled counts as unrated, not as an error
+        assert_eq!(p(Some("not json".into()), None, false), Some((1, 0, 0)));
+    }
+
+    #[test]
+    fn blurry_photos_are_read_from_the_cull_database_unless_the_user_overrode_them() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(blurry_paths(dir.path()).is_empty(), "no cull database, no blurry photos");
+        let db = rusqlite::Connection::open(dir.path().join("cull.sqlite")).unwrap();
+        db.execute_batch(
+            "CREATE TABLE cull_decisions(path TEXT, reason TEXT, proposed TEXT, final_status TEXT);
+             INSERT INTO cull_decisions VALUES('/a.jpg','blurry','reject',NULL),('/b.jpg','blurry','reject','keep'),
+               ('/c.jpg','unique','keep',NULL),('/d.jpg','duplicateOf','reject',NULL);",
+        )
+        .unwrap();
+        drop(db);
+        let got = blurry_paths(dir.path());
+        assert!(got.contains("/a.jpg") && got.len() == 1, "{got:?}");
+    }
+
+    #[test]
+    fn the_model_is_not_started_when_the_memory_level_or_free_memory_cannot_hold_it() {
+        // 16 GB, default level: a budget of 8 GB, 10 GB free
+        assert_eq!(memory_gate(16384, 10_000, "default"), BLOCK_NONE);
+        // the small level leaves 2 GB of a 16 GB machine: refused by the level, whatever is free
+        assert_eq!(memory_gate(16384, 12_000, "small"), BLOCK_LEVEL);
+        // the level allows it but the machine is busy
+        assert_eq!(memory_gate(16384, 2_000, "default"), BLOCK_FREE);
+        // a 4 GB machine cannot hold it at any level
+        assert_eq!(memory_gate(4096, 3_000, "large"), BLOCK_LEVEL);
+        assert_eq!(rss_of(0), 0);
+    }
 
     fn wait(what: &str, limit: Duration, mut done: impl FnMut() -> bool) {
         let start = Instant::now();
@@ -561,10 +784,13 @@ mod tests {
         assert!(models.installed(), "the pack is not installed under IMMAGE_RAM_BASE");
         let store = Arc::new(TagStore::open(&temp.path().join("tags.sqlite")).unwrap());
         let queue = Arc::new(AnalysisQueue::new(2, 256));
-        let control = start(Some(cache), models.clone(), store.clone(), queue, tagged.clone(), apply.clone(), Arc::new(FrameOutput::new(&runtime)), runtime.clone());
+        let control = start(Some(cache), models.clone(), store.clone(), queue, tagged.clone(), wrapper.clone(), apply.clone(), Arc::new(FrameOutput::new(&runtime)), runtime.clone());
 
+        let main_pid = engine.lock().unwrap().pid().unwrap();
+        let main_before = rss_of(main_pid) / 1024;
         // 1. switch off: nothing is read, requested or stored
         std::thread::sleep(Duration::from_secs(6));
+        assert_eq!(control.helper_pid(), 0, "the model's process started with the switch off");
         assert_eq!(store.totals().unwrap().photos, 0, "analysis ran with the switch off");
         assert!(!runtime.join("tags-inputs").exists(), "a tensor was written with the switch off");
         assert!(!control.status(false).enabled);
@@ -589,6 +815,15 @@ mod tests {
         }
         assert!(xmp_checked > 0);
         let (infer_ms, rss_kb) = control.speed();
+        let during = rss_of(control.helper_pid()) / 1024;
+        let (from_file, rendered, copied) = control.sources();
+        println!("sources: {from_file} from the file, {rendered} rendered, {copied} copied from a burst mate; helper RSS during {during} MB, main engine {main_before} MB before / {} MB now", rss_of(main_pid) / 1024);
+        // the helper ends itself when the backlog is empty: the model's memory goes back to the system
+        let helper_pid = control.helper_pid();
+        assert_ne!(helper_pid, 0);
+        wait("the helper process to end", Duration::from_secs(60), || control.helper_pid() == 0);
+        wait("its process to exit", Duration::from_secs(20), || !std::path::Path::new(&format!("/proc/{helper_pid}")).exists());
+        println!("helper RSS after: process gone (was {during} MB); main engine {} MB", rss_of(main_pid) / 1024);
         println!("{} photos in {:.1} s ({:.1} s each incl. preview and load); last inference {:?} ms; engine memory {:?} MB; {} keywords on {} photos at 70%",
                  paths.len(), total.as_secs_f64(), total.as_secs_f64() / paths.len() as f64, infer_ms, rss_kb.map(|k| k / 1024), at_70.applied, at_70.keyworded);
 

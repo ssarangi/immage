@@ -29,7 +29,7 @@ export const RAM: PackInfo = {
 };
 const ramInstalled: PackInfo = { ...RAM, state: "installed", bytes_on_disk: RAM_BYTES, bytes_left: 0, files_ok: 3, verified_at: verified, download_consent: true, analysis_consent: true };
 const kw = (o: Partial<KeywordsSummary> = {}): KeywordsSummary => ({ photos: 1204, keyworded: 1190, keywords: 12418, threshold: 70, min_threshold: 40, max_threshold: 95,
-  infer_ms: 1400, memory_mb: 2900, ...o });
+  infer_ms: 1400, memory_mb: 2900, burst: true, copied: 212, blocked: null, ...o });
 
 export type Fixture = { packs: PackInfo[]; work: WorkInput | null; smartOn: boolean; flash?: string; dialog?: Dialog;
   keywordsOn?: boolean; keywordsWork?: WorkInput | null; keywords?: KeywordsSummary | null; aiTags?: TagCount[] };
@@ -66,6 +66,8 @@ export const STATES: Record<string, Fixture> = {
   kwpaused: { packs: [installed, ramInstalled], work: idle, smartOn: true, keywordsOn: true, keywordsWork: { ...idle, paused: true, pending: 616, analysed: 1204 }, keywords: kw({ threshold: 85 }) },
   kwrepair: { packs: [installed, { ...ramInstalled, state: "needsRepair", files_ok: 2, verified_at: null, error: { kind: "hashMismatch", detail: "model.onnx failed pinned integrity check" } }],
     work: idle, smartOn: true, keywordsOn: true, keywordsWork: { ...idle, pending: null }, keywords: kw() },
+  kwblocked: { packs: [installed, ramInstalled], work: idle, smartOn: true, keywordsOn: true, keywordsWork: { ...idle, pending: 616, analysed: 1204 }, keywords: kw({ blocked: "level" }) },
+  kwburstoff: { packs: [installed, ramInstalled], work: idle, smartOn: true, keywordsOn: true, keywordsWork: { ...idle, pending: 0, analysed: 1820 }, keywords: kw({ burst: false, copied: 0 }) },
   kwreview: { packs: [installed, ramInstalled], work: idle, smartOn: true, keywordsOn: true, keywordsWork: { ...idle, pending: 0, analysed: 1820 }, keywords: kw(),
     dialog: { kind: "review" }, aiTags: [{ name: "sky", photos: 982 }, { name: "beach", photos: 640 }, { name: "sea", photos: 612 }, { name: "dog", photos: 188 }, { name: "sunset", photos: 91 }] },
   kwreviewempty: { packs: [installed, ramInstalled], work: idle, smartOn: true, keywordsOn: true, keywordsWork: { ...idle, pending: 0, analysed: 0 },
@@ -74,6 +76,6 @@ export const STATES: Record<string, Fixture> = {
 };
 // the states the shift test compares card against card
 // the Auto-keywords card's states, compared with the same boxes (data-pack="ram")
-export const KW_STATES = ["kwnotinstalled", "kwdownloading", "kwoff", "kwworking", "kwidle", "kwpaused", "kwrepair"];
+export const KW_STATES = ["kwnotinstalled", "kwdownloading", "kwoff", "kwworking", "kwidle", "kwpaused", "kwrepair", "kwblocked", "kwburstoff"];
 export const CARD_STATES = ["notinstalled", "diskfull", "downloading1", "downloading", "downloading99", "verifying", "installed", "installedoff",
   "installedpaused", "checking", "checked", "repair", "offline", "stopped", "update", "unsupported"];

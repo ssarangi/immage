@@ -159,8 +159,11 @@ export function analysedLine(analysed: number | null, pending: number | null, en
 }
 
 /** the standing line under the Auto-keywords switch */
-export function keywordsLine(analysed: number | null, pending: number | null, enabled: boolean, tr: Tr, fmt: Fmt = plainFmt): string {
+export function keywordsLine(analysed: number | null, pending: number | null, enabled: boolean, tr: Tr, fmt: Fmt = plainFmt, blocked: string | null = null): string {
   if (!enabled) return tr("aimodels.kw.off");
+  // photos wait, untouched, until the model fits in memory
+  if (blocked === "level") return tr("aimodels.kw.blockedLevel");
+  if (blocked === "free") return tr("aimodels.kw.blockedFree");
   if (analysed == null) return tr("aimodels.work.reading");
   if (pending == null || pending === 0) return tr("aimodels.clip.doneNothing", { n: analysed, count: fmt.num(analysed) });
   return tr("aimodels.clip.doneWaiting", { n: analysed, count: fmt.num(analysed), left: fmt.num(pending) });
@@ -179,6 +182,13 @@ export function resultsLine(s: KeywordsSummary | null, tr: Tr, fmt: Fmt = plainF
   if (!s) return tr("aimodels.work.reading");
   if (s.keywords === 0) return tr("aimodels.kw.resultsNone");
   return tr("aimodels.kw.results", { n: s.keyworded, count: fmt.num(s.keyworded), keywords: fmt.num(s.keywords) });
+}
+
+/** the Burst sharing row's hint: what it does, and how many photos it has already saved an analysis for */
+export function burstLine(s: KeywordsSummary | null, tr: Tr, fmt: Fmt = plainFmt): string {
+  if (!s) return tr("aimodels.work.reading");
+  if (!s.burst) return tr("aimodels.kw.burstOff");
+  return s.copied > 0 ? tr("aimodels.kw.burstCopied", { n: s.copied, count: fmt.num(s.copied) }) : tr("aimodels.kw.burstHint");
 }
 
 export function summaryOf(packs: PackInfo[]) {

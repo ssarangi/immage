@@ -164,6 +164,8 @@ pub struct Models {
     enabled: Arc<AtomicBool>,
     /// Minimum confidence, percent, for a tag to become a keyword.
     threshold: Arc<AtomicU8>,
+    /// Photos that look like one already analysed in their folder take its tags (a burst).
+    burst: Arc<AtomicBool>,
     prepared: Mutex<Option<Prepared>>,
 }
 pub const DEFAULT_THRESHOLD: u8 = 70;
@@ -190,6 +192,7 @@ impl Models {
             store: Arc::new(PackStore::new(&SPEC, root)),
             enabled: Arc::new(AtomicBool::new(false)),
             threshold: Arc::new(AtomicU8::new(DEFAULT_THRESHOLD)),
+            burst: Arc::new(AtomicBool::new(true)),
             prepared: Mutex::new(None),
         }
     }
@@ -201,6 +204,12 @@ impl Models {
     }
     pub fn threshold_flag(&self) -> Arc<AtomicU8> {
         Arc::clone(&self.threshold)
+    }
+    pub fn burst_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.burst)
+    }
+    pub fn burst(&self) -> bool {
+        self.burst.load(Ordering::Acquire)
     }
     pub fn enabled(&self) -> bool {
         self.enabled.load(Ordering::Acquire)

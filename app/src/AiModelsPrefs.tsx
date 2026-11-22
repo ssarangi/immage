@@ -38,6 +38,7 @@ export type ViewProps = {
   onSwitch: (id: AnalysisId, on: boolean) => void;
   onThreshold: (percent: number) => void;
   onReview: () => void;
+  onBurst: (on: boolean) => void;
   onRemoveTags: (names: string[]) => Promise<RemoveReport>;
   onPause: () => void;
   onShowFolder: () => void;
@@ -110,8 +111,8 @@ export function AiModelsView(p: ViewProps) {
             label: t("aimodels.kw.switch"), hint: t("aimodels.kw.switchHint"),
             checked: p.keywordsOn, reason: view.usable ? null : view.reason,
             onChange: (on) => p.onSwitch("keywords", on), statusLabel: t("aimodels.clip.statusLabel"),
-            status: keywordsLine(p.keywords?.photos ?? null, p.keywordsWork?.pending ?? null, p.keywordsOn && view.usable, t, uiFmt),
-            extra: <KeywordsRows summary={p.keywords} busy={p.busy} onThreshold={p.onThreshold} onReview={p.onReview} />,
+            status: keywordsLine(p.keywords?.photos ?? null, p.keywordsWork?.pending ?? null, p.keywordsOn && view.usable, t, uiFmt, p.keywords?.blocked ?? null),
+            extra: <KeywordsRows summary={p.keywords} busy={p.busy} onThreshold={p.onThreshold} onReview={p.onReview} onBurst={p.onBurst} />,
           }} />;
       })}
       {p.error && <p role="alert" className="prefs-error">{p.error}</p>}
@@ -205,6 +206,7 @@ export function AiModelsPrefs({ onGoTo }: { onGoTo: (tab: "culling", card?: stri
       setKeywordsOn(!!list.find((x) => x.id === "keywords")?.enabled);
     })}
     onThreshold={(percent) => void guard(async () => { await commands.keywordsThresholdSet(percent); setKeywords(await commands.keywordsSummary()); })}
+    onBurst={(on) => void guard(async () => { await commands.keywordsBurstSet(on); setKeywords(await commands.keywordsSummary()); })}
     onReview={() => void guard(async () => { setAiTags(await commands.keywordsAiList(5000)); setDialog({ kind: "review" }); })}
     onRemoveTags={async (names) => {
       const report = await commands.keywordsAiRemove(names);

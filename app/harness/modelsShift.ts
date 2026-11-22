@@ -66,7 +66,7 @@ const FIXED = [".ai-head", ".ai-lead", ".ai-sum", ".ai-sum > div:nth-child(1)", 
 // the same boxes inside the Auto-keywords card, which has three more rows under its switch
 const KW = '[data-pack="ram"]';
 const FIXED_KW = [KW, `${KW} .pack-h`, `${KW} .pack-st`, `${KW} .pack-dl`, `${KW} .pack-slot`, `${KW} .pack-msg`, `${KW} .pack-bar`, `${KW} .pack-acts`, `${KW} .pack-an`,
-  ...[1, 2, 3, 4, 5].map((n) => `${KW} .pack-an .pref-row:nth-child(${n})`), `${KW} .kw-slider`, `${KW} .kw-pct`, `${KW} .kw-btn`];
+  ...[1, 2, 3, 4, 5, 6].map((n) => `${KW} .pack-an .pref-row:nth-child(${n})`), `${KW} .kw-slider`, `${KW} .kw-pct`, `${KW} .kw-btn`];
 
 export async function runShiftTest() {
   const h = (window as unknown as { __h: { set: (s: string) => void } }).__h;

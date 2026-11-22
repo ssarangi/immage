@@ -928,6 +928,10 @@ impl Engine {
         BaseCancel { link: self.link.clone() }
     }
 
+    // the engine process's id, for measuring its memory
+    pub fn pid(&self) -> Option<u32> {
+        self.conn.child.lock().ok().map(|c| c.id())
+    }
     pub fn tagged(&self) -> Tagged {
         Tagged { link: self.link.clone() }
     }

@@ -81,6 +81,12 @@ pub fn load_smart_search(settings: &Settings, clip_installed: bool) -> bool {
 }
 
 pub const KEYWORDS_THRESHOLD_KEY: &str = "ai.keywords.threshold";
+pub const KEYWORDS_BURST_KEY: &str = "ai.keywords.burst";
+
+/// Whether a photo that looks like one already analysed in its folder takes its tags: on unless turned off.
+pub fn load_keywords_burst(settings: &Settings) -> bool {
+    settings.get(KEYWORDS_BURST_KEY).as_deref() != Some("0")
+}
 
 /// The Auto-keywords switch: off until the user turns it on, whatever else is stored.
 pub fn load_keywords(settings: &Settings) -> bool {
@@ -143,6 +149,9 @@ mod tests {
         assert_eq!(load_keywords_threshold(&s), 95);
         s.set(KEYWORDS_THRESHOLD_KEY, "junk").unwrap();
         assert_eq!(load_keywords_threshold(&s), 70);
+        assert!(load_keywords_burst(&s), "burst sharing is on unless turned off");
+        s.set(KEYWORDS_BURST_KEY, "0").unwrap();
+        assert!(!load_keywords_burst(&s));
         s.set(KEYWORDS_THRESHOLD_KEY, "85").unwrap();
         assert_eq!(load_keywords_threshold(&s), 85);
     }

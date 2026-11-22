@@ -11,7 +11,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::Mutex;
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 pub struct TagStore {
     db: Mutex<Connection>,
@@ -26,6 +26,16 @@ pub struct StoredTag {
     /// The user removed this AI keyword from the photo: it is never attached again, by
     /// a change of the confidence setting or by a new analysis.
     pub dismissed: bool,
+}
+
+/// How a stored result came about.
+#[derive(Debug, Clone, Default)]
+pub struct Origin<'a> {
+    /// The near-duplicate hash of the picture the photo's own analysis read.
+    pub hash: Option<&'a str>,
+    pub quality: Option<f64>,
+    /// Set when the tags were copied from this photo of the same burst.
+    pub propagated_from: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -67,7 +77,10 @@ impl TagStore {
                  fingerprint TEXT NOT NULL,
                  model TEXT NOT NULL,
                  analysed_at INTEGER NOT NULL,
-                 applied_pct INTEGER
+                 applied_pct INTEGER,
+                 hash TEXT,
+                 quality REAL,
+                 propagated_from TEXT
              );
              CREATE TABLE IF NOT EXISTS tag_rows (
                  path TEXT NOT NULL REFERENCES tag_photos(path) ON DELETE CASCADE,
@@ -103,7 +116,18 @@ impl TagStore {
     /// Replaces a photo's result. The keywords Immage had attached for an earlier result
     /// and that the photo still has are carried over (`applied` stays), so a re-analysis
     /// never forgets what it can take off.
+    #[cfg(test)]
     pub fn put(&self, path: &str, fingerprint: &str, model: &str, tags: &[(String, f32)], now: i64) -> Result<(), String> {
+        self.put_with(path, fingerprint, model, tags, now, &Origin::default()).map(|_| ())
+    }
+
+    /// `put` with where the result came from: the photo's own analysis (with its near-duplicate
+    /// hash and quality, for finding its burst) or tags copied from another photo of the burst.
+    /// A copy never replaces a result the photo's own analysis made for this very file and model.
+    pub fn put_with(&self, path: &str, fingerprint: &str, model: &str, tags: &[(String, f32)], now: i64, origin: &Origin) -> Result<bool, String> {
+        if origin.propagated_from.is_some() && self.is_own_current(path, fingerprint, model)? {
+            return Ok(false);
+        }
         let mut db = self.db()?;
         let tx = db.transaction().map_err(|e| e.to_string())?;
         let before: Vec<(String, i64)> = {
@@ -114,8 +138,8 @@ impl TagStore {
         let state_of = |name: &str| before.iter().find(|(n, _)| n == name).map_or(0, |(_, a)| *a);
         tx.execute("DELETE FROM tag_photos WHERE path=?1", params![path]).map_err(|e| e.to_string())?;
         tx.execute(
-            "INSERT INTO tag_photos(path,fingerprint,model,analysed_at,applied_pct) VALUES(?1,?2,?3,?4,NULL)",
-            params![path, fingerprint, model, now],
+            "INSERT INTO tag_photos(path,fingerprint,model,analysed_at,applied_pct,hash,quality,propagated_from) VALUES(?1,?2,?3,?4,NULL,?5,?6,?7)",
+            params![path, fingerprint, model, now, origin.hash, origin.quality, origin.propagated_from],
         )
         .map_err(|e| e.to_string())?;
         {
@@ -132,7 +156,47 @@ impl TagStore {
                 insert.execute(params![path, name, 0.0f64, state]).map_err(|e| e.to_string())?;
             }
         }
-        tx.commit().map_err(|e| e.to_string())
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(true)
+    }
+
+    fn is_own_current(&self, path: &str, fingerprint: &str, model: &str) -> Result<bool, String> {
+        self.db()?
+            .query_row(
+                "SELECT 1 FROM tag_photos WHERE path=?1 AND fingerprint=?2 AND model=?3 AND propagated_from IS NULL",
+                params![path, fingerprint, model],
+                |_| Ok(()),
+            )
+            .optional()
+            .map(|r| r.is_some())
+            .map_err(|e| e.to_string())
+    }
+
+    /// Photos in `dir` that were analysed themselves (not copied) with a stored near-duplicate hash:
+    /// the representatives a burst's other photos can take their tags from.
+    pub fn representatives(&self, dir: &str, model: &str) -> Result<Vec<(String, String)>, String> {
+        let db = self.db()?;
+        let like = format!("{}/%", dir.trim_end_matches('/').replace('%', "\\%").replace('_', "\\_"));
+        let mut q = db
+            .prepare("SELECT path,hash FROM tag_photos WHERE model=?1 AND propagated_from IS NULL AND hash IS NOT NULL AND path LIKE ?2 ESCAPE '\\'")
+            .map_err(|e| e.to_string())?;
+        let rows = q.query_map(params![model, like], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map_err(|e| e.to_string())?;
+        let all: Vec<(String, String)> = rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?;
+        // only this folder's own files, not those of folders below it
+        Ok(all.into_iter().filter(|(p, _)| std::path::Path::new(p).parent().is_some_and(|d| d == std::path::Path::new(dir))).collect())
+    }
+    /// Where a photo's tags were copied from, if they were.
+    #[cfg(test)]
+    pub fn propagated_from(&self, path: &str) -> Result<Option<String>, String> {
+        let v: Option<Option<String>> = self
+            .db()?
+            .query_row("SELECT propagated_from FROM tag_photos WHERE path=?1", params![path], |r| r.get(0))
+            .optional()
+            .map_err(|e| e.to_string())?;
+        Ok(v.flatten())
+    }
+    pub fn propagated_count(&self) -> Result<u32, String> {
+        self.db()?.query_row("SELECT count(*) FROM tag_photos WHERE propagated_from IS NOT NULL", [], |r| r.get(0)).map_err(|e| e.to_string())
     }
 
     pub fn tags(&self, path: &str) -> Result<Vec<StoredTag>, String> {
@@ -340,5 +404,29 @@ mod tests {
         Connection::open(&path).unwrap().pragma_update(None, "user_version", 99).unwrap();
         let s = TagStore::open(&path).unwrap();
         assert_eq!(s.totals().unwrap().photos, 0, "an unknown layout is dropped, not misread");
+    }
+    #[test]
+    fn a_copied_result_never_replaces_the_photos_own_and_is_found_by_its_source() {
+        let s = store();
+        let own = Origin { hash: Some("h1"), quality: Some(0.5), propagated_from: None };
+        assert!(s.put_with("/d/a.jpg", "f", "m", &tags(&[("sky", 0.9)]), 1, &own).unwrap());
+        s.put_with("/d/sub/c.jpg", "f", "m", &tags(&[("x", 0.9)]), 1, &Origin { hash: Some("h3"), ..Default::default() }).unwrap();
+        let copy = Origin { propagated_from: Some("/d/a.jpg"), ..Default::default() };
+        // b was never analysed: it takes a's tags
+        assert!(s.put_with("/d/b.jpg", "f", "m", &tags(&[("sky", 0.9)]), 2, &copy).unwrap());
+        assert_eq!(s.propagated_from("/d/b.jpg").unwrap().as_deref(), Some("/d/a.jpg"));
+        assert_eq!(s.propagated_count().unwrap(), 1);
+        // a has its own result: a copy is refused and a's own tags stay
+        assert!(!s.put_with("/d/a.jpg", "f", "m", &tags(&[("dog", 0.9)]), 3, &copy).unwrap());
+        assert_eq!(s.tags("/d/a.jpg").unwrap()[0].name, "sky");
+        assert_eq!(s.propagated_from("/d/a.jpg").unwrap(), None);
+        // its own analysis (a real one) does replace a copy
+        s.put_with("/d/b.jpg", "f", "m", &tags(&[("cat", 0.8)]), 4, &own).unwrap();
+        assert_eq!(s.propagated_from("/d/b.jpg").unwrap(), None);
+        // a changed file or a new model lets a copy replace an old own result
+        assert!(s.put_with("/d/a.jpg", "f2", "m", &tags(&[("dog", 0.9)]), 5, &copy).unwrap());
+        // representatives: own results with a hash in that folder only
+        let reps = s.representatives("/d", "m").unwrap();
+        assert_eq!(reps.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(), ["/d/b.jpg"]);
     }
 }

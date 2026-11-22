@@ -8,8 +8,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { KeywordsSummary, RemoveReport, TagCount } from "./bindings";
-import { PrefRow } from "./PrefsUI";
-import { resultsLine, speedLine, uiFmt } from "./aiPacks";
+import { PrefRow, PrefSwitch } from "./PrefsUI";
+import { burstLine, resultsLine, speedLine, uiFmt } from "./aiPacks";
 import { t } from "./i18n";
 
 export type KeywordsRowsProps = {
@@ -17,9 +17,10 @@ export type KeywordsRowsProps = {
   busy: boolean;
   onThreshold: (percent: number) => void;
   onReview: () => void;
+  onBurst: (on: boolean) => void;
 };
 
-export function KeywordsRows({ summary, busy, onThreshold, onReview }: KeywordsRowsProps) {
+export function KeywordsRows({ summary, busy, onThreshold, onReview, onBurst }: KeywordsRowsProps) {
   const stored = summary?.threshold ?? 70;
   const [value, setValue] = useState(stored);
   const dragging = useRef(false);
@@ -37,6 +38,9 @@ export function KeywordsRows({ summary, busy, onThreshold, onReview }: KeywordsR
       <span className="kw-pct" aria-hidden="true">{value}%</span>
     </PrefRow>
     <PrefRow label={t("aimodels.kw.english")} hint={speedLine(summary, t, uiFmt)}><span /></PrefRow>
+    <PrefRow label={t("aimodels.kw.burst")} hint={burstLine(summary, t, uiFmt)}>
+      <PrefSwitch checked={summary?.burst ?? true} disabled={!summary || busy} aria-label={t("aimodels.kw.burst")} onChange={onBurst} />
+    </PrefRow>
     <PrefRow label={t("aimodels.kw.resultsLabel")} hint={resultsLine(summary, t, uiFmt)}>
       <button type="button" className="btn small kw-btn" disabled={busy || none} onClick={onReview}>{t("aimodels.kw.review")}</button>
     </PrefRow>

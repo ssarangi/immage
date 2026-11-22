@@ -29,6 +29,13 @@ pub struct KeywordsSummary {
     pub infer_ms: Option<u32>,
     /// The engine's memory while it held the model, megabytes, once measured.
     pub memory_mb: Option<u32>,
+    /// Photos share a burst mate's tags instead of being analysed (setting).
+    pub burst: bool,
+    /// Photos that carry tags copied from a burst mate.
+    pub copied: u32,
+    /// Why photos wait without being analysed: "level" (the Memory level cannot hold the model)
+    /// or "free" (too little memory is free now).
+    pub blocked: Option<String>,
 }
 
 #[tauri::command]
@@ -45,6 +52,13 @@ pub fn keywords_summary(ai: State<'_, AiState>) -> Result<KeywordsSummary, Strin
         max_threshold: MAX_THRESHOLD,
         infer_ms,
         memory_mb: kb.map(|k| (k / 1024) as u32),
+        burst: ai.keywords.burst(),
+        copied: ai.tags.propagated_count()?,
+        blocked: match ai.tags_service.blocked() {
+            crate::tags_service::BLOCK_LEVEL => Some("level".into()),
+            crate::tags_service::BLOCK_FREE => Some("free".into()),
+            _ => None,
+        },
     })
 }
 
@@ -57,6 +71,16 @@ pub fn keywords_threshold_set(ai: State<'_, AiState>, settings: State<'_, Settin
     settings.set(crate::analysis_settings::KEYWORDS_THRESHOLD_KEY, &pct.to_string())?;
     ai.keywords.threshold_flag().store(pct, Ordering::Release);
     Ok(pct)
+}
+
+/// Turns burst sharing on or off: with it on, a photo that looks like one already analysed in its folder
+/// takes that photo's tags instead of being analysed itself.
+#[tauri::command]
+#[specta::specta]
+pub fn keywords_burst_set(ai: State<'_, AiState>, settings: State<'_, Settings>, on: bool) -> Result<bool, String> {
+    settings.set(crate::analysis_settings::KEYWORDS_BURST_KEY, if on { "1" } else { "0" })?;
+    ai.keywords.burst_flag().store(on, Ordering::Release);
+    Ok(on)
 }
 
 /// The keywords the analysis attached, most used first: the review list and Find's AI tags.
