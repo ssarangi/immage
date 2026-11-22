@@ -514,7 +514,9 @@ list the server's values.
   including recognized camera maker notes; lens serials are never used.
 - **Keywords**: tick one or more to show photos with all of them. A keyword
   includes those under it, so **Places** shows photos tagged **Places › Norway**
-  too.
+  too. Below the list, **AI keywords** shows only the keywords that
+  [Auto-keywords](preferences.md#general) added in this folder, to tick the same
+  way; it says so when none have been added yet.
 - **Captured**: photos taken between two dates. Type them, or pick a recent
   span (**Last 30 days**, **This month**, **Last year** and others), a year,
   or a month of the year. A photo with no capture time goes by its file's date
@@ -915,6 +917,12 @@ to remove it. To add some, type them separated by commas and press Enter.
 Type a hierarchy as `Places > Paris`. Suggestions come from the keywords you
 have used before, and **Recent keywords** holds the last few: click one to
 add it or take it off.
+
+When [Auto-keywords](preferences.md#general) is on, the keywords it adds are
+ordinary keywords in the photo's sidecar, marked in this card with a dashed
+outline and a small **AI** mark. Click **×** to remove one like any other. They
+are in English. Preferences > General > AI models lists them all with counts
+and removes them in bulk, and never touches the keywords you typed.
 
 ## Opening a photo or folder from another program
 

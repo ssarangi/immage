@@ -52,7 +52,8 @@ the top of each page's `.tsx` is the complete list; the main ones:
   `thumbs=none`, `gps=none`, `tiles=offline`, `photos=synthetic`, and `bad=1|2|3`.
 - **models.html**: `state=` one of the names in `STATES` in
   [modelsFixtures.ts](../../harness/modelsFixtures.ts) (`notinstalled`,
-  `downloading`, `installed`, `repair`, `offline`, `consent`, `remove`, ...),
+  `downloading`, `installed`, `repair`, `offline`, `consent`, `remove`, and the
+  Auto-keywords card's `kwoff`, `kwworking`, `kwpaused`, `kwreview`, ...),
   `w` and `h` (the page area in pixels), and `break=1`. `window.__h.set(name)`
   switches state from the console.
 

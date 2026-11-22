@@ -18,6 +18,18 @@ Improvements
   analysing photos: on for those who already had the model, off for new
   installs, and never turned on by a download. The Find analysis icon is dim
   until an analysis is switched on.
+- **Auto-keywords:** an optional second pack in Preferences > General > AI
+  models, RAM++ (about 1.8 GB, Apache-2.0), adds English keywords for what is in
+  each photo, such as "beach" or "dog". Nothing downloads until you agree and
+  nothing is analysed until you turn on **Add keywords automatically**; the
+  analysis then runs on the processor in the background, one photo at a time,
+  and adds the keywords it is confident about (40 to 95%, 70% by default) to the
+  photo and its XMP sidecar, where Keywording, Find and other programs see them.
+  A confidence change applies to analysed photos at once. Keywords Immage added
+  are marked **AI** in Keywording, listed under **AI keywords** in Find's Keywords
+  row, and can be reviewed and removed one by one or all together without
+  touching your own keywords. The model is freed from memory when there is
+  nothing left to analyse.
 - **Statistics:** a new view, from the chart button on the rail or View >
   Statistics, shows your library as numbers: a coverage line, six summary
   cards, camera makers and bodies with their keeper rates, lenses with a

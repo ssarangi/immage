@@ -9,7 +9,7 @@
 //  2. within a state, hover and keyboard focus on every control move nothing (CSS :hover and
 //     :focus-visible are mirrored onto classes, as a script cannot hover).
 // verify/models-shift.test.mjs runs it in headless Chrome with ?shift=1 and asserts zero movement.
-import { CARD_STATES } from "./modelsFixtures";
+import { CARD_STATES, KW_STATES } from "./modelsFixtures";
 
 type R = { x: number; y: number; w: number; h: number };
 type Snap = Map<Node, R>;
@@ -63,6 +63,11 @@ const FIXED = [".ai-head", ".ai-lead", ".ai-sum", ".ai-sum > div:nth-child(1)", 
   ".ai-sum .bw .pack-bar", ".ai-sum .bw .btn", ".pack", ".pack-h", ".pack-st", ".pack-dl", ".pack-slot", ".pack-msg", ".pack-bar", ".pack-acts", ".pack-an",
   ".pack-an .pref-row:nth-child(1)", ".pack-an .pref-row:nth-child(2)", ".pack-t h5"];
 
+// the same boxes inside the Auto-keywords card, which has three more rows under its switch
+const KW = '[data-pack="ram"]';
+const FIXED_KW = [KW, `${KW} .pack-h`, `${KW} .pack-st`, `${KW} .pack-dl`, `${KW} .pack-slot`, `${KW} .pack-msg`, `${KW} .pack-bar`, `${KW} .pack-acts`, `${KW} .pack-an`,
+  ...[1, 2, 3, 4, 5].map((n) => `${KW} .pack-an .pref-row:nth-child(${n})`), `${KW} .kw-slider`, `${KW} .kw-pct`, `${KW} .kw-btn`];
+
 export async function runShiftTest() {
   const h = (window as unknown as { __h: { set: (s: string) => void } }).__h;
   mirrorPseudoClasses();
@@ -70,10 +75,10 @@ export async function runShiftTest() {
   let interactions = 0, compared = 0, maxDelta = 0;
   const boxes: Record<string, Record<string, R>> = {};
 
-  for (const state of CARD_STATES) {
+  for (const state of [...CARD_STATES, ...KW_STATES]) {
     h.set(state); await frames();
     boxes[state] = {};
-    for (const s of FIXED) { const el = document.querySelector(s); if (el) boxes[state][s] = rect(el.getBoundingClientRect()); }
+    for (const s of KW_STATES.includes(state) ? FIXED_KW : FIXED) { const el = document.querySelector(s); if (el) boxes[state][s] = rect(el.getBoundingClientRect()); }
     // within a state: hover and focus on every control
     const base = snapshot();
     for (const el of Array.from(page().querySelectorAll<HTMLElement>("button, a, input"))) {
@@ -88,9 +93,9 @@ export async function runShiftTest() {
     }
   }
   // across states: the same boxes, wherever the card is
-  const reference = boxes[CARD_STATES[0]];
   let fixedMax = 0, fixedWorst = "";
-  for (const state of CARD_STATES) {
+  for (const state of [...CARD_STATES, ...KW_STATES]) {
+    const reference = boxes[KW_STATES.includes(state) ? KW_STATES[0] : CARD_STATES[0]];
     for (const [sel, r0] of Object.entries(reference)) {
       const r = boxes[state][sel];
       if (!r) { fixedMax = Math.max(fixedMax, 1e6); fixedWorst = `${state}: ${sel} is missing`; continue; }
@@ -101,5 +106,5 @@ export async function runShiftTest() {
   }
   fixedMax = Math.round(fixedMax * 100) / 100;
   if (fixedMax > 0) failures.push({ what: "across states", delta: fixedMax, worst: fixedWorst });
-  return { ok: failures.length === 0, states: CARD_STATES.length, interactions, compared, maxDelta, fixedMaxDelta: fixedMax, fixedWorst, failures };
+  return { ok: failures.length === 0, states: CARD_STATES.length + KW_STATES.length, interactions, compared, maxDelta, fixedMaxDelta: fixedMax, fixedWorst, failures };
 }

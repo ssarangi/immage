@@ -34,6 +34,10 @@ Immage stands on the work of these projects:
   (Small): the Depth Range model, in the ONNX export by
   [onnx-community](https://huggingface.co/onnx-community/depth-anything-v2-small).
   Apache-2.0.
+- [**RAM++ (Recognize Anything Plus)**](https://github.com/xinyu1205/recognize-anything)
+  by the OPPO research team: the Auto-keywords model, in the ONNX export
+  [WC-ECL/ram-plus-onnx](https://huggingface.co/WC-ECL/ram-plus-onnx) of the
+  official weights. Apache-2.0.
 - [**Immporter**](https://github.com/Rhettus/immporter): the import
   screen. Its interface uses [Tailwind CSS](https://tailwindcss.com/),
   [Zustand](https://github.com/pmndrs/zustand) and

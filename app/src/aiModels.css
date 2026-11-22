@@ -81,3 +81,20 @@ a.pack-chip-link:hover { color: var(--text); }
 .pack-bad { color: var(--error, #ef6a6e); }
 
 .culling-ai-note { margin: 4px 0 12px; }
+
+/* a long hint wraps inside its row (two lines at most) instead of running under the control */
+.pack-an .pref-hint { white-space: normal; }
+.pack-an .pref-label { padding-right: 16px; }
+.pack-an .pref-control { flex: none; }
+
+/* Auto-keywords rows: fixed-width controls, so a changed value moves nothing */
+.kw-slider { width: 200px; }
+.kw-pct { display: inline-block; width: 44px; text-align: right; margin-left: 8px; color: var(--text-2); font-size: var(--fs-small); font-variant-numeric: tabular-nums; }
+.kw-btn { width: 84px; text-align: center; }
+.kw-list { list-style: none; margin: 0 0 12px; padding: 4px 0; height: 252px; overflow: auto; background: var(--inset); border-radius: 8px; }
+.kw-list li { display: grid; grid-template-columns: minmax(0, 1fr) 64px 84px; align-items: center; gap: 8px; height: 36px; padding: 0 10px 0 14px; }
+.kw-list li .btn { width: 84px; text-align: center; }
+.kw-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-small); }
+.kw-n { text-align: right; color: var(--text-3); font-size: var(--fs-small); font-variant-numeric: tabular-nums; }
+.kw-empty { display: block !important; color: var(--text-3); font-size: var(--fs-small); padding-top: 9px; }
+.kw-status { margin: 0; min-height: 36px; color: var(--text-2); font-size: var(--fs-small); line-height: 18px; }

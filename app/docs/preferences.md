@@ -207,7 +207,7 @@ describe, and runs on this computer.
     matched its known checksum. **Check files** hashes every file again and
     reports it in the state line for a few seconds. **Remove...** asks whether
     to keep or remove the results the model produced (for Smart search, the
-    analysis of your photos in Immage's cache) and frees the space; the
+    analysis of your photos in Immage's cache; for Auto-keywords, the stored tags) and frees the space; the
     analysis switch turns off. An install made by an earlier version of Immage
     shows **Installed · checking** once while it is checked in the background.
   - *Needs repair*: a file is missing or does not match its checksum, so
@@ -232,7 +232,44 @@ describe, and runs on this computer.
   Until the model is downloaded (and without an Immich connection), Find
   searches file names only and **Show more like this** is not offered.
 
-While CLIP analyses your photos in the background, Immage's performance is
+- **Auto-keywords (RAM++)** is the second pack: about 1.8 GB (the RAM++ tagging
+  model and its list of about 4,500 tags, Apache-2.0, from Hugging Face at a
+  fixed version) that adds keywords for what is in each photo, such as "beach",
+  "dog" or "sunset". The keywords are in English, whatever language Immage uses.
+  Downloading it does not look at your photos; the switch **Add keywords
+  automatically** is off until you turn it on, and cannot be turned on until
+  the model is installed and whole. Once on, Immage works through the photos in
+  your library's folders in the background, one at a time, on the processor (not
+  the graphics card): it renders each photo at analysis size, asks RAM++ what it
+  sees, stores every tag it is fairly sure of, and **adds the confident ones to
+  the photo's keywords and its XMP sidecar**, so Keywording, Find and other
+  programs see them. Your own keywords are never changed or removed, and a
+  keyword you already had is never claimed as an automatic one. The model is
+  loaded when the first photo is analysed and freed again shortly after the
+  backlog is empty or the switch is turned off; while loaded it uses about 3 GB
+  of memory. The standing line below the switch says how many photos are
+  analysed and how many wait, and the one **Pause / Resume** covers it, as it does
+  Smart search.
+  - **Keyword confidence** (40 to 95%, 70% by default): a tag becomes a keyword
+    when the model is at least this sure of it. Lower finds more tags, and more
+    wrong ones. Changing it applies to photos already analysed at once, without
+    analysing them again, adding or taking off only keywords Immage added.
+  - **Keyword language** and speed: the line shows the measured time per photo on
+    this computer (about two seconds for the model itself on an 8-core
+    processor) and the memory used while the model is loaded.
+  - **Keywords added** counts the keywords and photos, and **Review...** lists
+    the keywords Immage added, most used first. **Remove** takes one off every
+    photo it was added to; **Remove all...** takes off all of them, after a
+    confirmation. Only keywords Immage added are removed, and a removed keyword
+    is not added to that photo again. Removing the model keeps the keywords and
+    the stored tags unless you choose **Remove model and results**, which
+    deletes the stored tags but leaves the keywords on your photos; use Review
+    first to take those off.
+  - In Keywording, a keyword Immage added is drawn with a dashed outline and a
+    small **AI** mark; in [Find](library.md#find), the **Keywords** row lists
+    them again under **AI keywords**, so a search can ask for what the model saw.
+
+While CLIP or RAM++ analyses your photos in the background, Immage's performance is
 impacted because the analysis uses the CPU. Pause background work from the
 summary strip to stop it.
 

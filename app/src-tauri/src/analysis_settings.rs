@@ -10,6 +10,9 @@
 //! Keys (strings, like every settings value):
 //!   ai.smart_search.enabled           "1" | "0"
 //!   ai.smart_search.analysis_consent  unix seconds, or "migrated"
+//!   ai.keywords.enabled               "1" | "0" (always off until the user turns it on)
+//!   ai.keywords.analysis_consent      unix seconds
+//!   ai.keywords.threshold             percent, 40..=95 (70 when absent)
 //!   ai.<pack>.download_consent        unix seconds, or "migrated"
 use crate::settings::Settings;
 
@@ -17,6 +20,7 @@ use crate::settings::Settings;
 #[serde(rename_all = "camelCase")]
 pub enum AnalysisId {
     SmartSearch,
+    Keywords,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, specta::Type)]
@@ -28,16 +32,19 @@ pub struct AnalysisSettings {
 pub fn enabled_key(id: AnalysisId) -> &'static str {
     match id {
         AnalysisId::SmartSearch => "ai.smart_search.enabled",
+        AnalysisId::Keywords => "ai.keywords.enabled",
     }
 }
 pub fn analysis_consent_key(id: AnalysisId) -> &'static str {
     match id {
         AnalysisId::SmartSearch => "ai.smart_search.analysis_consent",
+        AnalysisId::Keywords => "ai.keywords.analysis_consent",
     }
 }
 pub fn download_consent_key(pack: crate::packs::PackId) -> &'static str {
     match pack {
         crate::packs::PackId::Clip => "ai.clip.download_consent",
+        crate::packs::PackId::Ram => "ai.ram.download_consent",
     }
 }
 fn stamp() -> String {
@@ -71,6 +78,21 @@ pub fn load_smart_search(settings: &Settings, clip_installed: bool) -> bool {
             clip_installed
         }
     }
+}
+
+pub const KEYWORDS_THRESHOLD_KEY: &str = "ai.keywords.threshold";
+
+/// The Auto-keywords switch: off until the user turns it on, whatever else is stored.
+pub fn load_keywords(settings: &Settings) -> bool {
+    settings.get(enabled_key(AnalysisId::Keywords)).as_deref() == Some("1")
+}
+/// The confidence setting in percent, kept inside the range the page offers.
+pub fn load_keywords_threshold(settings: &Settings) -> u8 {
+    use crate::ram_models::{DEFAULT_THRESHOLD, MAX_THRESHOLD, MIN_THRESHOLD};
+    settings
+        .get(KEYWORDS_THRESHOLD_KEY)
+        .and_then(|v| v.parse::<u8>().ok())
+        .map_or(DEFAULT_THRESHOLD, |n| n.clamp(MIN_THRESHOLD, MAX_THRESHOLD))
 }
 
 #[cfg(test)]
@@ -107,5 +129,21 @@ mod tests {
         // a user who turned it on later stays on after the model is removed and reinstalled
         s.set("ai.smart_search.enabled", "1").unwrap();
         assert!(load_smart_search(&s, false));
+    }
+    #[test]
+    fn keywords_stay_off_until_turned_on_and_the_threshold_is_clamped() {
+        let (_dir, s) = settings();
+        assert!(!load_keywords(&s));
+        assert_eq!(load_keywords_threshold(&s), 70);
+        s.set("ai.keywords.enabled", "1").unwrap();
+        assert!(load_keywords(&s));
+        s.set(KEYWORDS_THRESHOLD_KEY, "5").unwrap();
+        assert_eq!(load_keywords_threshold(&s), 40);
+        s.set(KEYWORDS_THRESHOLD_KEY, "200").unwrap();
+        assert_eq!(load_keywords_threshold(&s), 95);
+        s.set(KEYWORDS_THRESHOLD_KEY, "junk").unwrap();
+        assert_eq!(load_keywords_threshold(&s), 70);
+        s.set(KEYWORDS_THRESHOLD_KEY, "85").unwrap();
+        assert_eq!(load_keywords_threshold(&s), 85);
     }
 }

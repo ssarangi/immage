@@ -49,7 +49,7 @@ for (const [w, h, theme] of [[1440, 900, 'dark'], [1920, 1080, 'dark'], [1000, 7
   test(`a pack card and the summary strip keep their boxes in every state, and nothing moves on hover or focus: ${w}x${h} ${theme}`, { skip }, () => {
     const r = report(dump(`shift=1&theme=${theme}`, w, h), 'shift-report');
     assert.equal(r.error, undefined, r.error);
-    assert.ok(r.states >= 16, `only ${r.states} states`);
+    assert.ok(r.states >= 23, `only ${r.states} states`);
     assert.ok(r.interactions > 60, `only ${r.interactions} interactions ran`);
     assert.ok(r.compared > 2000, `only ${r.compared} measurements`);
     assert.deepEqual(r.failures, [], `moved: ${JSON.stringify(r.failures.slice(0, 5))}`);
@@ -86,6 +86,24 @@ test('every state shows its pill, its one message and its buttons; nothing start
   const dom = dump('state=notinstalled', 1440, 900, 6000);
   assert.match(dom, /class="switch"[^>]*disabled/);
   assert.match(text(dom), /Turn this on after the model is installed\./);
+});
+
+test('the Auto-keywords card says what it will do, keeps everything off until turned on, and lists AI keywords to remove', { skip }, () => {
+  const cases = [
+    ['kwnotinstalled', [/Auto-keywords \(RAM\+\+\)/, /Apache-2\.0/, /Download \(1\.8 GB\)\.\.\./, /Keywords are in English/, /Your own keywords are never changed or removed/]],
+    ['kwoff', [/Installed · verified/, /Add keywords automatically/, /Off\. No photo is analysed and no keyword is added\./, /Keyword confidence/, /70%/]],
+    ['kwworking', [/Analysing 1,204 of 1,820 photos|Analysing/, /12,418 keywords on 1,190 photos/, /About 1\.4 s per photo/, /2\.9 GB of memory/, /Review…/]],
+    ['kwpaused', [/Paused/, /85%/, /Tags the model is at least 85% sure of become keywords/]],
+    ['kwrepair', [/Needs repair/, /Not available until the model is repaired\./]],
+    ['kwreview', [/AI keywords/, /sky\s+982/, /beach\s+640/, /Your own keywords are never touched/, /Remove all…/]],
+    ['kwreviewempty', [/No AI keywords yet\./]],
+  ];
+  for (const [state, patterns] of cases) {
+    const t = text(dump(`state=${state}`, 1440, 900, 6000));
+    for (const p of patterns) assert.match(t, p, `${state}: ${p}`);
+  }
+  // the switch of a pack that is not installed is disabled: nothing can run on photos before the model and consent
+  assert.match(dump('state=kwnotinstalled', 1440, 900, 6000), /class="switch"[^>]*disabled/);
 });
 
 test('the consent dialog carries the spec text, and Cancel is the focused button', { skip }, () => {

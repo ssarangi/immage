@@ -6,6 +6,7 @@
 // darktable's tags, "|" between the levels of a hierarchy; the engine keeps
 // them in the sidecar and remembers every one ever used
 import { useEffect, useMemo, useRef, useState } from "react";
+import { commands } from "./commands";
 import { settings } from "./settings";
 import { t } from "./i18n";
 
@@ -101,13 +102,14 @@ export function KeywordInput({ attached, known, onAdd, addOnBlur = false, autoFo
 }
 
 // the chips of a list of keywords, each taken off with its ×
-export function KeywordChips({ keywords, onRemove }: { keywords: string[]; onRemove: (name: string) => void }) {
+// `ai` names the keywords Auto-keywords added, which carry an AI mark (text, so not by color alone)
+export function KeywordChips({ keywords, onRemove, ai }: { keywords: string[]; onRemove: (name: string) => void; ai?: ReadonlySet<string> }) {
   return (
     <div className="kw-chips">
       {keywords.length === 0 && <span className="kw-none">{t("library.keywording.none")}</span>}
       {keywords.map((k) => (
-        <span key={k} className="kw-chip" title={path(k)}>
-          {leaf(k)}
+        <span key={k} className={`kw-chip${ai?.has(k) ? " ai" : ""}`} title={ai?.has(k) ? `${path(k)} - ${t("keywording.aiTip")}` : path(k)}>
+          {leaf(k)}{ai?.has(k) && <span className="kw-ai">{t("keywording.ai")}</span>}
           <button title={t("library.keywording.remove", { keyword: path(k) })} onClick={() => onRemove(k)}>×</button>
         </span>
       ))}
@@ -115,8 +117,10 @@ export function KeywordChips({ keywords, onRemove }: { keywords: string[]; onRem
   );
 }
 
-export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true, onToggle }: {
+export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true, onToggle, photoPath }: {
   keywords: string[] | null;     // the open photo's; null while there is none
+  // the open photo's file, to mark the keywords Auto-keywords added (none for a selection)
+  photoPath?: string;
   known: string[];               // every keyword ever used
   onAdd: (names: string[]) => void;
   onRemove: (name: string) => void;
@@ -125,6 +129,13 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true,
 }) {
   const [recent, setRecent] = useState(loadRecent);
   const attached = useMemo(() => new Set(keywords ?? []), [keywords]);
+  const [ai, setAi] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    let alive = true;
+    if (!photoPath) { setAi(new Set()); return; }
+    commands.keywordsAiOf(photoPath).then((l) => { if (alive) setAi(new Set(l)); }, () => { if (alive) setAi(new Set()); });
+    return () => { alive = false; };
+  }, [photoPath, keywords]);
 
   const add = (names: string[]) => {
     const fresh = [...new Set(names.map(parseKeyword).filter(Boolean))];
@@ -138,7 +149,7 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true,
   if (!keywords) return null;
   const content = (
     <div className={onToggle ? "kw-body" : "keyword-dialog-content"}>
-      <KeywordChips keywords={keywords} onRemove={onRemove} />
+      <KeywordChips keywords={keywords} onRemove={onRemove} ai={ai} />
       <KeywordInput attached={attached} known={known} onAdd={add} />
       {recent.length > 0 && (
         <>

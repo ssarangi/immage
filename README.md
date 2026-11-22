@@ -44,7 +44,9 @@ and Linux. **All builds are alpha; bugs are expected.**
   and optionally search and export to an [Immich](app/docs/immich.md) library.
 - Find photos with filters, or describe them with optional Smart search, which
   runs on your computer (a model pack you download yourself under
-  Preferences > General > AI models, with nothing downloaded or analysed until you agree). The [Find panel](app/docs/library.md#find) in Grid
+  Preferences > General > AI models, with nothing downloaded or analysed until
+  you agree). The optional Auto-keywords pack can also add English keywords for
+  what is in each photo, which you can review and remove again. The [Find panel](app/docs/library.md#find) in Grid
   keeps filters active across folder changes and remembers its own width and
   visibility separately from the editing panel.
 - See your library as numbers in [Statistics](app/docs/statistics.md) (View > Statistics): cameras, lenses, exposure, when and where you shoot, and your top-rated frames, with every chart a filter. The Library panel's [Catalog](app/docs/catalog.md) card shows folders and network shares Immage has indexed, beside your Folders, with their progress and state. From a terminal, the [catalog command line](app/docs/catalog-cli.md) indexes folders and network shares and makes thumbnails of their photos with the fewest reads.

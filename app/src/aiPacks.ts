@@ -9,7 +9,7 @@
 // `pack_list` and the `pack-state` / `pack-progress` events.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { commands } from "./commands";
-import type { PackInfo, PackProgress } from "./bindings";
+import type { KeywordsSummary, PackInfo, PackProgress } from "./bindings";
 import { formatDate, formatNumber } from "./i18n";
 
 export type Tr = (key: string, vars?: Record<string, string | number>) => string;
@@ -156,6 +156,29 @@ export function analysedLine(analysed: number | null, pending: number | null, en
   if (analysed == null) return tr("aimodels.work.reading");
   if (pending == null || pending === 0) return tr("aimodels.clip.doneNothing", { n: analysed, count: fmt.num(analysed) });
   return tr("aimodels.clip.doneWaiting", { n: analysed, count: fmt.num(analysed), left: fmt.num(pending) });
+}
+
+/** the standing line under the Auto-keywords switch */
+export function keywordsLine(analysed: number | null, pending: number | null, enabled: boolean, tr: Tr, fmt: Fmt = plainFmt): string {
+  if (!enabled) return tr("aimodels.kw.off");
+  if (analysed == null) return tr("aimodels.work.reading");
+  if (pending == null || pending === 0) return tr("aimodels.clip.doneNothing", { n: analysed, count: fmt.num(analysed) });
+  return tr("aimodels.clip.doneWaiting", { n: analysed, count: fmt.num(analysed), left: fmt.num(pending) });
+}
+
+/** "About 1.4 s per photo ... 2.9 GB", or the line shown before the first photo is measured */
+export function speedLine(s: KeywordsSummary | null, tr: Tr, fmt: Fmt = plainFmt): string {
+  if (!s || s.infer_ms == null) return tr("aimodels.kw.speedNone");
+  const secs = fmt.num(s.infer_ms / 1000, { maximumFractionDigits: 1, minimumFractionDigits: 1 });
+  return s.memory_mb != null
+    ? tr("aimodels.kw.speed", { s: secs, mem: `${fmt.num(Math.round(s.memory_mb / 100) / 10, { maximumFractionDigits: 1, minimumFractionDigits: 1 })} GB` })
+    : tr("aimodels.kw.speedOnly", { s: secs });
+}
+/** the Results row's hint */
+export function resultsLine(s: KeywordsSummary | null, tr: Tr, fmt: Fmt = plainFmt): string {
+  if (!s) return tr("aimodels.work.reading");
+  if (s.keywords === 0) return tr("aimodels.kw.resultsNone");
+  return tr("aimodels.kw.results", { n: s.keyworded, count: fmt.num(s.keyworded), keywords: fmt.num(s.keywords) });
 }
 
 export function summaryOf(packs: PackInfo[]) {

@@ -10,6 +10,10 @@ mod search_cache;
 mod search_analysis;
 mod library_ids;
 mod analysis_queue;
+mod ram_models;
+mod tags_cmds;
+mod tags_service;
+mod tags_store;
 mod search_reconcile;
 mod clip_models;
 mod packs;
@@ -311,7 +315,14 @@ fn main() {
             let clip_models = Arc::new(clip_models::Models::new(runtime.join("clip-models")));
             // model packs (Preferences > General > AI models): CLIP is the first; the Smart search
             // analysis switch is on only for a user who already had the model (analysis_settings.rs)
-            let packs = Arc::new(packs::PackManager::new(vec![clip_models.store()]));
+            let ram_models = Arc::new(ram_models::Models::new(runtime.join("ram-models")));
+            ram_models.enabled_flag().store(
+                analysis_settings::load_keywords(&app.state::<settings::Settings>()) && ram_models.installed(),
+                std::sync::atomic::Ordering::Release);
+            ram_models.threshold_flag().store(
+                analysis_settings::load_keywords_threshold(&app.state::<settings::Settings>()),
+                std::sync::atomic::Ordering::Release);
+            let packs = Arc::new(packs::PackManager::new(vec![clip_models.store(), ram_models.store()]));
             clip_models.analysis_flag().store(
                 analysis_settings::load_smart_search(&app.state::<settings::Settings>(), clip_models.installed()),
                 std::sync::atomic::Ordering::Release);
@@ -322,7 +333,16 @@ fn main() {
                     packs::PackEvent::Progress(progress) => { let _ = events.emit("pack-progress", progress); }
                 }));
             }
-            app.manage(pack_cmds::AiState { packs, smart_search: clip_models.analysis_flag() });
+            let tag_store = Arc::new(tags_store::TagStore::open(&runtime.join("tags.sqlite"))
+                .map_err(|e| format!("cannot open tags.sqlite: {e}"))?);
+            let apply: tags_service::Applier = {
+                let handle = app.handle().clone();
+                Arc::new(move |req| handle.state::<AppState>().engine("tags_apply").request(req))
+            };
+            let tags_control = tags_service::start(search_cache.clone(), ram_models.clone(), tag_store.clone(), analysis_queue.clone(),
+                engine.tagged(), apply.clone(), frame_output.clone(), runtime.clone());
+            app.manage(pack_cmds::AiState { packs, smart_search: clip_models.analysis_flag(), keywords: ram_models, tags: tag_store,
+                tags_service: tags_control, apply });
             let search_analysis = search_analysis::start(search_cache.clone(), clip_models.clone(), analysis_queue.clone(), engine.tagged(), frame_output.clone(), runtime.clone());
             app.manage(AppState {
                 search_analysis,

@@ -899,6 +899,19 @@ impl SearchCache {
         self.db.lock().map_err(|_| "search cache lock poisoned")?
             .execute("DELETE FROM analyses", []).map(|_| ()).map_err(|e| e.to_string())
     }
+    /// The next `limit` source files after id `after`, for the Auto-keywords scan.
+    pub fn assets_after(&self, after: i64, limit: u32) -> Result<Vec<Asset>, String> {
+        let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
+        let mut q = db
+            .prepare("SELECT id,path,original_fingerprint FROM assets WHERE id>?1 ORDER BY id LIMIT ?2")
+            .map_err(|e| e.to_string())?;
+        let rows = q
+            .query_map(params![after, limit.min(1024)], |r| {
+                Ok(Asset { id: r.get(0)?, path: r.get(1)?, original_fingerprint: r.get(2)? })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
     pub fn assets(&self) -> Result<Vec<Asset>, String> {
         let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
         let mut q = db

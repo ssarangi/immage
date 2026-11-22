@@ -484,6 +484,11 @@ static gboolean _cmd_keywords_set(JsonObject *req, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+static gboolean _cmd_tags_apply(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return tags_apply(req, b, err);
+}
+
 static gboolean _cmd_capture_times(JsonObject *req, JsonBuilder *b, char **err)
 {
   if(!library_capture_times(req, b, err)) return FALSE;
@@ -1338,6 +1343,7 @@ static const eng_cmd_t _commands[] =
   { "opencl", _cmd_opencl, 0 },
   { "parity", _cmd_parity, 0 },
   { "keywords_set", _cmd_keywords_set, 0 },
+  { "tags_apply", _cmd_tags_apply, 0 },
   { "capture_times", _cmd_capture_times, 0 },
   { "meta_set", _cmd_meta_set, 0 },
   { "export", _cmd_export, 0 },
@@ -1636,6 +1642,10 @@ static gpointer _read_requests(gpointer data)
         {
           clip_queue(parser); parser = NULL; taken = TRUE;
         }
+        else if(!g_strcmp0(cmd, "tags_analyze") && json_object_has_member(req, "tag"))
+        {
+          tags_queue(parser); parser = NULL; taken = TRUE;
+        }
         else if((!g_strcmp0(cmd, "thumb") || !g_strcmp0(cmd, "analysis_preview")
                  || !g_strcmp0(cmd, "meta")) && json_object_has_member(req, "tag"))
         {
@@ -1778,6 +1788,7 @@ int main(int argc, char **argv)
   g_thread_unref(g_thread_new("ai idle", ai_idle_watch, NULL));
 #endif
   clip_start(out);
+  tags_start(out);
   GAsyncQueue *requests = g_async_queue_new();
   _requests = requests;
   g_thread_unref(g_thread_new("requests", _read_requests, requests));
@@ -1844,6 +1855,7 @@ int main(int argc, char **argv)
   if(!quit) session_save_pending();
 
   clip_wait();
+  tags_wait();
   library_thumb_wait();
   library_import_wait();
   export_wait();

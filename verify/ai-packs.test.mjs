@@ -16,7 +16,7 @@ const tr = (key, vars = {}) => {
   assert.ok(text !== undefined, `missing string ${key}`);
   return text.replace(/\{(\w+)\}/g, (m, name) => (name in vars ? String(vars[name]) : m));
 };
-const { packView, workView, analysedLine, sizeLabel, etaLabel, summaryOf, percent, plainFmt } = await import('../app/src/aiPacks.ts');
+const { packView, workView, analysedLine, keywordsLine, speedLine, resultsLine, sizeLabel, etaLabel, summaryOf, percent, plainFmt } = await import('../app/src/aiPacks.ts');
 
 const base = {
   id: 'clip', name: 'Smart search (CLIP)', license: 'MIT', license_url: '', source_host: 'huggingface.co',
@@ -147,4 +147,33 @@ test('a download starts only from the consent dialog; Resume and Repair pass no 
   // the true call is inside onConsent, which only the dialog's confirm button reaches
   assert.match(src, /onConsent=\{\(id\) => \{ setDialog\(null\); void guard\(async \(\) => \{ await commands\.packDownload\(id, true\)/);
   assert.match(src, /if \(action === "download"\) setDialog\(\{ kind: "consent", id \}\)/);
+});
+
+test('the Auto-keywords lines: off, counting, waiting, measured speed and the results count', () => {
+  assert.equal(keywordsLine(null, null, false, tr, plainFmt), 'Off. No photo is analysed and no keyword is added.');
+  assert.equal(keywordsLine(null, null, true, tr, plainFmt), 'Reading status…');
+  assert.equal(keywordsLine(1204, 616, true, tr, plainFmt), '1,204 photos analysed, 616 waiting.');
+  assert.equal(keywordsLine(1, 0, true, tr, plainFmt), '1 photo analysed. Nothing waiting.');
+  const s = { photos: 1204, keyworded: 1190, keywords: 12418, threshold: 70, min_threshold: 40, max_threshold: 95, infer_ms: 1400, memory_mb: 2900 };
+  assert.match(speedLine(s, tr, plainFmt), /About 1\.4 s per photo on this computer, 2\.9 GB of memory while the model is loaded\./);
+  assert.match(speedLine({ ...s, memory_mb: null }, tr, plainFmt), /About 1\.4 s per photo on this computer\.$/);
+  assert.match(speedLine({ ...s, infer_ms: null }, tr, plainFmt), /Speed is measured after the first photo\./);
+  assert.match(speedLine(null, tr, plainFmt), /Speed is measured/);
+  assert.match(speedLine(s, tr, plainFmt), /^Keywords are in English\./);
+  assert.equal(resultsLine(s, tr, plainFmt), '12,418 keywords on 1,190 photos. Review or remove them.');
+  assert.equal(resultsLine({ ...s, keyworded: 1, keywords: 3 }, tr, plainFmt), '3 keywords on 1 photo. Review or remove them.');
+  assert.equal(resultsLine({ ...s, keywords: 0, keyworded: 0 }, tr, plainFmt), 'No keywords added yet.');
+  assert.equal(resultsLine(null, tr, plainFmt), 'Reading status…');
+});
+
+test('the RAM++ pack is a pack like CLIP: Download is the only action until installed, and its switch needs the model', () => {
+  const ram = { ...base, id: 'ram', name: 'Auto-keywords (RAM++)', license: 'Apache-2.0', bytes: 1_849_925_269, bytes_left: 1_849_925_269, files: 3, analyses: ['keywords'] };
+  const v = packView(ram, tr, plainFmt);
+  assert.deepEqual(v.actions.map((a) => a.id), ['download']);
+  assert.equal(v.actions[0].label, 'Download (1.8 GB)...');
+  assert.equal(v.usable, false);
+  assert.equal(v.reason, 'Turn this on after the model is installed.');
+  const ok = packView({ ...ram, state: 'installed', bytes_on_disk: ram.bytes, verified_at: 1_700_000_000 }, tr, plainFmt);
+  assert.equal(ok.usable, true);
+  assert.equal(ok.reason, null);
 });

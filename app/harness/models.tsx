@@ -8,7 +8,8 @@
 //
 //   state   notinstalled | diskfull | downloading | downloading1 | downloading99 | verifying | installed |
 //           installedoff | installedpaused | installedidle | checking | checked | repair | offline | stopped |
-//           update | unsupported | consent | remove          (see modelsFixtures.ts)
+//           update | unsupported | consent | remove | kwnotinstalled | kwdownloading | kwoff | kwworking | kwidle |
+//           kwpaused | kwrepair | kwreview | kwreviewempty          (see modelsFixtures.ts)
 //   theme   a built-in theme id (dark, graphite, slate, warm-ash, grey, classic-grey, soft-grey, light)
 //   w, h    the pixel size of the page area (default: 80% of the window less the 190 px sidebar)
 //   break=1 adds a style that lets the state slot grow with its message, to prove the shift test fails
@@ -51,7 +52,8 @@ function Harness() {
   if (!fx) return null;
   return <div style={{ position: "fixed", inset: 0, display: "grid", placeItems: "center" }}>
     <div className="prefs-scroll" style={{ width: w, height: h, flex: "none", background: "var(--panel)", borderRadius: "var(--radius-panel)" }} data-harness-page>
-      <AiModelsView packs={fx.packs} work={fx.work} smartOn={fx.smartOn} flash={fx.flash ? { clip: fx.flash } : {}} busy={false} error=""
+      <AiModelsView packs={fx.packs} work={fx.work} smartOn={fx.smartOn} keywordsOn={!!fx.keywordsOn} keywordsWork={fx.keywordsWork ?? null}
+        keywords={fx.keywords ?? null} aiTags={fx.aiTags ?? []} onThreshold={noop} onReview={noop} onRemoveTags={() => Promise.resolve({ photos: 0, keywords: 0, failed: 0 })} flash={fx.flash ? { clip: fx.flash } : {}} busy={false} error=""
         dialog={fx.dialog ?? null} onAction={noop} onSwitch={noop} onPause={noop} onShowFolder={noop} onCulling={noop} onConsent={noop}
         onRemove={noop} onClose={noop} license={() => Promise.resolve("MIT License\n\nCopyright (c) 2021 OpenAI\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software...")}
         onTest={noop} testLine="" />

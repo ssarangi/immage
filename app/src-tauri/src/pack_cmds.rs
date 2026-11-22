@@ -17,6 +17,12 @@ pub struct AiState {
     pub packs: Arc<PackManager>,
     /// The Smart search analysis switch; the analysis service reads the same flag.
     pub smart_search: Arc<AtomicBool>,
+    /// The Auto-keywords (RAM++) model, its switch and confidence setting, its stored results
+    /// and its background service (tags_cmds.rs, tags_service.rs).
+    pub keywords: Arc<crate::ram_models::Models>,
+    pub tags: Arc<crate::tags_store::TagStore>,
+    pub tags_service: crate::tags_service::Control,
+    pub apply: crate::tags_service::Applier,
 }
 
 fn with_consents(mut info: PackInfo, settings: &Settings) -> PackInfo {
@@ -105,14 +111,21 @@ pub async fn pack_remove(
     if !partial_only {
         for a in analyses {
             settings.set(ai::enabled_key(*a), "0")?;
-            if *a == AnalysisId::SmartSearch {
-                ai.smart_search.store(false, Ordering::Release);
+            match a {
+                AnalysisId::SmartSearch => ai.smart_search.store(false, Ordering::Release),
+                AnalysisId::Keywords => ai.keywords.enabled_flag().store(false, Ordering::Release),
             }
         }
         state.analysis_queue.cancel();
         if !keep_results {
-            if let Some(cache) = &state.search_cache {
-                cache.clear_analyses()?;
+            if analyses.contains(&AnalysisId::SmartSearch) {
+                if let Some(cache) = &state.search_cache {
+                    cache.clear_analyses()?;
+                }
+            }
+            if analyses.contains(&AnalysisId::Keywords) {
+                // the stored tags only; keywords already on photos stay (Remove AI keywords takes them off)
+                ai.tags.clear()?;
             }
         }
     }
@@ -128,10 +141,10 @@ pub fn pack_license(ai: State<'_, AiState>, id: PackId) -> Result<String, String
 #[tauri::command]
 #[specta::specta]
 pub fn analysis_get(settings: State<'_, Settings>) -> Vec<AnalysisSettings> {
-    vec![AnalysisSettings {
-        id: AnalysisId::SmartSearch,
-        enabled: settings.get(ai::enabled_key(AnalysisId::SmartSearch)).as_deref() == Some("1"),
-    }]
+    [AnalysisId::SmartSearch, AnalysisId::Keywords]
+        .into_iter()
+        .map(|id| AnalysisSettings { id, enabled: settings.get(ai::enabled_key(id)).as_deref() == Some("1") })
+        .collect()
 }
 
 /// Turns an analysis on or off. Turning one on is refused in Rust unless its
@@ -160,6 +173,7 @@ pub async fn analysis_set(
     settings.set(ai::enabled_key(id), if enabled { "1" } else { "0" })?;
     match id {
         AnalysisId::SmartSearch => ai.smart_search.store(enabled, Ordering::Release),
+        AnalysisId::Keywords => ai.keywords.enabled_flag().store(enabled, Ordering::Release),
     }
     if !enabled {
         // queued photos are dropped; the one in flight finishes and is kept
@@ -187,19 +201,22 @@ pub struct AnalysisStatusAll {
 /// 2 s poll feeds the summary strip, the CLIP row and the Find icon.
 #[tauri::command]
 #[specta::specta]
-pub fn analysis_status(state: State<'_, AppState>) -> AnalysisStatusAll {
+pub fn analysis_status(state: State<'_, AppState>, ai: State<'_, AiState>) -> AnalysisStatusAll {
     let paused = state.analysis_queue.status().paused;
-    let p = state.search_analysis.status(paused);
+    let row = |id, p: crate::search_analysis::AnalysisProgress| AnalysisRow {
+        id,
+        enabled: p.enabled,
+        installed: p.installed,
+        pending: p.pending,
+        running: p.running,
+        active: p.active,
+    };
     AnalysisStatusAll {
         paused,
-        rows: vec![AnalysisRow {
-            id: AnalysisId::SmartSearch,
-            enabled: p.enabled,
-            installed: p.installed,
-            pending: p.pending.map(u64::from).map(|n| n as u32),
-            running: p.running,
-            active: p.active,
-        }],
+        rows: vec![
+            row(AnalysisId::SmartSearch, state.search_analysis.status(paused)),
+            row(AnalysisId::Keywords, ai.tags_service.status(paused)),
+        ],
     }
 }
 

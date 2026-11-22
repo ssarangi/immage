@@ -206,6 +206,29 @@ function Place({ v, set }: { v: ImmichSearch; set: (p: Partial<ImmichSearch>) =>
   );
 }
 
+// the keywords Auto-keywords added to this folder's photos, to tick like any keyword: a second list under the
+// keywords, so a search can ask for what the model saw without the user's own keywords in the way. A tick
+// sets the same keyword filter, so an AI keyword and a typed one narrow a search the same way
+function AiKeywords({ items, chosen, onChange }: { items: [string, number][]; chosen: string[]; onChange: (v: string[]) => void }) {
+  const [ai, setAi] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    let alive = true;
+    commands.keywordsAiList(5000).then((l) => { if (alive) setAi(new Set(l.map((x) => x.name))); }, () => { if (alive) setAi(new Set()); });
+    return () => { alive = false; };
+  }, []);
+  const mine = items.filter(([name]) => ai?.has(name));
+  const picked = chosen.filter((c) => ai?.has(c));
+  return (
+    <div className="fe-sec">
+      <div className="fe-label"><span>{t("find.aitags")}</span></div>
+      {ai && ai.size === 0
+        ? <p className="fe-note">{t("find.aitags.none")}</p>
+        : <Ticks items={mine} chosen={picked} onChange={(next) => onChange([...chosen.filter((c) => !ai?.has(c)), ...next])}
+                 empty={t("library.keywording.none")} find={t("library.filters.findKeyword")} />}
+    </div>
+  );
+}
+
 // the server's named things to tick, as the folder's keywords are
 const ids = (all: Named[], picked: string[], onChange: (ids: string[]) => void, empty: string) => (
   <Ticks items={all.map((x) => [x.id, 0] as [string, number])} chosen={picked} onChange={onChange} empty={empty}
@@ -338,8 +361,11 @@ export function FilterEditor({ cat, state, send, images, local, server, people, 
       return server
         ? ids(tags, s.tagIds, (tagIds) => patchSearch({ tagIds }), t("library.filters.noTags"))
         // every one ticked, and a keyword covers those under it
-        : <Ticks items={within({ keywords: [] }).keywords} chosen={f.keywords} onChange={(keywords) => patchFilter({ keywords })}
-                 show={keyword} empty={t("library.keywording.none")} find={t("library.filters.findKeyword")} />;
+        : <>
+            <Ticks items={within({ keywords: [] }).keywords} chosen={f.keywords} onChange={(keywords) => patchFilter({ keywords })}
+                   show={keyword} empty={t("library.keywording.none")} find={t("library.filters.findKeyword")} />
+            <AiKeywords items={within({ keywords: [] }).keywords} chosen={f.keywords} onChange={(keywords) => patchFilter({ keywords })} />
+          </>;
     case "cameras":
       return server
         ? <Camera v={s} set={patchSearch} />

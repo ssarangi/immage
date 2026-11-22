@@ -30,6 +30,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 #[serde(rename_all = "camelCase")]
 pub enum PackId {
     Clip,
+    Ram,
 }
 
 // UpdateAvailable and Unsupported are part of the page's contract (the card draws them) and are

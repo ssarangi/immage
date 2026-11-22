@@ -73,7 +73,7 @@ impl Progress {
         changed
     }
 }
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     static START: OnceLock<Instant> = OnceLock::new();
     START.get_or_init(Instant::now).elapsed().as_millis() as u64 + 1
 }
@@ -244,7 +244,7 @@ pub fn start(
 // the engine's import, which every photo open also takes, is held while the
 // file is read; an open cannot cut that read short, so it is not started
 // while the user is working. one already under way still delays an open
-const SHARE_QUIET: Duration = Duration::from_secs(120);
+pub(crate) const SHARE_QUIET: Duration = Duration::from_secs(120);
 
 impl Service {
     // whether work on this photo waits for a quiet spell (SHARE_QUIET). the
@@ -585,12 +585,12 @@ fn count_backlog(
     }
 }
 
-fn library_selection(runtime: &Path) -> serde_json::Value {
+pub(crate) fn library_selection(runtime: &Path) -> serde_json::Value {
     crate::settings::read_key(runtime, "immage.library")
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
 }
-fn selected(path: &Path, config: &serde_json::Value) -> bool {
+pub(crate) fn selected(path: &Path, config: &serde_json::Value) -> bool {
     let within = |key: &str| {
         config[key]
             .as_array()

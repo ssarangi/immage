@@ -3328,3 +3328,9 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .cat-card .btn { background: var(--hover); }
 .cat-card .btn:hover:not(:disabled) { background: var(--track); }
 .cat-card .btn.primary { background: var(--accent); }
+
+/* a keyword Auto-keywords added: an AI mark inside the chip, which keeps its height */
+.kw-chip.ai { border-style: dashed; }
+.kw-chip .kw-ai { margin-left: 5px; padding: 0 4px; border-radius: 3px; font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.04em; color: var(--text-2); background: var(--hover); }
+.fe-note { margin: 0; color: var(--text-3); font-size: var(--fs-small); line-height: 1.5; }
+.fe-sec:not(:first-child), .filter-ticks + .fe-sec { margin-top: 11px; padding-top: 11px; border-top: 1px solid var(--hover); }

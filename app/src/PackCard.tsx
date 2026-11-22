@@ -28,6 +28,8 @@ export type AnalysisRowProps = {
   /** a standing line under the switch (analysed so far), always laid out */
   status: string;
   statusLabel: string;
+  /** more fixed-height rows below the status line (Auto-keywords: confidence, speed, results) */
+  extra?: ReactNode;
 };
 
 export function PackCard({ info, view, name, does, photos, card, busy, flash, onAction, analysis, test }: {
@@ -79,6 +81,7 @@ export function PackCard({ info, view, name, does, photos, card, busy, flash, on
                       onChange={analysis.onChange} />
         </PrefRow>
         <PrefRow label={analysis.statusLabel} hint={analysis.status}><span /></PrefRow>
+        {analysis.extra}
       </div>}
     </section>
   );

@@ -6691,7 +6691,7 @@ export default function App() {
                          setMetaText((t) => (t ? { ...t, [field]: value } : t));
                          void setMeta(currentEntry.imgid, { [field]: value });
                        }} />
-        <KeywordingPanel keywords={currentEntry ? keywords : null} known={knownKeywords}
+        <KeywordingPanel keywords={currentEntry ? keywords : null} known={knownKeywords} photoPath={currentEntry?.path}
                          open={leftOpen.has("keywording")} onToggle={(alt) => toggleLeft("keywording", alt)}
                          onAdd={(names) => void setPhotoKeywords(names, [])}
                          onRemove={(name) => void setPhotoKeywords([], [name])} />

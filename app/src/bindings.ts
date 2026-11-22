@@ -128,6 +128,22 @@ export const commands = {
 	analysisStatus: () => __TAURI_INVOKE<AnalysisStatusAll>("analysis_status"),
 	/**  The same pause as `search_pause` and the Find icon. */
 	analysisPause: (paused: boolean) => __TAURI_INVOKE<null>("analysis_pause", { paused }),
+	keywordsSummary: () => __TAURI_INVOKE<KeywordsSummary>("keywords_summary"),
+	/**
+	 *  Sets the confidence a tag needs to become a keyword. Stored results are re-decided in
+	 *  the background without analysing again.
+	 */
+	keywordsThresholdSet: (percent: number) => __TAURI_INVOKE<number>("keywords_threshold_set", { percent }),
+	/**  The keywords the analysis attached, most used first: the review list and Find's AI tags. */
+	keywordsAiList: (limit: number) => __TAURI_INVOKE<TagCount[]>("keywords_ai_list", { limit }),
+	/**  The keywords the analysis attached to one photo (Keywording marks them AI). */
+	keywordsAiOf: (path: string) => __TAURI_INVOKE<string[]>("keywords_ai_of", { path }),
+	/**
+	 *  Takes off the keywords the analysis attached: the named ones, or all when `names` is empty.
+	 *  Keywords the user typed, or had before the analysis, are never touched: only what the
+	 *  store recorded as attached by the analysis is detached.
+	 */
+	keywordsAiRemove: (names: string[]) => __TAURI_INVOKE<RemoveReport>("keywords_ai_remove", { names }),
 	settingsSet: (changes: { [key in string]: string | null }) => __TAURI_INVOKE<null>("settings_set", { changes }),
 	meta: (imgid: number) => __TAURI_INVOKE<MetaReply>("meta", { imgid }),
 	metaSet: (imgid: number, fields: { [key in string]: Value }) => __TAURI_INVOKE<null>("meta_set", { imgid, fields }),
@@ -425,7 +441,7 @@ export type Album = {
 	count: number,
 };
 
-export type AnalysisId = "smartSearch";
+export type AnalysisId = "smartSearch" | "keywords";
 
 export type AnalysisProgress = {
 	installed: boolean,
@@ -1314,6 +1330,23 @@ export type KeyCount = {
 	n: number,
 };
 
+export type KeywordsSummary = {
+	/**  Photos with a stored result. */
+	photos: number,
+	/**  Photos carrying at least one keyword the analysis attached. */
+	keyworded: number,
+	/**  Keywords the analysis attached, over all photos. */
+	keywords: number,
+	/**  The confidence setting, percent. */
+	threshold: number,
+	min_threshold: number,
+	max_threshold: number,
+	/**  Inference time of the last photo, milliseconds, once one has been analysed. */
+	infer_ms: number | null,
+	/**  The engine's memory while it held the model, megabytes, once measured. */
+	memory_mb: number | null,
+};
+
 export type LabelCounts = {
 	red: number,
 	yellow: number,
@@ -1736,7 +1769,7 @@ export type PackErrorKind = "offline" | "diskFull" | "hashMismatch" | "unsupport
 /**  Not shown to the user: a cancelled download is a Stopped pack with no error. */
 "cancelled" | "other";
 
-export type PackId = "clip";
+export type PackId = "clip" | "ram";
 
 export type PackInfo = {
 	id: PackId,
@@ -2116,6 +2149,13 @@ export type RemovePreview = {
 	dirs: number,
 };
 
+export type RemoveReport = {
+	photos: number,
+	keywords: number,
+	/**  Photos that could not be reached (missing, offline); their keywords are kept and still listed. */
+	failed: number,
+};
+
 export type RenameItem = {
 	imgid: number,
 	path: string,
@@ -2423,6 +2463,12 @@ export type SubFolder = {
 	name: string,
 	path: string,
 	has_children: boolean,
+};
+
+export type TagCount = {
+	name: string,
+	/**  Photos that carry this keyword because of the analysis. */
+	photos: number,
 };
 
 /**  How many photos have a thumbnail. */

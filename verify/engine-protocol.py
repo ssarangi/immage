@@ -61,7 +61,7 @@ mask_delete mask_map mask_rename masks merge_cancel meta meta_set module_schema 
 open opencl pano_merge pano_preview parity paste_batch points prefetch preview
 presets print print_profile_add print_profiles printer printers quit range_map
 remove_copy render sample save set sidecars softproof spektra_fetch
-spektra_stocks spot_source spots spots_enable style_forget thumb thumb_threads tone_key watermarks wb_presets
+spektra_stocks spot_source spots spots_enable style_forget tags_analyze tags_apply thumb thumb_threads tone_key watermarks wb_presets
 unpack upright version zones
 '''.split())
 
@@ -168,6 +168,7 @@ def anywhere(img):
         R('prefetch', imgids=[0, 0], label='prefetch list'),
         R('meta', imgid=0, label='meta unknown'),
         R('keywords_set', imgid=0, add=['x'], label='keywords_set unknown'),
+        R('tags_apply', imgid=0, add=['x'], label='tags_apply unknown'),
         R('meta_set', imgid=0, label='meta_set unknown'),
         R('capture_times', label='capture_times none'),
         R('capture_times', entries=[{'imgid': 0, 'before': '', 'after': ''}],
@@ -359,6 +360,8 @@ def photo_files(img):
         R('keywords_set', imgid=img, add=['golden', 'golden/child'], label='keywords_set add'),
         R('keywords'),
         R('keywords_set', imgid=img, remove=['golden'], label='keywords_set remove'),
+        R('tags_apply', imgid=img, add=['golden/child', 'sunset'], remove=['golden', 'sunset'], label='tags_apply added and removed'),
+        R('tags_apply', imgid=img, add=['beach', 'beach'], label='tags_apply twice'),
         R('meta_set', imgid=img, location={'latitude': 1.5, 'longitude': 2.5}, label='meta_set location'),
         R('meta_set', imgid=img, location={'latitude': 'x'}, label='meta_set bad location'),
         R('meta_set', imgid=img, location=None, label='meta_set clear location'),
@@ -381,6 +384,7 @@ def tagged(img):
         T('analysis_preview', imgid=img, subject='original', label='analysis_preview tagged no out'),
         T('clip_embed', tower='bogus', model_root='{tmp}/no-model', input='{tmp}/no-input',
           label='clip_embed tagged invalid'),
+        T('tags_analyze', model_root='/', input='/no-such-ram-tensor', label='tags_analyze tagged missing tensor'),
         T('clip_embed', tower='text', model_root='/', input='/no-such-clip-tensor',
           label='clip_embed tagged missing tensor'),
         T('export', '{out}/te.jpg', imgid=img, out='{out}/te.jpg'),
