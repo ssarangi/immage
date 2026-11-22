@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { Camera, Sparkles, SlidersHorizontal, Tag, X } from "lucide-react";
+import { Camera, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { easeZoom, ZOOM_EASE } from "./zoom";
 import { loadReadAhead } from "./Preferences";
 import { BanIcon, StarIcon } from "./icons";
 import { commands, type CullChange } from "./commands";
+import { CullLightbox, LightboxHead, StageArrows } from "./CullLightbox";
 import { CullOverlay, CullSide, NO_SEL, overrideDecision, useCritique, type Sel, type Tab } from "./CullInspector";
 import { reviewKey } from "./cullModel";
 import { cullState, useDecision, useReviewing } from "./cullStore";
@@ -77,7 +78,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
   const openPrefs = () => { setPhoto(null); onOpenCullPrefs(); };
   // The frame is fixed for the window size, independent of photo or preview
   // dimensions, so swapping photos and zooming never moves the toolbar.
-  const fitted = fitLightbox(windowSize.width, windowSize.height);
+  const fitted = fitLightbox(windowSize.width, windowSize.height);   // the lightbox follows it in CSS; this re-fits the photo on resize
   const zoomShow = useRef<(scale: number, isFit: boolean) => void>(() => {});
   const fitScale = () => {
     const box = viewport.current;
@@ -198,7 +199,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
       switch (action?.type) {
         case "closeKeywords": ++keywordGeneration.current; setTargets([]); break;
         case "holdSpace": space.current = true; setSpaceHeld(true); break;
-        case "closeLightbox": setPhoto(null); break;
+        case "closeLightbox": if (sel.pinned !== null) setSel({ ...sel, pinned: null }); else setPhoto(null); break;
         case "toggleLightbox": direction.current = 1; setPhoto(photo ? null : target?.imgid ?? null); break;
         case "keywords": void keywords(current ? [current] : keywordTargets(allImages, selection, target?.imgid)); break;
         case "toggleZoom": zoomAnchor.current = null; setZoom(zoomRef.current === null ? 1 : null); break;
@@ -403,39 +404,12 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
   const shared = lists.length === targets.length ? (lists[0] ?? []).filter(k => lists.every(l => l.includes(k))) : [];
   return <>
     {current && <div className="modal-backdrop culling-backdrop"
-      onClick={e => { if (e.target === e.currentTarget) setPhoto(null); }} role="dialog" aria-modal="true" aria-label={t("library.culling.preview")}>
-      {([-1, 1] as const).map(dir => {
-        const next = images[images.indexOf(current) + dir];
-        return <button key={dir} className={`culling-arrow ${dir < 0 ? "previous" : "next"}`}
-          style={dir < 0 ? { left: `max(4px, calc(50% - ${fitted.width / 2 + 40}px))` }
-            : { right: `max(4px, calc(50% - ${fitted.width / 2 + 40}px))` }}
-          disabled={!next} aria-label={t(dir < 0 ? "library.culling.previous" : "library.culling.next")}
-          title={t(dir < 0 ? "library.culling.previous" : "library.culling.next")}
-          onClick={() => { if (next) { direction.current = dir; setPhoto(next.imgid); } }} />;
-      })}
-      <div className="culling-lightbox" style={fitted}>
-        <div className="culling-toolbar">
-          <div className="culling-photo-info">
-            <bdi className="culling-filename" title={current.filename}>{current.filename}</bdi>
-            <span className="culling-photo-count">{formatNumber(images.indexOf(current) + 1)}/{formatNumber(images.length)}</span>
-          </div>
-          <div className="culling-actions">
-            <button type="button" className="tool" aria-pressed={cameraPreviews}
-              aria-label={t("library.culling.cameraPreviews")}
-              title={t("library.culling.cameraPreviewsHint")}
-              onClick={() => setCameraPreviews(value => !value)}><Camera size={16} aria-hidden="true" /></button>
-            <button type="button" className="tool labeled" aria-pressed={tab === "critique"} title={t("cull.critique.topHint")}
-              onClick={() => { setTabChosen("critique"); if (!crit.critique && crit.phase === "idle") crit.run(false); }}><Sparkles size={16} aria-hidden="true" /><span>{t("cull.critique.run")}</span></button>
-            <button type="button" className="tool" aria-label={t("library.culling.keywords")}
-              title={t("library.culling.keywords")} onClick={() => void keywords([current])}><Tag size={16} aria-hidden="true" /></button>
-            <button type="button" className="tool" aria-label={t("library.culling.edit")}
-              title={t("library.culling.edit")} onClick={() => onEdit(current)}><SlidersHorizontal size={16} aria-hidden="true" /></button>
-            <button type="button" className="tool" aria-label={t("library.culling.close")}
-              title={t("library.culling.close")} onClick={() => setPhoto(null)}><X size={16} aria-hidden="true" /></button>
-          </div>
-        </div>
-        <div className="culling-body">
-        <div ref={viewport} style={{ flex: 1, minWidth: 0, overflow: "auto", minHeight: 0,
+      onClick={e => { if (e.target === e.currentTarget) setPhoto(null); }} aria-modal="true">
+      <CullLightbox dialogLabel={t("library.culling.preview")}
+        head={<LightboxHead filename={current.filename} index={images.indexOf(current) + 1} total={images.length}
+          onEdit={() => onEdit(current)} onKeywords={() => void keywords([current])} onClose={() => setPhoto(null)} />}
+        stage={<>
+        <div ref={viewport} style={{ flex: 1, minWidth: 0, overflow: detailed ? "auto" : "visible", minHeight: 0,
           cursor: detailed && spaceHeld ? (panning ? "grabbing" : "grab") : detailed ? "zoom-out" : "zoom-in" }}
           onClick={e => {
             if (panClick.current || space.current) { panClick.current = false; return; }
@@ -462,16 +436,20 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
             el.addEventListener("pointermove", move); el.addEventListener("lostpointercapture", end);
           }}>
           <div style={{ minWidth: "100%", minHeight: "100%", width: "max-content", height: "max-content", display: "grid", placeItems: "center" }}>
-            <div style={{ position: "relative", width: "max-content", height: "max-content" }}>
+            <div className="culling-photo" style={{ position: "relative", width: "max-content", height: "max-content" }}>
               <canvas ref={canvas} style={{ maxWidth: "none", flexShrink: 0, display: "block" }} />
-              <CullOverlay critique={crit.critique} sel={sel} onSel={setSel} decision={decision} />
+              <CullOverlay critique={crit.critique} sel={sel} onSel={setSel} decision={decision}
+                loading={crit.phase === "loading" && tab === "critique"} />
             </div>
           </div>
         </div>
-        <CullSide image={current} tab={tab} onTab={setTabChosen} crit={crit} sel={sel} onSel={setSel}
-          onChanges={onCullChanges} onOpenPrefs={openPrefs} />
-        </div>
-        <div className="culling-bottom-bar">
+        {error && <div role="alert" className="culling-photo-error">{error}<button type="button" className="cull-btn" onClick={() => setRetry(n => n + 1)}>{t("library.culling.retry")}</button></div>}
+        <StageArrows hasPrevious={!!images[images.indexOf(current) - 1]} hasNext={!!images[images.indexOf(current) + 1]}
+          onStep={dir => { const next = images[images.indexOf(current) + dir]; if (next) { direction.current = dir; setPhoto(next.imgid); } }} />
+        </>}
+        side={<CullSide image={current} tab={tab} onTab={setTabChosen} crit={crit} sel={sel} onSel={setSel}
+          onChanges={onCullChanges} onOpenPrefs={openPrefs} />}
+        foot={<div className="culling-bottom-bar">
           <div className="culling-rating-controls">
             <span className="tool-group" role="group" aria-label={t("library.culling.rating")}>
               <button className={`tool${current.rejected ? " on" : ""}`} aria-label={t("library.culling.reject")} aria-pressed={current.rejected}
@@ -493,20 +471,23 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
               })}
             </span>
           </div>
-          <ZoomBar disabled={false} register={show => {
-            zoomShow.current = show;
-            show(zoomRef.current ?? fitScale(), zoomRef.current === null);
-          }} fit={fitScale} onZoom={value => {
-            zoomAnchor.current = null;
-            setZoom(typeof value === "number" ? value : null);
-          }} onToggle={() => {
-            zoomAnchor.current = null;
-            setZoom(zoomRef.current === null ? 1 : null);
-          }} />
           <span className="culling-status" role="status">{busy ? t("library.culling.loading") : ""}</span>
-        </div>
-        {error && <div role="alert">{error}<button onClick={() => setRetry(n => n + 1)}>{t("library.culling.retry")}</button></div>}
-      </div>
+          <div className="culling-view-controls">
+            <button type="button" className="tool" aria-pressed={cameraPreviews} aria-label={t("library.culling.cameraPreviews")}
+              title={t("library.culling.cameraPreviewsHint")}
+              onClick={() => setCameraPreviews(value => !value)}><Camera size={16} aria-hidden="true" /></button>
+            <ZoomBar disabled={false} register={show => {
+              zoomShow.current = show;
+              show(zoomRef.current ?? fitScale(), zoomRef.current === null);
+            }} fit={fitScale} onZoom={value => {
+              zoomAnchor.current = null;
+              setZoom(typeof value === "number" ? value : null);
+            }} onToggle={() => {
+              zoomAnchor.current = null;
+              setZoom(zoomRef.current === null ? 1 : null);
+            }} />
+          </div>
+        </div>} />
     </div>}
     {!!targets.length && <div className="modal-backdrop" data-grid-keywords-dialog role="dialog"
       aria-modal="true" aria-label={t("library.culling.gridKeywords")}>

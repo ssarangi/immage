@@ -101,13 +101,14 @@ test('first paint borrows the exact virtual-copy thumbnail without closing it', 
   assert.equal(calls.length, 1, 'detail loading keeps the existing frame');
 });
 
-test('lightbox keeps a fixed 80% viewport frame across photos and zoom modes', () => {
+test('lightbox keeps a fixed 94% by 92% viewport frame (capped at 2240 by 1400) across photos and zoom modes', () => {
   const frame = fitLightbox(1600, 900);
-  assert.deepEqual(frame, {width:1280, height:720});
+  assert.deepEqual(frame, {width:1504, height:828});
   for (const [w,h] of [[6000,4000],[4000,6000],[400,300],[300,600]]) {
     assert.deepEqual(fitLightbox(1600, 900), frame, `${w}x${h} photo keeps the same frame`);
   }
-  assert.deepEqual(fitLightbox(400, 300), {width:320, height:240});
+  assert.deepEqual(fitLightbox(400, 300), {width:376, height:276});
+  assert.deepEqual(fitLightbox(3840, 2160), {width:2240, height:1400});
 });
 
 const sessionSource = readFileSync(new URL('../app/src/session.ts', import.meta.url), 'utf8');

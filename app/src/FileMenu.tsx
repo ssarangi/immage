@@ -135,7 +135,7 @@ export function FileMenu({ onSimilar, onKeywords, onCritique, onRename, rate, ca
         {onKeywords && <button className="hinted" onClick={() => { onClose(); onKeywords(); }}>
           <span className="name">{t("library.menu.keywords")}</span><span className="hint key">K</span></button>}
         {onCritique && <button className="hinted" onClick={() => { onClose(); onCritique(); }}>
-          <span className="name">{t("library.menu.critique")}</span><span className="hint key">{keys("⌥⌘G")}</span></button>}
+          <span className="name">{t("library.menu.critique")}</span><span className="hint key">{keys("⇧⌘G")}</span></button>}
         <div className="menu-sep" />
       </>}
       {editIn && <>

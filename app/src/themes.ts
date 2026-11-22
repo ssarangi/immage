@@ -36,6 +36,7 @@ export function applyTheme() {
   for (const token of THEME_TOKENS) document.documentElement.style.setProperty(`--${token}`, theme.colors[token]);
   document.documentElement.style.colorScheme = theme.colorScheme;
   document.documentElement.dataset.theme = theme.id;
+  document.documentElement.dataset.scheme = theme.colorScheme;   // light or dark, for styles that differ by it (any custom theme too)
 }
 function publish() { applyTheme(); revision++; listeners.forEach(l => l()); if (typeof window !== 'undefined') window.dispatchEvent(new Event('immage:theme-change')); }
 export function loadThemes() {

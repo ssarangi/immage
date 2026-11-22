@@ -18,7 +18,7 @@ Improvements
   stopped. The Cull panel, in Find's place, filters the grid by Highlights,
   Blurry, Duplicates and Rejected, counts why photos are rejected, groups a
   set of look-alikes with its best frame first, and keeps past sessions. The
-  preview's fixed-width side column gives each decision's reasons in plain
+  preview's fixed-width report panel gives each decision's reasons in plain
   words, outlines the softest region, and lets you Keep, Reject or Make best
   (P, R, B). Apply
   flags the rejects in place (nothing is moved or deleted) and can give
@@ -26,13 +26,24 @@ Improvements
 - **AI grading with Google Gemini:** Preferences > Culling saves a Gemini API
   key in the system keychain, tests it, and holds the
   Auto cull defaults and the analysis cache button. Photo > Critique with
-  Gemini (also in a thumbnail's right-click menu, and Critique in the preview)
-  opens the preview on a photo and critiques it: a headline, a short summary,
-  and numbered Strengths and To improve rows, with matching numbered badges on
-  the photo that outline the region you hover or pin. Answers are cached per
-  photo and need only the key. In Find, a sentence typed under Describe the
+  Gemini (Shift+Cmd+G, or Ctrl+Shift+G on Windows and Linux, and in a
+  thumbnail's right-click menu) opens the preview on a photo and critiques it:
+  a headline, a short summary, and What works and What to improve rows, with
+  matching numbered badges on the photo (circles for strengths, rounded squares
+  for improvements) that outline the region you hover or pin. Answers are
+  cached per photo and need only the key. In Find, a sentence typed under Describe the
   photos in words becomes Find filters, without sending any catalog contents.
   Support bundles remove API keys.
+- **Culling preview redesign:** the preview is a larger rounded window (94% by
+  92% of the window) with the photo matted on a neutral stage, a fixed photo
+  area, and a report panel with underlined Critique and Cull tabs. Hovering,
+  focusing or pinning a row or badge no longer moves any text; notes are shown
+  in full. Waiting for a critique shows the elapsed time, a skeleton of the
+  answer, honest wording after 25 and 60 seconds, and a Cancel button, and
+  respects reduced motion. No-key, error and empty states, and the Cull tab's
+  verdict, factors, switch and Keep, Reject and Make best buttons, are
+  redrawn. The camera previews toggle moved to the bottom bar, Critique left
+  the top bar, and Escape releases a pinned region before closing the preview.
 
 ## 0.47.1
 

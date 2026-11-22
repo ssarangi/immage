@@ -52,7 +52,7 @@ test('menu ids are known actions', () => {
 
 test('nativeAccel', () => {
   const cases = { '⇧⌘E': 'CmdOrCtrl+Shift+E', "⌘'": "CmdOrCtrl+'", '⌘[': 'CmdOrCtrl+[', '⌘=': 'CmdOrCtrl+=',
-    '⌘-': 'CmdOrCtrl+-', '⌥⌘V': 'CmdOrCtrl+Alt+V', '⌘,': 'CmdOrCtrl+,', '⌘/': 'CmdOrCtrl+/', '⌃H': 'Ctrl+H',
+    '⌘-': 'CmdOrCtrl+-', '⌥⌘V': 'CmdOrCtrl+Alt+V', '⌘,': 'CmdOrCtrl+,', '⌘/': 'CmdOrCtrl+/', '⌃H': 'Ctrl+H', '⇧⌘G': 'CmdOrCtrl+Shift+G',
     F: undefined, Tab: undefined, 0: undefined, '⇧H': undefined };
   for (const [s, a] of Object.entries(cases)) assert.equal(M.nativeAccel(s), a, s);
   assert.ok(M.isSingleKey('⇧H') && M.isSingleKey('Tab') && !M.isSingleKey('⌃H') && !M.isSingleKey('⇧⌘E'));

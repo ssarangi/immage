@@ -34,8 +34,8 @@ export class PreviewQueue {
 // photos, preview resolutions, and zoom modes change.
 export function fitLightbox(windowWidth: number, windowHeight: number) {
   return {
-    width: Math.max(1, Math.min(windowWidth * .8, windowWidth - 32)),
-    height: Math.max(1, Math.min(windowHeight * .8, windowHeight - 32)),
+    width: Math.max(1, Math.min(windowWidth * .94, 2240)),
+    height: Math.max(1, Math.min(windowHeight * .92, 1400)),
   };
 }
 

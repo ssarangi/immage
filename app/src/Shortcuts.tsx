@@ -27,7 +27,7 @@ const GROUPS: Group[] = [
 ["⇧⌘V", t("dialogs.shortcuts.general.entry11")],
 ["⌥⌘V", t("dialogs.shortcuts.general.entry12")],
 ["⌘'", t("dialogs.shortcuts.general.entry13")],
-["⌥⌘G", t("dialogs.shortcuts.general.critique")],
+["⇧⌘G", t("dialogs.shortcuts.general.critique")],
 ["⌃H", t("dialogs.shortcuts.general.entry14")],
 ["⌃M", t("dialogs.shortcuts.general.entry15")],
     ],

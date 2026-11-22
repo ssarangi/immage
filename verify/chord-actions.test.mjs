@@ -63,6 +63,8 @@ function original(e, IS_MAC) {
   if (cmd(e) && (e.code === "Equal" || e.code === "Minus") && !e.altKey) return { id: e.code === "Equal" ? "zoom-in" : "zoom-out", prevent: true };
   if (cmd(e) && (e.code === "BracketLeft" || e.code === "BracketRight")) return { id: e.code === "BracketLeft" ? "rotate-left" : "rotate-right", prevent: true };
   if (cmd(e) && e.code === "KeyA" && !e.shiftKey && !e.altKey) return { id: "select-all", prevent: true };
+  // added after the chain was extracted: Critique with Gemini, on Shift, not Alt
+  if (cmd(e) && e.shiftKey && !e.altKey && e.code === "KeyG") return { id: "critique", prevent: true };
   return null;
 }
 
@@ -74,7 +76,7 @@ const KEYS = [
   ['i', 'KeyI'], ['I', 'KeyI'], ['z', 'KeyZ'], ['Z', 'KeyZ'],
   ['=', 'Equal'], ['+', 'Equal'], ['-', 'Minus'], ['_', 'Minus'],
   ['[', 'BracketLeft'], ['{', 'BracketLeft'], [']', 'BracketRight'], ['}', 'BracketRight'],
-  ['a', 'KeyA'], ['A', 'KeyA'],
+  ['a', 'KeyA'], ['A', 'KeyA'], ['g', 'KeyG'], ['G', 'KeyG'],
   ['x', 'KeyX'], ['Tab', 'Tab'], ['Escape', 'Escape'],
   // key and code from different layouts
   ['z', 'KeyY'], ['y', 'KeyZ'], ['p', 'KeyO'], ['e', 'KeyR'], ['i', 'KeyK'], ['c', 'KeyX'], ['x', 'KeyC'],
@@ -120,4 +122,16 @@ test('spot cases', () => {
   assert.equal(other(ev('z', 'KeyZ', 'm')), null);
   assert.deepEqual(mac(ev('a', 'KeyA', 'm')), { id: 'select-all', keep: false });
   assert.equal(mac(ev('a', 'KeyA', 'ma')), null);
+});
+
+test('Critique is Shift+Cmd+G, and no longer an Alt chord', () => {
+  const { mac, other } = chordActionFor;
+  assert.deepEqual(mac(ev('G', 'KeyG', 'ms')), { id: 'critique', keep: false });
+  assert.deepEqual(other(ev('G', 'KeyG', 'cs')), { id: 'critique', keep: false });
+  assert.equal(other(ev('g', 'KeyG', 'ca')), null, 'Ctrl+Alt+G is retired');
+  assert.equal(mac(ev('g', 'KeyG', 'ma')), null);
+  assert.equal(other(ev('G', 'KeyG', 'csa')), null);
+  assert.equal(other(ev('g', 'KeyG', 'c')), null);
+  assert.equal(other(ev('G', 'KeyG', 's')), null, 'plain Shift+G stays free for the grid');
+  assert.equal(mac(ev('G', 'KeyG', 'cs')), null, 'Ctrl is not the command key on a Mac');
 });

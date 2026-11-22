@@ -61,7 +61,7 @@ In full screen preview, Z, ⌘= ⌘-, Y, X, I, L, \, 0-9 and ← → still work.
 | 0 - 5 | Rating, for every selected photo |
 | 6 - 9 | Red, yellow, green or blue label, for every selected photo |
 | X | Reject |
-| ⌥⌘G | Critique with Gemini the photo under the pointer or the selection, in the grid |
+| ⇧⌘G | Critique with Gemini the photo under the pointer or the selection, in the grid |
 | P R B | In the culling preview of a reviewed Auto cull: keep the photo, reject it, or make it the best of its set (the preview of a photo in the review) |
 | ⌘-click | In the filmstrip: add a photo to the selection, or take it out |
 | ⇧-click | In the filmstrip: select the run from the last clicked photo |

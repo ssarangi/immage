@@ -190,3 +190,5 @@ crop and after restoring the frame, and applies each result before the next
 fit. `--write-corpus benchmarking/corpus` retains the synthetic photos in the
 ignored local corpus. This verifies engine sampling, not visible controls,
 OpenCL or camera RAW decoding; retain real portrait RAWs for those checks.
+
+Culling lightbox: [CullLightbox.tsx](../../src/CullLightbox.tsx) is its structure (head, stage, report panel, foot; the stage is a fixed mat for the photo), [CullInspector.tsx](../../src/CullInspector.tsx) the report panel (`CullSide`), the photo overlay (`CullOverlay`) and `useCritique`, [critiquePins.ts](../../src/critiquePins.ts) the badge placement. No hover, focus or pin state may change a size or position there. [app/harness/critique.html](../../harness/critique.html) renders those real components with fixture data in a plain browser (`npm run dev`, then `/harness/critique.html?state=result&hover=row2`; parameters in `critique.tsx`), outside the production build; `node --test verify/critique-shift.test.mjs` measures every element before and after each hover, focus and pin in headless Chrome and fails on any movement.

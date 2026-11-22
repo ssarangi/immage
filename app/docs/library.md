@@ -604,18 +604,21 @@ Each reviewed thumbnail carries a badge in words and a symbol: **Best**,
 **Keep** or **Reject**, with the set number for a photo in a set. The reviewed
 state does not rely on color alone. Opening another folder ends the review.
 
-Open a photo in the culling preview (the magnifier, or **F**). A column of a
-fixed width, so the photo never changes size, sits at its right with two tabs,
-**Cull** and **Critique**. Cull is shown while a cull is under review, Critique
-otherwise. The **Cull** tab has:
+Open a photo in the culling preview (the magnifier, or **F**). A report panel
+of a fixed width, so the photo never changes size, sits at its right with two
+underlined tabs, **Critique** and **Cull**. Cull is shown while a cull is under
+review, Critique otherwise. The **Cull** tab has:
 
-- the verdict, with whether it is a highlight, and its reasons in plain words,
-  each marked **Against**, **For** or **Note**;
-- **Show the softest region**, which outlines the softest textured part of a
-  blurry photo on the picture;
-- **Keep (P)**, **Reject (R)** and **Make best (B)**, to overrule the
-  decision. Make best works on a photo in a set. K stays Keywords. If the
-  cull was already applied, the library follows at once.
+- the verdict (**Keep**, **Reject** or **Best of its set**) with its set and
+  whether it is a highlight, a sentence of reason, and, under **Why**, each
+  factor in plain words with a glyph that carries its meaning (a check mark
+  supports the decision, a circled minus is against it, a dash is a note);
+- the **Outline the softest area** switch, which outlines the softest textured
+  part of a blurry photo on the picture;
+- **Keep (P)**, **Reject (R)** and **Make best (B)**, pinned at the bottom of
+  the panel, to overrule the decision. The current decision is filled. Make
+  best works on a photo in a set. K stays Keywords. If the cull was already
+  applied, the library follows at once.
 
 ### Applying and undoing
 
@@ -640,26 +643,48 @@ With a Gemini key saved (Preferences › Culling, see
 [Preferences](preferences.md#culling)), Immage can ask Google Gemini about a photo.
 
 - **Critique**: choose **Photo > Critique with Gemini...**
-  (**⌥⌘G**, Ctrl+Alt+G on Windows and Linux), right-click a thumbnail and
-  choose **Critique with Gemini...**, or click **Critique** in the culling
-  preview's top bar. The preview opens on that photo (the one under the pointer,
-  else the selection) with the **Critique** tab and asks Gemini at once; an
-  answer already saved on this computer appears with nothing sent. While Gemini
-  works a spinner and the seconds so far are shown; it can take up to a minute.
-  The tab shows a short verdict as its title, a summary (**Show more** for
-  all of it), and the regions in two groups, **Strengths** and **To improve**,
-  with their counts. Each region is a numbered row, a check mark for a
-  strength or an exclamation mark for something to improve, with its label and a
-  one-line note. On the photo each region is a small numbered badge. Hover a
-  badge, or hover or focus a row, to outline that region and dim the others;
-  click to keep the outline, and click again to release it. Where badges overlap,
-  the smaller region is on top. The photo's preview is sent to Google as a JPEG
-  with a long edge of at most 1024 pixels; nothing else about the photo is.
-  Answers are kept on this computer, keyed by the file, its size and modified
-  time and the prompt version; the footer names the model and says
-  **saved answer** when nothing was sent. **Critique again** asks Gemini
-  afresh. Without a key, the tab says so and links to Preferences, which
-  closes the preview. Critique needs only the key, not the
+  (**⇧⌘G**, Ctrl+Shift+G on Windows and Linux) or right-click a thumbnail and
+  choose **Critique with Gemini...**. The preview opens on that photo (the one
+  under the pointer, else the selection) with the **Critique** tab and asks
+  Gemini at once; an answer already saved on this computer appears with nothing
+  sent. In the preview, **Critique this photo** on the tab asks for one.
+
+  The preview is one rounded window: the photo sits matted on a neutral stage
+  with a hairline edge and a soft shadow, the report panel is at its right, and
+  the top bar holds only the filename, the position (**3 of 6**), **Edit**,
+  **Keywords** and close. The camera previews toggle is at the bottom, beside
+  the zoom slider, and the previous and next buttons appear on the stage when
+  the pointer is over it. The photo area is the same size whatever the panel
+  shows, and nothing moves when you hover, focus or pin a row or a badge.
+
+  While Gemini works the tab says **Gemini is studying this photo** with the
+  time so far, an animated bar, and a placeholder in the shape of the answer;
+  a faint light sweeps the photo. This usually takes 10 to 40 seconds. After
+  25 seconds it says it is still working, and after 60 it says it is taking
+  longer than usual and offers **Try again**. **Cancel** stops waiting (the
+  request itself is left to finish and its answer is ignored). With reduced
+  motion on, nothing animates, but the time still counts.
+
+  The answer is a short headline, a summary of three lines (**Read more** for
+  all of it), and the regions in two lists, **What works** and **What to
+  improve**, with their counts. A strength is a numbered circle, an
+  improvement a numbered rounded square, so the two read apart without color.
+  Each region's label and its note, in full, are on its row. On the photo each
+  region is a numbered badge of the same shape. Hover a badge or an outline
+  edge and its row is highlighted and scrolled into view; hover or focus a row
+  (Up and Down move between rows) and its region is outlined on the photo with
+  the rest dimmed and its name beside the badge. Click a row, a badge or an
+  outline to pin the outline (the row shows a pin); click again, or press
+  Escape, to release it. Badges that would overlap are moved apart.
+
+  The photo's preview is sent to Google as a JPEG with a long edge of at most
+  1024 pixels; nothing else about the photo is. Answers are kept on this
+  computer, keyed by the file, its size and modified time and the prompt
+  version; the footer names the model (hover it for **saved answer** when
+  nothing was sent). **Critique again** asks Gemini afresh. A failed request
+  shows **Gemini did not answer**, the reason and **Try again**, and keeps an
+  earlier answer below it. Without a key, the tab offers **Open Preferences**,
+  which closes the preview first. Critique needs only the key, not the
   **Grade automatically** switch.
 - **Natural-language search**: in Find, type a sentence in the **Describe the
   photos in words** box and click **Ask Gemini** (or press Enter). Immage
@@ -909,13 +934,15 @@ selected photo, else the first photo in the grid; the thumbnail icon opens
 that thumbnail's photo.
 
 Press **F** over a photo to show a floating preview over the dimmed library,
-in a fixed frame covering 80% of the window width and height, without opening it in the
-editor. The frame and toolbar stay in place as you browse, zoom, and wait for
-more preview detail. Click the dimmed area to close it. Otherwise the first
-selected visible photo is used. Subtle triangle buttons outside the preview and the left and right
+in a fixed frame covering 94% of the window width and 92% of its height (at most
+2240 by 1400 pixels), without opening it in the editor. The photo is matted on
+a neutral stage inside it, and the frame and toolbar stay in place as you
+browse, zoom, and wait for more preview detail. Click the dimmed area to close
+it. Otherwise the first selected visible photo is used. Round buttons at the
+stage's edges, shown when the pointer is over it, and the left and right
 arrow keys browse the filtered grid; F or Escape returns. Number keys 0–5 set a
 rating, X toggles rejection, and 6–9 toggle color labels. The top bar keeps
-the filename and position together beside the preview controls. Press **K** or
+the filename and position together beside **Edit**, **Keywords** and close. Press **K** or
 click **Keywords** to open keywording over the lightbox for the displayed photo.
 Click **×** to close the dialog and return to the preview.
 The grid selection is preserved. The lightbox bottom bar has the same star icons
@@ -940,10 +967,11 @@ Hold **Space** and drag to pan while zoomed; releasing a Space-drag does not
 toggle zoom. Embedded detail is limited to the camera preview's native
 resolution. Double-click opens the displayed photo in the editor.
 
-The tag icon opens **Keywords** (also available with **K**), and the sliders
-icon opens the photo in the editor.
+The tag icon opens **Keywords** (also available with **K**), and **Edit** opens
+the photo in the editor.
 
-Turn on **Camera previews** with the camera icon in the lightbox toolbar. The
+Turn on **Camera previews** with the camera icon in the lightbox's bottom bar,
+beside the zoom slider. The
 icon is highlighted when the option is on. This uses embedded camera
 previews for edited RAWs in Fit, including during read-ahead. The toggle
 starts off when you open the Library grid. If a camera preview is unavailable,

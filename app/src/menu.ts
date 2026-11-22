@@ -91,7 +91,7 @@ export const MENUS: Menu[] = [
       item("hdr-merge", t("menu.hdr-merge"), "⌃H"),
       item("pano-merge", t("menu.pano-merge"), "⌃M"), sep(),
       item("auto-cull", t("menu.auto-cull")),
-      item("critique", t("menu.critique"), "⌥⌘G"), sep(),
+      item("critique", t("menu.critique"), "⇧⌘G"), sep(),
       item("crop", t("menu.crop"), "R"),
       item("heal", t("menu.heal"), "Q"),
       item("wb-picker", t("menu.wb-picker"), "W"), sep(),
