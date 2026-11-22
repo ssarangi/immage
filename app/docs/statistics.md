@@ -45,8 +45,8 @@ Statistics does not read).
   Times are the camera's local capture time.
 
 - **Places**: a map of where the photos with GPS were taken, with the side
-  panel of the selected area. Each bubble is an area; its size follows the
-  photo count (the biggest area on screen is the biggest bubble) and its
+  panel of the selected area. Each small pin is an area; its size follows the
+  photo count (the biggest area on screen is the largest pin) and its
   label gives the count (1.2k). Areas that overlap at the current zoom are
   merged into one bubble with a dashed outline; click it to zoom in and split
   it. A lone photo is a small green dot. The mode switch at the top left

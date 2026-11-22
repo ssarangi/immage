@@ -31,7 +31,7 @@
 /* bubbles, the selected area's outline, the offline graticule: one SVG in a Leaflet pane */
 .stats-view .st-pl-svg { position: absolute; left: 0; top: 0; overflow: visible; max-width: none; pointer-events: none; } /* a width of 0 would switch rendering off */
 .st-pl-b { pointer-events: auto; cursor: pointer; outline: none; }
-.st-pl-b .dot { fill: color-mix(in srgb, var(--stat-cyan) 62%, transparent); stroke: var(--stat-cyan); stroke-width: 2; transition: fill .15s, stroke .15s;
+.st-pl-b .dot { fill: color-mix(in srgb, var(--stat-cyan) 78%, transparent); stroke: var(--stat-cyan); stroke-width: 1.5; transition: fill .15s, stroke .15s;
   filter: drop-shadow(var(--stat-glow) color-mix(in srgb, var(--stat-cyan) var(--stat-glow-a), transparent)); }
 .st-pl-b .ring { fill: none; stroke: transparent; stroke-width: 2; transition: stroke .15s; }
 .st-pl-b:hover .dot, .st-pl-b:focus-visible .dot { fill: color-mix(in srgb, var(--stat-cyan) 94%, transparent); }
@@ -44,7 +44,7 @@
   filter: drop-shadow(var(--stat-glow) color-mix(in srgb, var(--stat-amber) var(--stat-glow-a), transparent)); }
 .st-pl-b.on .ring { stroke: var(--stat-amber); }
 .st-pl-b.holds .ring { stroke: color-mix(in srgb, var(--stat-amber) 80%, transparent); stroke-dasharray: 3 3; }
-.stats-view .st-pl-b .lbl { font: 600 12px var(--mono); fill: var(--pl-lbl); text-anchor: middle; pointer-events: none; letter-spacing: -.02em; }
+.stats-view .st-pl-b .lbl { font: 600 10px var(--mono); fill: var(--pl-lbl); text-anchor: middle; pointer-events: none; letter-spacing: -.02em; }
 .st-pl-outline { fill: color-mix(in srgb, var(--stat-amber) 9%, transparent); stroke: var(--stat-amber); stroke-width: 1.5; stroke-dasharray: 6 4;
   vector-effect: non-scaling-stroke; pointer-events: none; }
 .st-pl-grid line { stroke: var(--text-3); stroke-opacity: .28; stroke-width: 1; vector-effect: non-scaling-stroke; }

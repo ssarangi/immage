@@ -4,7 +4,7 @@
 // The Places map: Leaflet over the app's cached OpenStreetMap tiles (the one tile command the location editor
 // uses, behind StatsApi.mapTile), darkened by a CSS filter on the tile pane only. The data is not Leaflet
 // markers: one SVG in a Leaflet pane (so it pans with the map) holds a bubble per merged cell, and a canvas
-// in another pane draws the Heat mode. Bubbles size by count, carry a count label and a dashed ring when they
+// in another pane draws the Heat mode. Small pins size modestly by count, carry a count label and a dashed ring when they
 // are several areas merged, and are buttons: hover and keyboard focus show the shared tooltip, arrow keys move
 // between bubbles, Enter selects (or, for a merged one, zooms in). When no tile arrives the map keeps its flat
 // background and draws a labelled graticule, so the bubbles still read as places.
@@ -320,11 +320,11 @@ export function PlacesMap(props: PlacesMapProps) {
           )}
           {list.map((b) => {
             const on = isOn(b);
-            const label = b.n >= LABEL_MIN || b.merged ? compact(mode === "top" ? b.top : b.n) : "";
+            const label = b.r >= 14 && (b.n >= LABEL_MIN || b.merged) ? compact(mode === "top" ? b.top : b.n) : "";
             const where = coords(b.lat, b.lng);
             const solo = !!b.solo && !b.merged;
             const heatDot = mode === "heat";
-            const r = heatDot ? Math.min(b.r, 7) : b.r;
+            const r = heatDot ? Math.min(b.r, 5) : b.r;
             const tip = solo ? t("stats.places.solo") : photosText(b.n);
             const sub = b.merged ? t("stats.places.merged", { areas: nf(b.keys.length) }) : `${t("stats.places.tipTop", { n: nf(b.top) })} · ${where}`;
             return (
@@ -332,7 +332,7 @@ export function PlacesMap(props: PlacesMapProps) {
                  transform={`translate(${b.x} ${b.y})`} role="button" tabIndex={b.key === first ? 0 : -1} data-cell={b.key}
                  aria-pressed={b.merged ? undefined : on} aria-label={b.merged ? `${tip}. ${sub}` : t("stats.places.bubble.aria", { photos: tip, top: nf(b.top), where })}
                  data-tip={tip} data-tip-sub={sub} onClick={(e: MouseEvent<SVGGElement>) => activate(b, e)} onKeyDown={onKey(b)}>
-                <circle className="ring" r={r + 5} />
+                <circle className="ring" r={r + 4} />
                 <circle className="dot" r={solo ? SOLO_RADIUS : r} />
                 {label && !heatDot && <text className="lbl" dy="0.36em">{label}</text>}
               </g>

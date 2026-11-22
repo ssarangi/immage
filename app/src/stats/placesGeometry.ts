@@ -79,14 +79,14 @@ export function project(lat: number, lng: number, zoom: number): { x: number; y:
 // ---------------------------------------------------------------- bubbles
 
 export type Mode = "photos" | "top" | "heat";
-export const RADIUS_CAP = 58;
-export const RADIUS_MIN = 11;
+export const RADIUS_CAP = 26;
+export const RADIUS_MIN = 9;
 /**
  * A bubble's radius: the area follows the count, relative to the biggest cell of the answer (`max`), from
  * RADIUS_MIN to RADIUS_CAP. A merged bubble can go past the biggest cell and stops at the cap.
  */
 export const bubbleRadius = (value: number, max = 1000) => RADIUS_MIN + (RADIUS_CAP - RADIUS_MIN) * Math.sqrt(Math.min(1, Math.max(0, value) / Math.max(1, max)));
-export const SOLO_RADIUS = 6;
+export const SOLO_RADIUS = 4;
 /** a label fits inside from here on */
 export const LABEL_MIN = 100;
 
