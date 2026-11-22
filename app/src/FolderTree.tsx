@@ -15,6 +15,18 @@ import { NameEdit } from "./MasksPanel";
 import { baseName, within } from "./paths";
 import { pressPhoto, usePhotoDrag } from "./photoDrag";
 import { t } from "./i18n";
+import { folderCatalog } from "./catalogModel";
+import type { SourceStatus } from "./bindings";
+
+// what a folder's menu can do with the Catalog and the other tools (App supplies them)
+export type FolderTools = {
+  sources: SourceStatus[];
+  onCull(path: string): void;
+  onStats(path: string): void;
+  onAddToCatalog(path: string): void;
+  onOpenInCatalog(source: SourceStatus): void;
+  onRemoveFromCatalog(source: SourceStatus): void;
+};
 
 // the drive a folder is on (folder_volumes, volumes.rs)
 export type { Volume };
@@ -26,7 +38,7 @@ const chevron = (
 );
 
 export function FolderTree({ roots, volumes, hostNames, folded, current, photo, expanded, hidden, refresh, icon, driveIcon, networkIcon,
-                             onToggle, onFold, onOpen, onRemove, onDropFolder, transfer, onRenameHost, onError }: {
+                             onToggle, onFold, onOpen, onRemove, onDropFolder, transfer, onRenameHost, onError, tools }: {
   roots: string[];
   volumes: Map<string, Volume>;        // by root
   hostNames: Record<string, string>;   // the user's names for servers, by host
@@ -47,6 +59,7 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
   transfer: { source: string; target: string } | null;
   onRenameHost: (host: string, name: string) => void;  // "" goes back to the host
   onError: (message: string) => void;
+  tools?: FolderTools;
 }) {
   const [editingHost, setEditingHost] = useState<string | null>(null);
   const [children, setChildren] = useState<Map<string, SubFolder[]>>(new Map());
@@ -175,7 +188,7 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
     drives.set(mount, [...(drives.get(mount) ?? []), r]);
   }
   const folderMenu = menu && (
-    <FolderMenu {...menu} onClose={closeMenu}
+    <FolderMenu {...menu} onClose={closeMenu} tools={tools}
                 onNew={() => newFolder(menu.path)} onRemove={() => onRemove(menu.path)} />
   );
   if (drives.size < 2) return <>
@@ -218,15 +231,25 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
 
 // a folder's right-click menu: a new subfolder in it, the folder in the
 // file manager, and taking it off the list, as its × does
-function FolderMenu({ x, y, path, offline, onNew, onRemove, onClose }: {
-  x: number; y: number; path: string; offline: boolean;
+function FolderMenu({ x, y, path, offline, tools, onNew, onRemove, onClose }: {
+  x: number; y: number; path: string; offline: boolean; tools?: FolderTools;
   onNew: () => void; onRemove: () => void; onClose: () => void;
 }) {
   const ref = useMenuClose(onClose);
-  const left = Math.min(x, window.innerWidth - 230), top = Math.min(y, window.innerHeight - 130);
+  const left = Math.min(x, window.innerWidth - 230), top = Math.min(y, window.innerHeight - (tools ? 270 : 130));
+  const here = tools ? folderCatalog(path, tools.sources) : null;
   const why = offline ? t("library.folders.notConnected") : undefined;
   return (
     <div ref={ref} className="context-menu" style={{ left, top }}>
+      {tools && here && <>
+        <button disabled={offline} title={why} onClick={() => { onClose(); tools.onCull(path); }}>{t("catalog.folder.cull")}</button>
+        <button onClick={() => { onClose(); tools.onStats(path); }}>{t("catalog.folder.stats")}</button>
+        <div className="menu-sep" />
+        {here.kind === "none" && <button disabled={offline} title={why} onClick={() => { onClose(); tools.onAddToCatalog(path); }}>{t("catalog.folder.add")}</button>}
+        {here.kind !== "none" && <button onClick={() => { onClose(); tools.onOpenInCatalog(here.source); }}>{t("catalog.folder.open")}</button>}
+        {here.kind === "root" && <button onClick={() => { onClose(); tools.onRemoveFromCatalog(here.source); }}>{t("catalog.folder.remove")}</button>}
+        <div className="menu-sep" />
+      </>}
       <button disabled={offline} title={why} onClick={() => { onClose(); onNew(); }}>{t("library.folders.newFolderMenu")}</button>
       <div className="menu-sep" />
       <button disabled={offline} title={why}

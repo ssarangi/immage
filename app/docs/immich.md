@@ -11,8 +11,8 @@ in three ways:
 - **Exporting** can upload straight into an Immich album.
 
 **If you've used another editor:** Immich takes the place of an editor's
-catalog and collections, and of publishing to a photo service. Immage itself keeps
-no catalog.
+catalog and collections, and of publishing to a photo service. Immage itself
+needs no catalog (an optional [Catalog](catalog.md) can index folders).
 
 Immage works with Immich 3.2 or newer.
 

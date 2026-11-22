@@ -4,8 +4,9 @@
 without opening a window, so it works over SSH and from cron. It finds photos
 (folder, name, size and modified time) and then reads their metadata (camera,
 lens, exposure, time, size, GPS, rating, labels and keywords), and then makes
-small thumbnails with the fewest possible reads. The catalog is not shown in the
-app yet, but the thumbnails it makes are already used by the library grid.
+small thumbnails with the fewest possible reads. The app shows the same catalog in the
+Library panel's Catalog card (see [Catalog](catalog.md)), and the thumbnails it
+makes are used by the library grid.
 
 The catalog is a database, `catalog.sqlite`, in Immage's data folder
 (`$XDG_DATA_HOME/app.immage`, by default `~/.local/share/app.immage`, on Linux, `~/Library/Application Support/app.immage`
@@ -212,6 +213,17 @@ move or an eviction), removes thumbnail files nothing refers to and trims the st
 Options: `--size <px>` (64 to 2048), `--quality <30-95>`, `--concurrency <n>`,
 `--decode-workers <n>`, `--whole-jpegs no|idle|yes`, `--skip-failed`, `--no-publish`,
 `--no-adaptive`, `--missing-only` (the default: only photos without a current thumbnail), `--gc`, `--store`, `--store-limit`, `--cache`, `--cache-limit <MB>`.
+
+## Measuring a folder
+
+`bench <folder|source>` measures how a folder (usually a network share) behaves under the catalog's
+steps and writes a report, `--out <base>` giving `<base>.json` and `<base>.txt`. It lists folders,
+stats files, reads the first 64 KB (more only when the format needs it) of up to `--max-files`
+photos (5000) and a few embedded previews, within `--duration` seconds (300), with `--concurrency`
+workers. It only reads the folder, never opens your catalog, measures the database cost in a
+temporary local database that it deletes, and backs off when reads get slower than
+`--latency-limit-ms` (500, p95). The report has counts, sizes, timings and file extensions, not
+file names. Use a release build; benchmarking/nas/README.md explains how to read the report.
 
 ## Reserved options
 

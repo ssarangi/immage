@@ -44,6 +44,11 @@ export const commands = {
 	jobsActive: () => __TAURI_INVOKE<Progress[]>("jobs_active"),
 	catalogStatus: () => __TAURI_INVOKE<CatalogStatus>("catalog_status"),
 	/**
+	 *  Marks every photo's metadata as not read so the page can index again (scan, metadata,
+	 *  thumbnails). Refused while a job runs. Never opens or changes a photo file.
+	 */
+	catalogRebuild: () => __TAURI_INVOKE<number>("catalog_rebuild"),
+	/**
 	 *  Reads the headers and sidecars of every photo of the sources that a scan found new or
 	 *  changed (and retries earlier failures), then relinks renamed and moved photos. Progress comes as
 	 *  `catalog://metadata-progress`, the end as `catalog://metadata-finished`. Pause, resume and

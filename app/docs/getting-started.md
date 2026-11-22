@@ -13,7 +13,7 @@ minutes.
 
 | Elsewhere | In Immage |
 | --- | --- |
-| Catalog | No catalog to set up: you open folders directly, and edits live in an XMP sidecar beside each photo. Immich can be your library. See also [Statistics](statistics.md) for what your library says about how you shoot. |
+| Catalog | No catalog to set up: you open folders directly, and edits live in an XMP sidecar beside each photo. An optional [Catalog](catalog.md) indexes folders you choose, beside Folders. Immich can be your library. See also [Statistics](statistics.md) for what your library says about how you shoot. |
 | Import dialog | **Import** (⇧⌘I), the same idea: copy off a card, skip duplicates, verify every copy. See [Import](import.md). |
 | Library module | The **Library** panel on the left, the filmstrip and the grid, opened with **Library** on the rail (G). See [Library](library.md). |
 | Develop module | **Adjustments** on the right: Basic, Tone Curve, HSL / Color, Color Grading, Detail, Lens Corrections, Transform and Effects. See [Adjustments](adjustments.md). |

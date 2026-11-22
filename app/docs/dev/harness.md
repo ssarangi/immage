@@ -1,6 +1,6 @@
 # Dev-only harness pages
 
-[`app/harness/`](../../harness) holds three pages that mount a real piece of the
+[`app/harness/`](../../harness) holds four pages that mount a real piece of the
 interface on fixture data in a plain browser, with no Tauri, no engine and no
 library. They exist to look at states that are hard to reach in the app (a
 critique that has been loading for 65 seconds, a download that stopped, a
@@ -12,6 +12,7 @@ nothing in the app or the user guide links to them.
 | [critique.html](../../harness/critique.html) | the culling preview's `CullLightbox`, `CullSide` and `CullOverlay` (Critique and Cull tabs) | in [critique.tsx](../../harness/critique.tsx) | [critique-shift.test.mjs](../../../verify/critique-shift.test.mjs) |
 | [statistics.html](../../harness/statistics.html) | the whole `Statistics` view | recorded replies of the real backend, [statsMock.ts](../../harness/statsMock.ts) | [stats-shift.test.mjs](../../../verify/stats-shift.test.mjs) |
 | [models.html](../../harness/models.html) | `AiModelsView`, the AI models group of Preferences > General | [modelsFixtures.ts](../../harness/modelsFixtures.ts) | [models-shift.test.mjs](../../../verify/models-shift.test.mjs) |
+| [catalog.html](../../harness/catalog.html) | `CatalogCard` with its index card, the add and remove dialogs and Preferences' `CatalogPrefsView` (`?state=`, `?view=`) | [catalogFixtures.ts](../../harness/catalogFixtures.ts) | [catalog-shift.test.mjs](../../../verify/catalog-shift.test.mjs) |
 
 [tauriShim.ts](../../harness/tauriShim.ts) is imported first by every page. It
 stands in for the Tauri runtime so the app's modules load, and every command the
@@ -114,12 +115,12 @@ thing on screen. Each page has a `*Shift.ts` module
 The `.mjs` tests run each page in headless Chrome with `--dump-dom`, read the JSON
 from the hidden `<pre>`, and assert that the movement is zero and that enough was
 measured (a test that measures nothing fails). Each page also has a **negative
-control**: `break=1` (critique, models) or `bad=1`, `bad=2`, `bad=3` (Statistics)
+control**: `break=1` (critique, models, catalog) or `bad=1`, `bad=2`, `bad=3` (Statistics)
 adds a style that does move things on hover, and the test asserts the measurement
 catches it. Run them with:
 
 ```sh
-node --test verify/critique-shift.test.mjs verify/models-shift.test.mjs
+node --test verify/critique-shift.test.mjs verify/models-shift.test.mjs verify/catalog-shift.test.mjs
 node --test verify/stats-shift.test.mjs     # needs `npm run dev` already running on 1430
 ```
 

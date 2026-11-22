@@ -598,6 +598,32 @@ pub async fn jobs_active(app: AppHandle) -> Result<Vec<Progress>, String> {
     Ok(v)
 }
 
+/// What a rebuild forgets: that any photo's metadata was read. The next metadata run
+/// reads every present photo again; sources, photos, ratings in sidecars, thumbnails
+/// and the files themselves are untouched. Returns the number of photos queued.
+pub fn reset_for_rebuild(db: &CatalogDb) -> Result<i64, String> {
+    db.exec(|c| {
+        c.execute("UPDATE photos SET meta_state=0 WHERE status='present'", [])
+            .map(|n| n as i64)
+            .map_err(|e| e.to_string())
+    })
+}
+
+/// Marks every photo's metadata as not read so the page can index again (scan, metadata,
+/// thumbnails). Refused while a job runs. Never opens or changes a photo file.
+#[tauri::command]
+#[specta::specta]
+pub async fn catalog_rebuild(app: AppHandle) -> Result<i64, String> {
+    blocking(move || {
+        let cat = catalog(&app)?;
+        if cat.scans.lock().unwrap().len() + cat.metas.lock().unwrap().len() + cat.thumbs.lock().unwrap().len() > 0 {
+            return Err("Wait for the running index to finish, or stop it, before rebuilding.".into());
+        }
+        reset_for_rebuild(&cat.db)
+    })
+    .await
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn catalog_status(app: AppHandle) -> Result<CatalogStatus, String> {
@@ -624,4 +650,39 @@ pub async fn catalog_status(app: AppHandle) -> Result<CatalogStatus, String> {
         })
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog_fakefs::{FakeFs, BASE_MTIME};
+
+    #[test]
+    fn rebuild_queues_every_present_photo_and_changes_nothing_else() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = CatalogDb::open(&dir.path().join("catalog.sqlite")).unwrap();
+        db.exec(|c| {
+            c.execute("INSERT INTO sources(name,kind,volume_key,mount_path,rel_root,created_at) VALUES('S','nas','smb:x/y','/fake','',1)", [])
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        })
+        .unwrap();
+        let fs = FakeFs::new();
+        for n in ["a.jpg", "b.jpg", "c.jpg"] {
+            fs.add_blob(n, vec![0u8; 64], BASE_MTIME);
+        }
+        let src = sources::get_source(&db.read().unwrap(), 1).unwrap().unwrap();
+        let o = ScanOptions { root: fs.root.clone(), include_subfolders: true, dir_skip: false, light: false, fresh: false };
+        let mut cfg = ScanConfig::for_network(false);
+        cfg.workers = 2;
+        run_scan(&db, &fs, &src, &o, &cfg, &ScanControl::default(), &mut |_| {}).unwrap();
+        db.exec(|c| c.execute("UPDATE photos SET meta_state=1, rating=4", []).map(|_| ()).map_err(|e| e.to_string())).unwrap();
+        assert_eq!(reset_for_rebuild(&db).unwrap(), 3);
+        let c = db.read().unwrap();
+        let q = |sql: &str| c.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap();
+        assert_eq!(q("SELECT COUNT(*) FROM photos WHERE meta_state=0"), 3);
+        // what was read stays until the next run replaces it
+        assert_eq!(q("SELECT COUNT(*) FROM photos WHERE rating=4"), 3);
+        assert_eq!(q("SELECT COUNT(*) FROM sources"), 1);
+    }
 }

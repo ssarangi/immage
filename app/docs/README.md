@@ -8,7 +8,8 @@ darktable's raw processing underneath.
   its own, so darktable opens an Immage edit and renders it the same.
 - **Edits live beside your photos**, in an XMP sidecar next to each file.
   The photo itself is never changed, and there is nothing to save.
-- **No catalog to manage.** You open folders directly. For a library you can search,
+- **No catalog to manage.** You open folders directly; the optional
+  [Catalog](catalog.md) indexes folders you choose, beside them. For a library you can search,
   Immage works with [Immich](immich.md): imports check against it, the
   Library panel searches it, and exports can go straight into an album.
 
@@ -55,6 +56,8 @@ is also on the [Immage website](https://immage.photo/guide/).
   [Preferences > Culling](preferences.md#culling))
 - [Statistics](statistics.md): your cameras, lenses, exposure, when and where
   you shoot, and the frames you rate highest; click anything to filter
+- [Catalog](catalog.md): folders Immage has indexed, beside your Folders, with
+  a first-index progress card and a count and state for each
 - [Catalog command line](catalog-cli.md): `immage catalog` indexes folders and
   network shares from a terminal, safely, with resumable scans, and makes
   thumbnails the library grid reuses

@@ -93,6 +93,20 @@ Improvements
   folders first, resume where they stopped, retry failures later, and stop
   cleanly when the share goes away or the disk is nearly full. See the Catalog
   command line guide.
+- **Catalog in the Library:** the Library panel has a Catalog card beside
+  Folders, which stays as it is. It lists the folders Immage has indexed, each
+  with its photo count and a symbol for online, indexing, paused, needs
+  attention or offline. Right-click a folder and choose Add to Catalog to
+  index it: the card shows finding photos, reading metadata and making
+  thumbnails with their numbers and a time left, with Pause, Resume and Stop,
+  and says in plain words when a share goes away, the disk fills or folders do
+  not answer, without marking anything missing. Immage only reads your
+  files. The same folder menu has Cull this folder and Statistics for this
+  folder, and Open in Catalog or Remove from Catalog for a folder already
+  there. Offline sources stay counted; opening their cached photos while
+  offline comes later.
+  Preferences > General has a Catalog card with disk use and a Rebuild catalog
+  button that asks twice.
 - **Quick start guide:** the first-run tour now also shows Statistics, Find
   (filters, Smart and Filename search, Ask Gemini), Cull and Critique with
   Gemini in the grid (G, F and ⇧⌘G, Shift+Ctrl+G on Windows and Linux), and the AI models in Preferences

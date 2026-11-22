@@ -240,6 +240,18 @@ summary strip to stop it.
 
 - **Quick start guide**: the short tour when Immage opens.
 
+### Catalog
+
+**Catalog** in Preferences > General summarizes the [Catalog](catalog.md): how
+many sources and photos it holds and how many sources are online, and the disk
+it uses (the Catalog file and its thumbnails). **Clean up thumbnails** removes
+thumbnail files nothing points to and trims the store to its limit.
+**Rebuild catalog…** reads every photo's file information again; it asks a
+second time ("Rebuild N photos?", with **Cancel** focused) before it starts, it
+is refused while an index runs, and it never touches your files or sidecars.
+The Local photo cache under Performance is a separate store, still used by Find
+and Statistics.
+
 ### Backup
 
 **Backup** in Preferences > General has two buttons. Both work on one .zip

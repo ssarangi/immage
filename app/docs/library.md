@@ -1,7 +1,8 @@
 # Library
 
-Immage has no catalog. You add folders, browse them in the filmstrip or the
-grid, and rate, label and keyword photos there. Everything you set is
+Immage needs no catalog. You add folders, browse them in the filmstrip or the
+grid, and rate, label and keyword photos there. An optional
+[Catalog](catalog.md) can also index folders, beside Folders. Everything you set is
 written to the photo's XMP sidecar, so it travels with the photo and
 darktable sees it too.
 
@@ -24,12 +25,18 @@ Open the **Folders** card in the **Library** panel.
   same.
 - Click a folder in the tree to open it. The arrow beside it shows its
   subfolders.
-- Right-click a folder for **New Folder…**, **Show in Finder** (Explorer
+- Right-click a folder for **Cull this folder…**, **Statistics for this
+  folder**, **Add to Catalog…** (or **Open in Catalog** and **Remove from
+  Catalog…** for one that is in the [Catalog](catalog.md)),
+  **New Folder…**, **Show in Finder** (Explorer
   on Windows, the file manager on Linux) and **Remove from List**.
   **New Folder…** opens the folder and adds a row at the top of its
   subfolders with the name selected: type a name and press Enter, or press
   Esc to cancel. The folder is made on disk, and an existing name is
   refused. You can then drag photos onto it.
+- The **Catalog** card below Folders lists the folders Immage has indexed, with
+  their photo counts, a state symbol and the first-index progress. It does not
+  replace Folders: see [Catalog](catalog.md).
 - Hover a folder and click **×** to take it off the list, whether it is
   one you added or a subfolder inside one. A subfolder taken off the list
   is left out of **Include subfolders** too. Its files stay where they
@@ -104,7 +111,8 @@ no originals or authoritative edits and can be rebuilt from your photos.
 Metadata caching does not download search models or upload photos; any optional
 local analysis model requires an explicit download choice. Downloaded analysis
 packages are checked before use, and local analysis runs on the CPU.
-**Preferences > Performance > Local photo cache** shows cache and drive status,
+The [Catalog](catalog.md) is a separate, longer-lived record of folders you add
+to it. **Preferences > Performance > Local photo cache** shows cache and drive status,
 pauses background checks, and clears or rebuilds cached records.
 **Preferences > General > AI models** offers the optional Smart search (CLIP)
 model: a download that starts only after a consent dialog, check files, repair,

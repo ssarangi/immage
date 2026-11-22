@@ -83,6 +83,7 @@ import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoH
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
+import { useCatalogUi } from "./catalogUi";
 import { baseName, parentDir, within } from "./paths";
 import { isEngineExit, reopenPlan, reopening, START as ENGINE_START, step as engineStep, wait as engineWait,
          type EngineEvent, type EngineState, type Notice as EngineNotice } from "./engineState";
@@ -3091,8 +3092,8 @@ export default function App() {
   const [leftOpen, setLeftOpen] = useState(() => new Set(LEFT_CARDS.filter((id) => {
     try {
       const v = settings.get(`immage.${id}.open`);
-      return id === "folders" ? v !== "0" : v === "1";
-    } catch { return id === "folders"; }
+      return id === "folders" || id === "catalog" ? v !== "0" : v === "1";
+    } catch { return id === "folders" || id === "catalog"; }
   })));
   // focus mode and ⌥ as for the right panel's panels (togglePanel)
   const toggleLeft = (id: LeftCard, alt = false) => setLeftOpen((old) => {
@@ -6522,6 +6523,22 @@ export default function App() {
   };
   // spent on leaving, or coming back to the grid would take the keyboard for the box
   useEffect(() => { if (!findLocked) setFindFocus(0); }, [findLocked]);
+  // the Catalog card and the folder menu's Catalog, Cull and Statistics entries (catalogUi.tsx)
+  const catalogUi = useCatalogUi({
+    openFolder: (d) => { void showFolder(d); setGrid(true); },
+    cullFolder: async (d) => {
+      await showFolder(d); setGrid(true);
+      window.setTimeout(() => window.dispatchEvent(new CustomEvent("auto-cull-open")), 250);
+    },
+    statsFolder: async (d) => {
+      await showFolder(d);
+      // the Statistics code loads with the view, not with the shell
+      const [{ setStatsState }, { setScope }] = await Promise.all([import("./statsStore"), import("./statsModel")]);
+      setStatsState((st) => setScope(st, { kind: "folder", folder: d, includeSubfolders: true }));
+      setStatsOpen(true);
+    },
+    current: immich ? null : folder, onError: setStatus,
+  });
   // Auto Cull: the dialog over the selection, else the listed photos, then the
   // analysis as a background job and, when it is done, the review
   const [cullAsk, setCullAsk] = useState<{ items: CullScopeItem[]; selected: boolean; label: string; aiReady: boolean } | null>(null);
@@ -6718,7 +6735,7 @@ export default function App() {
                             saveLibrary({ foldedVolumes: [...next] });
                           }}
                           onOpen={(d) => { void showFolder(d); setGrid(true); }} onRemove={removeFolder}
-                          onError={setStatus}
+                          onError={setStatus} tools={catalogUi.tools}
                           onRenameHost={(host, name) => {
                             const next = { ...hostNames, [host]: name };
                             if (!name) delete next[host];
@@ -6734,6 +6751,7 @@ export default function App() {
             </div>
           )}
         </div>
+        {catalogUi.card(leftOpen.has("catalog"), (alt) => toggleLeft("catalog", alt))}
         <HistoryPanel base={historyBase.filter((h) => !session.current?.deleted.has(instanceKey(h)))
                              .map((h) => {
                                const st = session.current?.moduleStates.get(instanceKey(h));
@@ -7755,6 +7773,7 @@ export default function App() {
       <ImportView onClose={() => setImportOpen(false)} onImportDone={importDone} onShowImported={showImported}
                   onOpenSettings={openImmichPrefs} />
     )}
+    {catalogUi.dialogs}
     {statsOpen && (
       <Suspense fallback={null}>
         <Statistics currentFolder={folder} onAddFolders={() => { setStatsOpen(false); void addFolder(); }}
@@ -7839,7 +7858,7 @@ const NEG_PICK_LABELS: Record<NegPick, string> = {
 };
 // the Library panel's foldable cards; each keeps its open state under
 // immage.<id>.open
-const LEFT_CARDS = ["metadata", "keywording", "folders", "history"] as const;
+const LEFT_CARDS = ["metadata", "keywording", "folders", "catalog", "history"] as const;
 type LeftCard = typeof LEFT_CARDS[number];
 const RIGHT_TITLES: Record<RightMode, string> = { adjust: t("app.panel.adjustments"), presets: t("app.panel.presets"), masks: t("app.panel.masks"), heal: t("app.panel.heal"),
                                                   zones: t("app.panel.zoneSystem"), film: t("app.panel.filmSimulation"), negative: t("app.panel.negative"),

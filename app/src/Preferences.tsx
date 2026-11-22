@@ -12,6 +12,7 @@ import { AGX_PROFILE_DEFAULT, PROFILE_GROUPS, PROFILE_OPTIONS } from "./manifest
 import { ThemePrefs } from "./ThemePrefs";
 import { CachePrefs } from "./CachePrefs";
 import { SearchPrefs } from "./SearchPrefs";
+import { CatalogPrefs } from "./CatalogPrefs";
 import { AiModelsPrefs } from "./AiModelsPrefs";
 import { MapSearchPrefs } from "./MapSearchPrefs";
 import { Chevron, Collapse } from "./Collapse";
@@ -920,6 +921,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                   <PrefSwitch checked={showTour} onChange={(on) => { setShowTour(on); setTourSeen(!on); }} />
                 </PrefRow>
               </PrefCard>
+              <CatalogPrefs />
               <PrefCard title={t("prefs.card.backup")}>
                 <PrefRow id="Backup" label={t("prefs.row.backup")} summary={t("prefs.row.backup.summary")}
                          hint={t("prefs.row.backup.hint")}>

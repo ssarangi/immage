@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // A Folders row's right-click menu (FolderTree.tsx FolderMenu, create_folder in
-// library_cmds.rs): New Folder…, Show in the file manager, Remove from List.
+// library_cmds.rs): Cull this folder…, Statistics for this folder, Add to Catalog…, then New Folder…,
+// Show in the file manager, Remove from List.
 // Every folder made stays inside this run's copied fixture folder. Show in the
 // file manager is checked as offered only: clicking it opens another
 // application, outside the app-only boundary
@@ -58,14 +59,15 @@ export async function folderMenu(t) {
   if (!root) throw new Blocked('no fixture folder');
   await foldersCard(t);
 
-  // the menu: its three items, Show offered for a connected folder; Esc closes it
+  // the menu: its six items (the Catalog's, then the folder's own), Show offered for a connected folder; Esc closes it
   const items = await openMenu(t, root);
   t.measure({ name: 'menu', items });
   await t.evidence('menu');
   assert.deepEqual(items.map((i) => i.text.replace(/^Show in .*/, 'Show in')),
-                   ['New Folder…', 'Show in', 'Remove from List'], `the menu items (${JSON.stringify(items)})`);
+                   ['Cull this folder…', 'Statistics for this folder', 'Add to Catalog…', 'New Folder…', 'Show in', 'Remove from List'],
+                   `the menu items (${JSON.stringify(items)})`);
   assert(items.every((i) => !i.disabled), 'all items enabled on a connected folder');
-  assert(/^Show in (Finder|Explorer|File Manager)$/.test(items[1].text), `names the file manager (${items[1].text})`);
+  assert(/^Show in (Finder|Explorer|File Manager)$/.test(items[4].text), `names the file manager (${items[4].text})`);
   await t.driver.keys(ESC);
   await until(() => present(t, menu).then((p) => !p), 'Esc closes the menu');
 
