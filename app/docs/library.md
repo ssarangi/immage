@@ -22,7 +22,8 @@ Open the **Folders** card in the **Library** panel.
 
 - **+ Add folder…** adds a folder to the list and opens it in Grid view.
   Dragging a folder from Finder or Explorer onto Immage's window does the
-  same.
+  same. The folder is chosen in Immage's own browser (see below), not the
+  system's dialog.
 - Click a folder in the tree to open it. The arrow beside it shows its
   subfolders.
 - Right-click a folder for **Cull this folder…**, **Statistics for this
@@ -1050,3 +1051,27 @@ name, change the pattern before confirming. Immage verifies the new photo and
 sidecar paths before reporting success. If a rename fails partway through a
 batch, the dialog shows which files were renamed and where it stopped. Find
 results and thumbnails update to use the new paths.
+
+## The folder browser
+
+**+ Add folder…** and the Catalog's **Add to Catalog…** open Immage's own
+folder browser, in the app's theme.
+
+- **Places** on the left: your home folder and its Pictures, Desktop and
+  Documents folders, the computer's root, each drive and network share that is
+  mounted (a share that is not answering is marked **Offline**), and the folders
+  you have already added.
+- The bar above the list shows where you are as a path of folders; click one to
+  go there. Click the pencil, press Ctrl+L or type `/` to type or paste a path
+  instead, and press Enter.
+- The list shows folders only, never files. Tick **Show hidden folders** to see
+  those starting with a dot.
+- A slow or disconnected share never freezes the window: the list shows
+  "Reading folder…" and then a message with **Retry**.
+- **Select this folder** chooses the folder being shown; double-click a folder
+  or press Enter on it to go into it. Arrow keys move, Backspace or Alt+Left
+  goes up a folder, Ctrl+Enter selects, Esc cancels.
+
+The browser only reads folder names; it never creates, renames or deletes
+anything. Other places that choose a folder (the export destination, plugins,
+the 3D LUT folder) still use the system's dialog.

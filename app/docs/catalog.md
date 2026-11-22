@@ -23,7 +23,7 @@ off the Folders list.
 ## Adding a folder
 
 - Click **+** in the Catalog card, or **+ Add folder to Catalog…**, and choose
-  a folder.
+  a folder in Immage's [folder browser](library.md#the-folder-browser).
 - Or right-click a folder in **Folders** and choose **Add to Catalog…**.
 
 A dialog says what the folder is (a network share with its host and share, a

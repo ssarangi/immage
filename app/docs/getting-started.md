@@ -75,7 +75,7 @@ Immage also:
 
 1. **Add a folder.** In the **Library** panel on the left, open the
    **Folders** card and click **+ Add folder…**. Choose a folder of
-   photos. It opens in **Grid** view.
+   photos in Immage's folder browser. It opens in **Grid** view.
 2. **Pick a photo.** Double-click one in the grid. It opens in the viewer,
    with the rest of the folder in the filmstrip below. The arrow keys step
    through them; 1-5 rate the open photo and X rejects it.

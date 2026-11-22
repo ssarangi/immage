@@ -7,6 +7,13 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- **Folder browser:** Add folder and Add to Catalog now choose a folder in
+  Immage's own browser instead of the system dialog. It follows the app's theme
+  and lists your home folders, every mounted drive and network share (so a NAS
+  mounted through fstab shows up, marked Offline when it is not answering), and
+  the folders you already added. Paste or type a path, show hidden folders, and
+  use the keyboard throughout. It lists folder names only, and a slow or
+  disconnected share shows an error with Retry instead of freezing the window.
 - **AI models:** Preferences > General has an AI models group for optional
   model packs that run on this computer. Each pack says what it does and what
   happens to your photos, its license and size, and nothing downloads until you

@@ -192,6 +192,8 @@ export const commands = {
 	createVirtualCopy: (imgid: number) => __TAURI_INVOKE<LibraryImage>("create_virtual_copy", { imgid }),
 	removeVirtualCopy: (imgid: number) => __TAURI_INVOKE<string | null>("remove_virtual_copy", { imgid }),
 	pathExists: (path: string) => __TAURI_INVOKE<boolean>("path_exists", { path }),
+	folderPlaces: (added: string[]) => __TAURI_INVOKE<BrowserPlace[]>("folder_places", { added }),
+	listSubdirectories: (path: string) => __TAURI_INVOKE<BrowserListing>("list_subdirectories", { path }),
 	cacheLimits: (limits: Limits) => __TAURI_INVOKE<null>("cache_limits", { limits }),
 	cacheUsage: () => __TAURI_INVOKE<Limits>("cache_usage"),
 	cacheClear: (which: string) => __TAURI_INVOKE<null>("cache_clear", { which }),
@@ -587,6 +589,28 @@ export type BodyTimeline = {
 	first: string,
 	last: string,
 	perYear: number[],
+};
+
+export type BrowserDir = {
+	name: string,
+	path: string,
+	hidden: boolean,
+};
+
+export type BrowserListing = {
+	path: string,
+	parent: string | null,
+	dirs: BrowserDir[],
+	error: string | null,
+};
+
+export type BrowserPlace = {
+	kind: string,
+	label: string,
+	path: string,
+	host: string | null,
+	network: boolean,
+	online: boolean,
 };
 
 export type BuildInfo = {

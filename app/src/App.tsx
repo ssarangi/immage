@@ -25,7 +25,8 @@ import { pressPhoto } from "./photoDrag";
 import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./captureTime";
 import { Fragment, Profiler, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ask, open } from "@tauri-apps/plugin-dialog";
+import { ask } from "@tauri-apps/plugin-dialog";
+import { browseFolder } from "./FolderBrowser";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -3274,8 +3275,8 @@ export default function App() {
   };
 
   const addFolder = async () => {
-    const dir = await open({ directory: true });
-    if (typeof dir !== "string") return;
+    const dir = await browseFolder({ added: folders });
+    if (!dir) return;
     const next = folders.includes(dir) ? folders : [...folders, dir];
     setFolders(next);
     saveLibrary({ folders: next });

@@ -121,6 +121,8 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::library_cmds::create_virtual_copy,
         crate::library_cmds::remove_virtual_copy,
         crate::library_cmds::path_exists,
+        crate::folder_browser::folder_places,
+        crate::folder_browser::list_subdirectories,
         crate::library_cmds::cache_limits,
         crate::library_cmds::cache_usage,
         crate::library_cmds::cache_clear,

@@ -244,7 +244,7 @@ pub fn autofs_idle(path: &Path) -> bool {
 
 // the server in a mount's source: //user@nas.local/Pictures, nas:/export,
 // \\nas\share
-fn host_of(source: &str) -> Option<String> {
+pub(crate) fn host_of(source: &str) -> Option<String> {
     let s = source.replace('\\', "/");
     let host = if let Some(rest) = s.strip_prefix("//") {
         let h = rest.split('/').next()?;
@@ -334,7 +334,7 @@ fn probe(path: &Path) -> Option<Volume> {
 
 // /proc/self/mounts' fields escape spaces and the like as octal: \040
 #[cfg(any(target_os = "linux", test))]
-fn unescape(s: &str) -> String {
+pub(crate) fn unescape(s: &str) -> String {
     let b = s.as_bytes();
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;

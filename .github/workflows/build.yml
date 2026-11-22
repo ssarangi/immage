@@ -102,6 +102,7 @@ jobs:
             verify/agx-profiles.test.mjs \
             verify/ai-packs.test.mjs \
             verify/critique-pins.test.mjs \
+            verify/folder-browser.test.mjs \
             verify/stats-model.test.mjs \
             verify/stats-exposure.test.mjs \
             verify/stats-places.test.mjs \

@@ -50,6 +50,7 @@ mod renderer;
 mod pinch;
 mod pinch_math;
 mod volumes;
+mod folder_browser;
 mod catalog_db;
 mod catalog_sources;
 mod catalog_scan;

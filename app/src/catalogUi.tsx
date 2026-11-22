@@ -6,8 +6,9 @@
 // store (catalogStore.ts) holds the state; what a click does in the editor (open a folder in the
 // grid, start a cull, open Statistics) is passed in.
 import { useState } from "react";
-import { open as chooseFolder } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { browseFolder } from "./FolderBrowser";
+import { t } from "./i18n";
 import { CatalogCard, type CatalogActions } from "./CatalogCard";
 import { AddToCatalogDialog, RemoveSourceDialog } from "./CatalogDialogs";
 import type { FolderTools } from "./FolderTree";
@@ -29,8 +30,8 @@ export function useCatalogUi(env: {
   const [removing, setRemoving] = useState<SourceStatus | null>(null);
   const fail = (e: unknown) => env.onError(String(e instanceof Error ? e.message : e));
   const choose = async () => {
-    const dir = await chooseFolder({ directory: true });
-    if (typeof dir === "string") setAdding(dir);
+    const dir = await browseFolder({ title: t("catalog.add.title"), added: cat.sources.map(sourceRoot) });
+    if (dir) setAdding(dir);
   };
   const actions: CatalogActions = {
     open: env.openFolder,
