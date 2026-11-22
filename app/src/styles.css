@@ -1264,7 +1264,9 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   display: grid; grid-template-columns: repeat(auto-fill, var(--grid-column, 230px));
   justify-content: center;
   flex: 1; height: auto; align-content: start; gap: 6px;
-  margin: 8px; padding: 10px; border-radius: var(--radius-card); overflow-x: hidden; overflow-y: auto; background: var(--ui-window-161616, #161616);
+  margin: 8px; padding: 10px; border-radius: var(--radius-card); overflow-x: hidden; overflow-y: auto;
+  /* recessed below the window color, so it separates from the panel behind it in every theme */
+  background: color-mix(in srgb, var(--window) 72%, black); box-shadow: inset 0 0 0 1px var(--inset);
 }
 .filmstrip.grid.empty { display: flex; align-items: center; justify-content: center; }
 .grid-empty { color: var(--text-3); font-size: var(--fs-body); }
