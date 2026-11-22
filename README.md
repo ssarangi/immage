@@ -50,6 +50,7 @@ and Linux. **All builds are alpha; bugs are expected.**
   keeps filters active across folder changes and remembers its own width and
   visibility separately from the editing panel.
 - See your library as numbers in [Statistics](app/docs/statistics.md) (View > Statistics): cameras, lenses, exposure, when and where you shoot, and your top-rated frames, with every chart a filter. The Library panel's [Catalog](app/docs/catalog.md) card shows folders and network shares Immage has indexed, beside your Folders, as folder trees with photo counts you can browse even when the drive is away, and their progress and state. From a terminal, the [catalog command line](app/docs/catalog-cli.md) indexes folders and network shares and makes thumbnails of their photos with the fewest reads.
+- See a shoot as a timeline of bursts with **Scenes** (**Grid | Scenes** in the grid toolbar, or **Shift+S**): scenes grouped by time and look, the best frame, and Accept or Reject per frame.
 - Cull automatically with **Cull** in the grid toolbar (blurry and duplicate photos, reviewed and applied or undone), or by hand with **View > Culling Preview**, ratings, color labels and keywords. Click the tag icon or press **K** to keyword the photo in the lightbox.
 - Rename photos individually or in bulk from the [Library grid](app/docs/library.md#rename-photos), with a file count, a live filename example, and sidecars kept alongside.
 - Drag photos or [whole folders](app/docs/library.md#moving-and-copying-folders) onto another folder, including a mounted SMB share, to move or copy them along with their sidecars. Folder copies skip Finder’s `.DS_Store` and Windows Explorer’s `Thumbs.db`. See [macOS SMB troubleshooting](app/docs/library.md#troubleshooting-macos-smb-transfers) to capture transfer errors.
@@ -103,7 +104,7 @@ For Linux launch options, see [Linux setup and troubleshooting](app/docs/prefere
 - [User guide](app/docs/README.md): getting started, editing tools and settings.
 - [darktable compatibility and module reference](app/docs/darktable.md).
 - [Troubleshooting and reporting issues](app/docs/troubleshooting.md): diagnostics, the support bundle and the bug report form.
-- [Library culling](app/docs/library.md): auto cull a shoot, ask Gemini for a critique, review photos with keyboard navigation, a bottom zoom slider, read-ahead, and optional camera previews for edited RAWs.
+- [Library culling](app/docs/library.md): browse a shoot as Scenes, auto cull it, ask Gemini for a critique, review photos with keyboard navigation, a bottom zoom slider, read-ahead, and optional camera previews for edited RAWs.
 - [Developer docs](app/docs/dev/README.md): building, architecture and contributing to the code.
 - [Credits and licenses](app/docs/credits.md): projects, AI models and map attribution.
 

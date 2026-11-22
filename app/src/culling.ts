@@ -75,6 +75,8 @@ export function fallbackPhoto<T extends { imgid: number }>(images: T[], previous
 export type CullingAction =
   | { type: "closeKeywords" | "closeLightbox" | "toggleLightbox" | "keywords" | "toggleZoom" | "holdSpace" | "toggleReject" | "none" }
   | { type: "step"; by: -1 | 1 }
+  | { type: "decide"; state: "accepted" | "undecided" }
+  | { type: "scene"; by: -1 | 1 }
   | { type: "rate"; value: number }
   | { type: "label"; bit: number };
 
@@ -105,6 +107,8 @@ export function pickCritiqueTarget<T extends { imgid: number }>(
 export function cullingKey(k: string, s: {
   photo: number | null; keywordsOpen: boolean; writing: boolean; blocked: boolean; modalOpen: boolean;
   hasTarget: boolean; hasCurrent: boolean;
+  // the scene view: A accepts, U clears, N and Shift+N change scene (inert elsewhere)
+  scene?: boolean; shift?: boolean;
 }): { kind: "ignore" | "swallow" | "consume"; action?: CullingAction } {
   const none = { type: "none" } as const;
   if (s.keywordsOpen && k === "escape") {
@@ -113,7 +117,7 @@ export function cullingKey(k: string, s: {
   if (s.blocked) return { kind: "ignore" };
   if (s.modalOpen && !s.photo && !s.keywordsOpen) return { kind: "ignore" };
   if (s.photo !== null && !s.keywordsOpen && k === " ") return { kind: "consume", action: { type: "holdSpace" } };
-  const handled = /^(f|k|z|escape|arrowleft|arrowright|[0-9]|x)$/.test(k);
+  const handled = (s.scene ? /^(f|k|z|escape|arrowleft|arrowright|[0-9]|x|a|u|n)$/ : /^(f|k|z|escape|arrowleft|arrowright|[0-9]|x)$/).test(k);
   if (s.photo !== null && !handled) return { kind: "swallow" };
   if (!handled) return { kind: "ignore" };
   if (!s.photo && !s.keywordsOpen && k !== "f" && k !== "k") return { kind: "ignore" };
@@ -129,5 +133,7 @@ export function cullingKey(k: string, s: {
   else if (/^[0-5]$/.test(k)) { if (c) action = { type: "rate", value: Number(k) }; }
   else if (/^[6-9]$/.test(k)) { if (c) action = { type: "label", bit: Number(k) - 6 }; }
   else if (k === "x") { if (c) action = { type: "toggleReject" }; }
+  else if (k === "a" || k === "u") { if (c) action = { type: "decide", state: k === "a" ? "accepted" : "undecided" }; }
+  else if (k === "n") action = { type: "scene", by: s.shift ? -1 : 1 };
   return { kind: "consume", action };
 }

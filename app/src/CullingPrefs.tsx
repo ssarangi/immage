@@ -8,6 +8,7 @@ import { loadAiGrading, storeAiGrading } from "./aiGrading";
 import { loadCullDefaults, storeCullDefaults } from "./cullDefaults";
 import { DEFAULT_SETTINGS, RATIOS, SHOOT_TYPES, type CullDefaults } from "./cullModel";
 import { LABEL_COLORS } from "./library";
+import { loadAcceptStar, loadScoringMode, storeAcceptStar, storeScoringMode, type ScoringMode } from "./scenesStore";
 import { t } from "./i18n";
 
 const LABEL_KEYS = ["library.culling.red", "library.culling.yellow", "library.culling.green", "library.culling.blue", "library.culling.purple"];
@@ -22,6 +23,8 @@ export function CullingPrefs({ onGoTo }: { onGoTo?: (tab: "general", card?: stri
   const [replace, setReplace] = useState(false);
   const [busy, setBusy] = useState<"save" | "test" | "clear" | null>(null);
   const [defaults, setDefaults] = useState(loadCullDefaults);
+  const [acceptStar, setAcceptStar] = useState(loadAcceptStar);
+  const [scoring, setScoring] = useState<ScoringMode>(loadScoringMode);
   const [cacheBusy, setCacheBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const [cacheMessage, setCacheMessage] = useState<{ text: string; error?: boolean } | null>(null);
@@ -159,6 +162,18 @@ export function CullingPrefs({ onGoTo }: { onGoTo?: (tab: "general", card?: stri
                 onChange={(e) => set({ highlightLabel: Number(e.target.value) })}>
           <option value={0}>{t("cull.apply.noLabel")}</option>
           {LABEL_COLORS.map((c, n) => <option key={c} value={1 << n}>{t(LABEL_KEYS[n])}</option>)}
+        </select>
+      </PrefRow>
+    </PrefCard>
+    <PrefCard title={t("cull.scenes.prefs.title")}>
+      <PrefRow label={t("cull.scenes.prefs.acceptStar")} hint={t("cull.scenes.prefs.acceptStarHint")}>
+        <PrefSwitch checked={acceptStar} aria-label={t("cull.scenes.prefs.acceptStar")}
+                    onChange={(on) => { setAcceptStar(on); storeAcceptStar(on); }} />
+      </PrefRow>
+      <PrefRow label={t("cull.scenes.prefs.scoring")} hint={t("cull.scenes.prefs.scoringHint")}>
+        <select className="field" value={scoring} aria-label={t("cull.scenes.prefs.scoring")}
+                onChange={(e) => { const v = e.target.value as ScoringMode; setScoring(v); storeScoringMode(v); }}>
+          {(["auto", "on", "off"] as const).map((k) => <option key={k} value={k}>{t(`cull.scenes.prefs.${k}`)}</option>)}
         </select>
       </PrefRow>
     </PrefCard>

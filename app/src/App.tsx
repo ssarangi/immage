@@ -129,7 +129,10 @@ import { hasPendingTuner } from "./PerformanceTuner";
 import { PerformanceTuner } from "./PerformanceTuner";
 import type { TunerRun } from "./previewTuning";
 import { PerfHud } from "./PerfHud";
-import { GridCulling } from "./GridCulling";
+import { GridCullingWithScenes } from "./SceneLightbox";
+import "./scenes.css";
+import { ScenesView } from "./ScenesView";
+import { scenesState, setScenesOn, useScenesOn } from "./scenesStore";
 import { KeywordingPanel } from "./Keywording";
 import { FindPanel } from "./FindPanel";
 import { CullDialog } from "./CullDialog";
@@ -207,14 +210,14 @@ export default function App() {
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
   const [folderRefresh, setFolderRefresh] = useState(0);
-  // subfolders taken off the tree; adding one again brings it back
-  const [hidden, setHidden] = useState<Set<string>>(() => new Set(loadLibrary().hidden));
-  const hiddenRef = useRef(hidden);
-  hiddenRef.current = hidden;
   // which tree the open folder was opened from (the other tree marks it quietly), and the
   // Folders row "Show in Folders" brings into view
   const [folderOrigin, setFolderOrigin] = useState<{ path: string; which: "folders" | "catalog" } | null>(null);
   const [foldersReveal, setFoldersReveal] = useState<{ path: string; n: number } | null>(null);
+  // subfolders taken off the tree; adding one again brings it back
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set(loadLibrary().hidden));
+  const hiddenRef = useRef(hidden);
+  hiddenRef.current = hidden;
   const unhide = (dir: string) => {
     const next = new Set([...hiddenRef.current].filter((h) => !within(dir, h)));
     if (next.size === hiddenRef.current.size) return;
@@ -6129,6 +6132,7 @@ export default function App() {
       },
       "critique": () => { if (gridRef.current) window.dispatchEvent(new CustomEvent("grid-critique-open", { detail: {} })); },
       "auto-cull": () => { window.dispatchEvent(new CustomEvent("auto-cull-open")); },
+      "scenes": () => { if (gridRef.current) setScenesOn(!scenesState().on); },
       "culling-preview": () => { if (gridRef.current) window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: {} })); },
       "info-overlay": () => { if (session.current) setInfoMode((m) => (m + 1) % 3); },
       "canvas": () => {
@@ -6228,7 +6232,9 @@ export default function App() {
         return;
       }
       if ((e.key === "g" || e.key === "G") && !croppingRef.current) { run("grid"); return; }
-      if (e.key === "Escape" && gridRef.current) { setGrid(false); return; }
+      // Shift+S: Scenes, the grid's bursts on a timeline (plain S is the soft proof)
+      if (e.shiftKey && (e.key === "S" || e.key === "s") && gridRef.current && !croppingRef.current) { run("scenes"); return; }
+      if (e.key === "Escape" && gridRef.current) { if (scenesState().on) setScenesOn(false); else setGrid(false); return; }
       if (e.key === "\\" && !croppingRef.current) { setBaModeRef.current("off"); setBefore(!beforeRef.current); return; }
       if ((e.key === "y" || e.key === "Y") && !croppingRef.current) { run("before-after"); return; }
       if ((e.key === "c" || e.key === "C") && !croppingRef.current) { run("compare"); return; }
@@ -6356,6 +6362,8 @@ export default function App() {
   const culling = grid && cull.open && cull.plan !== null;
   const shown = culling ? reviewOrder(shownListed, cull.decisions, cull.chip) : shownListed;
   const hasCullingPhotos = grid && shown.some((i) => !isRemote(i));
+  const scenesFlag = useScenesOn();
+  const scenesOn = grid && scenesFlag;
   const hasPhoto = current !== null;
   const disabledMenuActions = useMemo(
     () => disabledViewActions(grid, hasPhoto, hasCullingPhotos, cropping, preview),
@@ -6685,14 +6693,15 @@ export default function App() {
       onKeyDownCapture={e => { e.preventDefault(); e.stopPropagation(); }} tabIndex={-1} ref={el => el?.focus()}>
       <div className="modal"><div className="modal-head"><h2>{pasting}</h2></div></div>
     </div>}
-    {grid && <GridCulling key={folder ?? "remote"} images={shown.filter(i => !isRemote(i))} allImages={images} selection={selection}
+    {grid && <GridCullingWithScenes key={folder ?? "remote"} images={shown.filter(i => !isRemote(i))} allImages={images} selection={selection}
       anchor={pickAnchor.current}
       thumbnail={id => loader.current?.get(id)}
       activeEditorId={session.current?.imgid}
       prepare={async id => { if (session.current?.imgid === id) await session.current.saveForPreview(); }}
       onEdit={(i) => { setGrid(false); void openEntry(i); }} onMeta={(i, fields) => void setMeta(i.imgid, fields)}
       onKeywords={(id, list) => { patchImage(id, { keywords: list }); if (id === currentId) setKeywords(list); }}
-      onCullChanges={applyCullChanges} onOpenCullPrefs={() => setPrefsOpen("culling")} />}
+      onCullChanges={applyCullChanges} onOpenCullPrefs={() => setPrefsOpen("culling")}
+      scenesOn={scenesOn} />}
     {/* the window's title bar is hidden (tauri.conf.json); this strip moves
         the window and leaves room for the traffic lights */}
     {/* full screen has no traffic lights to hold, and the photo wants the room */}
@@ -6765,6 +6774,7 @@ export default function App() {
               </label>
               <FolderTree roots={folders} volumes={volumes} hostNames={hostNames} folded={foldedVolumes}
                           current={immich ? null : folder} photo={photoDir} expanded={expanded} hidden={hidden}
+                          origin={folderOrigin && folderOrigin.path === folder ? folderOrigin.which : "folders"} reveal={foldersReveal}
                           refresh={folderRefresh} transfer={folderTransfer}
                           onDropFolder={(source, dest, copy) => {
                             if (!folderMoveDialog && !moveDialog && !folderTransfer) askFolderMove(source, dest, copy);
@@ -6776,7 +6786,6 @@ export default function App() {
                             setFoldedVolumes(next);
                             saveLibrary({ foldedVolumes: [...next] });
                           }}
-                          origin={folderOrigin && folderOrigin.path === folder ? folderOrigin.which : "folders"} reveal={foldersReveal}
                           onOpen={(d) => { setFolderOrigin({ path: d, which: "folders" }); void showFolder(d); setGrid(true); }} onRemove={removeFolder}
                           onError={setStatus} tools={catalogUi.tools}
                           onRenameHost={(host, name) => {
@@ -7127,6 +7136,8 @@ export default function App() {
               <Splitter axis="y" value={layout.stripHeight} min={90} max={300} invert hidden={!layout.strip}
                         onChange={(v) => setLayout((l) => ({ ...l, stripHeight: v }))} />
             )}
+            {/* stays mounted under Scenes, hidden but laid out, so the grid's scroll and thumbnails are as left */}
+            <div className="grid-host" style={scenesOn ? { visibility: "hidden" } : undefined} aria-hidden={scenesOn || undefined}>
             <Filmstrip images={cells} partners={partners} pending={pending}
                        empty={immich ? (immich.busy ? "searching photos…" : "no photos match the search")
                               : reading ? "reading the folder…"
@@ -7152,6 +7163,8 @@ export default function App() {
                        more={immich?.next ? () => void searchImmich(immich.search, true) : undefined}
                        onBackMenu={showResultsMenu}
                        onMeta={(i, fields) => rateSelection(i, fields)} />
+            </div>
+            {scenesOn && <div className="scenes-host"><ScenesView entries={shown} onMeta={(i, fields) => void setMeta(i.imgid, fields)} /></div>}
           </div>
         </div>
         <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findLocked && layout.find} rightPanel={rightPanel}
@@ -7174,7 +7187,7 @@ export default function App() {
                            title={t("app.compare.hint")}
                            onClick={toggleCompare}><CompareIcon /></button>
                  </>}
-                 grid={grid}
+                 grid={grid} scenes={scenesOn} onScenes={setScenesOn}
                  // in the grid the zoom bar sizes the thumbnails; the photo's
                  // stays mounted, hidden, so it still shows the photo's zoom after
                  zoomBar={<>

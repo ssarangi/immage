@@ -49,6 +49,8 @@ is also on the [Immage website](https://immage.photo/guide/).
   filtering, virtual copies, metadata and keywords
 - [Import](import.md): copying photos off a card, verified, without
   duplicates
+- [Scenes](library.md#scenes): a folder as a timeline of bursts, best frame
+  and accept or reject per frame
 - [Auto cull](library.md#auto-cull) and
   [AI critique](library.md#ai-critique-and-natural-language-search): flag blurry
   and duplicate photos in a shoot and review them, ask Google Gemini for a

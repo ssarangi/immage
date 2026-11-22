@@ -375,7 +375,8 @@ Press G, click **Library** on the rail at the right edge, below
 under the filmstrip, for **Grid** view: the whole folder at once.
 Double-click a photo to open it and go back to the filmstrip. G, Esc or either
 button also goes back. Both are highlighted while the grid shows. In the grid
-the toolbar also has **Cull**, which starts [Auto cull](#auto-cull).
+the toolbar also has **Grid | Scenes**, which shows the photos as a timeline of
+bursts ([Scenes](#scenes)), and **Cull**, which starts [Auto cull](#auto-cull).
 
 Each thumbnail card has a thin ring around it, brighter under the pointer and
 for the open photo, and its picture a faint edge, so a dark photo does not
@@ -668,6 +669,103 @@ before Apply. A photo you rated again after the cull is left as you set it.
 A session applies once. Sessions and the remembered measurements are in the
 `cull.sqlite` file in Immage's runtime folder; **Clear analysis cache** in
 Preferences forgets the measurements only.
+
+## Scenes
+
+Scenes shows the grid's photos as a timeline of bursts instead of a wall of
+thumbnails, so a shoot of thousands of frames reads as a few hundred moments.
+It groups the photos of the folder you have open (its subfolders too while
+**Include subfolders** is on). Photos of different folders are listed together
+by time but never share a scene, so two folders' bursts that overlap stay
+separate. Scenes never moves, renames or deletes a photo.
+
+Switch with the **Grid | Scenes** control in the toolbar, **View > Scenes**, or
+**Shift+S** in the grid. **Esc** or **Grid** goes back; the grid keeps its
+scroll position and selection.
+
+### How photos are grouped
+
+A **scene** is a run of photos taken close together in time that look alike. A
+**time block** is a run of scenes with no long gap between them.
+
+- A gap of more than 60 seconds between two frames starts a new scene.
+- A frame that looks different from the last few frames of the scene (a
+  different subject or framing) starts a new scene even inside that minute. A
+  slow pan, or a walking subject, stays one scene.
+- A gap of more than 20 minutes, or a new day, starts a new time block. The
+  timeline is grouped by day.
+- The look comes from the thumbnails Immage has already made for the grid. No
+  photo is opened to group it, so a network drive is not read again. A photo
+  without a thumbnail yet is grouped by time alone and shown as such ("N photos
+  have no thumbnail yet and are grouped by time only"); it joins its scene by
+  look once its thumbnail exists.
+- The capture time is the camera's, to the tenth of a second where the camera
+  recorded it. A photo with no camera time uses its file's date, and its block
+  shows a **~** ("Time from file date"). Photos with neither go to a last block,
+  **No capture time**, grouped by look and file name only.
+
+### The timeline
+
+Each time block has a header with its time range, the number of scenes and
+frames, and how many frames are accepted, rejected and undecided. The arrow
+beside the header folds the block. **Hide single frames** hides scenes of one
+photo.
+
+Each scene is a card: the best frame, how many frames it has, its quality
+score, and a line with the camera, focal length, aperture, shutter speed, ISO
+and lens (the line shortens when the card is narrow; the full text is in the
+tooltip and in the scene view). A badge says whether the scene is accepted,
+rejected, undecided or mixed, with an icon as well as a colour. A star marks the
+best frame, but only once every frame of the scene is scored, so it never jumps.
+
+The quality score is the Auto Cull measurement (sharpness, focus, exposure),
+0 to 100. Scores already measured by an Auto Cull are used. Opening a scene
+scores its frames from a small preview of each. Preferences > Culling can also
+score every scene in the background; by default that happens on local drives
+only, not on network drives, where it would read a preview of every photo.
+
+The timeline holds a whole folder: only the cards on screen are drawn, and
+nothing moves while photos, scores or the status line change.
+
+### The scene view
+
+Click a card, or press **Enter**. The scene opens in the culling preview with a
+**Scene** tab: the scene's number and time, and the camera details of the frame
+(file, quality, camera, lens, focal length, aperture, shutter, ISO and time to
+the tenth of a second). Under the photo is a **burst filmstrip** of the scene's
+frames, sharpest first (or in capture order), with each frame's name, stars,
+score and state, and the three decision buttons **Accept**, **Undecided** and
+**Reject**.
+
+- **Accept** gives the frame the green color label (and remembers that Scenes
+  did, so a green label you set yourself is not treated as an accept). With
+  **Accept also gives one star** on in Preferences > Culling, an unrated frame
+  also gets one star.
+- **Reject** is the ordinary reject flag; the file stays where it is.
+- **Undecided** takes back an accept or a reject.
+
+Each decision is written at once, one photo at a time, and shows in the grid and
+in the sidecar like any rating you set by hand.
+
+### Keys
+
+On the timeline: arrow keys move between cards (rows wrap across blocks, and
+left and right swap in right-to-left languages), **Home** and **End** go to the
+first and last scene, **Page Up** and **Page Down** to the previous and next
+block, **Enter** or **Space** opens the scene, **A**, **X** and **U** accept,
+reject or clear the scene's best frame (with **Shift**, every frame of the
+scene), and **Esc** returns to the grid. On a block header, left and right fold
+and unfold the block.
+
+In the scene view: **Left** and **Right** change frame, **N** and
+**Shift+N** the next and previous scene, **A**, **X** and **U** decide the
+frame, **0** to **5** rate it, and **Esc** returns to the timeline. The other
+culling preview keys work as before.
+
+Scenes works with [Auto cull](#auto-cull): its scores are shared, and a scene's
+frames can be looked at in either. Rules that keep the best N frames of every
+scene, review piles, splitting and merging scenes, and a zoom on each frame's
+sharpest part are not part of this version.
 
 ## AI critique and natural-language search
 

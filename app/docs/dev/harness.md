@@ -10,6 +10,7 @@ nothing in the app or the user guide links to them.
 | Page | Mounts | Fixture data | Checked by |
 |---|---|---|---|
 | [critique.html](../../harness/critique.html) | the culling preview's `CullLightbox`, `CullSide` and `CullOverlay` (Critique and Cull tabs) | in [critique.tsx](../../harness/critique.tsx) | [critique-shift.test.mjs](../../../verify/critique-shift.test.mjs) |
+| [scenes.html](../../harness/scenes.html) | the Scenes timeline, scene cards and the scene view (`ScenesView`, `SceneLightbox`, `CullLightbox`, `CullSide`) | synthetic photos drawn in the page (`setThumbSource`), fake paths, a fixture store ([scenes.tsx](../../harness/scenes.tsx)) | [scenes-shift.test.mjs](../../../verify/scenes-shift.test.mjs) |
 | [statistics.html](../../harness/statistics.html) | the whole `Statistics` view | recorded replies of the real backend, [statsMock.ts](../../harness/statsMock.ts) | [stats-shift.test.mjs](../../../verify/stats-shift.test.mjs) |
 | [models.html](../../harness/models.html) | `AiModelsView`, the AI models group of Preferences > General | [modelsFixtures.ts](../../harness/modelsFixtures.ts) | [models-shift.test.mjs](../../../verify/models-shift.test.mjs) |
 | [catalog.html](../../harness/catalog.html) | `CatalogCard` with its index card, the add and remove dialogs and Preferences' `CatalogPrefsView` (`?state=`, `?view=`) | [catalogFixtures.ts](../../harness/catalogFixtures.ts) | [catalog-shift.test.mjs](../../../verify/catalog-shift.test.mjs) |
@@ -44,6 +45,9 @@ the top of each page's `.tsx` is the complete list; the main ones:
   `frame=mat|flush`, `hover=row<N>|badge<N>`, `pin=<N>`, `elapsed=<seconds>` (for
   `loading`), and `break=1`. `#motion-report` reports how many animations run
   1.5 seconds after load, to check reduced motion.
+- **scenes.html**: `view=timeline|scene` (with `scene=<n>`), `state=ready|loading|updating|empty|error|notime|scoring|unscored`,
+  `size=small|big` (400 or 20,000 synthetic photos), `dir=ltr|rtl`, `scroll=<px>`, `fold=<block>`
+  and `break=1`. `--accept-lang=fr` (a Chrome flag) shows the French strings.
 - **statistics.html**: `state=ready|loading|empty|error|firstrun`,
   `cov=indexing|ready|paused` (the coverage banner), `filter=key:value,...`
   (keys `maker`, `body`, `lens`, `year`, `month`, `hour`, `focal`, `aperture`,

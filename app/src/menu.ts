@@ -13,7 +13,7 @@ export type ActionId =
   | "import" | "add-folder" | "export" | "print" | "quit"
   | "undo" | "redo" | "cut" | "copy" | "paste" | "select-all"
   | "copy-settings" | "paste-settings" | "paste-previous" | "preferences"
-  | "auto-cull" | "critique" | "virtual-copy" | "start-over" | "rotate-left" | "rotate-right" | "hdr-merge" | "pano-merge"
+  | "auto-cull" | "scenes" | "critique" | "virtual-copy" | "start-over" | "rotate-left" | "rotate-right" | "hdr-merge" | "pano-merge"
   | "crop" | "heal" | "wb-picker"
   | "rate-0" | "rate-1" | "rate-2" | "rate-3" | "rate-4" | "rate-5"
   | "label-red" | "label-yellow" | "label-green" | "label-blue" | "reject"
@@ -35,7 +35,7 @@ export const ACTION_IDS: readonly ActionId[] = [
   "import", "add-folder", "export", "print", "quit",
   "undo", "redo", "cut", "copy", "paste", "select-all",
   "copy-settings", "paste-settings", "paste-previous", "preferences",
-  "auto-cull", "critique", "virtual-copy", "start-over", "rotate-left", "rotate-right", "hdr-merge", "pano-merge",
+  "auto-cull", "scenes", "critique", "virtual-copy", "start-over", "rotate-left", "rotate-right", "hdr-merge", "pano-merge",
   "crop", "heal", "wb-picker",
   "rate-0", "rate-1", "rate-2", "rate-3", "rate-4", "rate-5",
   "label-red", "label-yellow", "label-green", "label-blue", "reject",
@@ -118,6 +118,7 @@ export const MENUS: Menu[] = [
       item("fullscreen-preview", t("menu.fullscreen-preview"), "F"),
       item("culling-preview", t("menu.culling-preview"), "F"),
       item("grid", t("menu.grid"), "G"),
+      item("scenes", t("menu.scenes"), "⇧S"),
       item("before-after", t("menu.before-after"), "Y"),
       item("compare", t("menu.compare"), "C"),
       item("stats", t("menu.stats")), sep(),
@@ -188,7 +189,7 @@ export type { NativeItem, NativeMenu };
 
 export function disabledViewActions(grid: boolean, hasPhoto: boolean, hasCullingPhotos: boolean, cropping: boolean, preview: boolean): ReadonlySet<ActionId> {
   const disabled = new Set<ActionId>();
-  if (!grid || !hasCullingPhotos) { disabled.add("culling-preview"); disabled.add("auto-cull"); disabled.add("critique"); }
+  if (!grid || !hasCullingPhotos) { disabled.add("culling-preview"); disabled.add("auto-cull"); disabled.add("scenes"); disabled.add("critique"); }
   if (!preview && (grid || !hasPhoto)) disabled.add("fullscreen-preview");
   if (grid || !hasPhoto) {
     for (const id of ["zoom-toggle", "before-after", "clipping", "next-scope", "info-overlay", "canvas", "soft-proof"] as const) {

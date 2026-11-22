@@ -260,6 +260,26 @@ export const commands = {
 	 *  has been changed since the cull is left alone and listed.
 	 */
 	cullUndo: (sessionId: number) => __TAURI_INVOKE<CullApplyResult>("cull_undo", { sessionId }),
+	/**
+	 *  Builds the scenes of a folder's photos: groups them by capture time and look
+	 *  (from cached thumbnails only), and reports the scores already measured. `job` is
+	 *  the page's number for it, for `scenes_cancel` and the `scenes-progress` events.
+	 *  A cancelled build fails with "cancelled".
+	 */
+	scenesBuild: (job: number, request: ScenesRequest) => __TAURI_INVOKE<ScenesBuild>("scenes_build", { job, request }),
+	/**  Stops a running `scenes_build` or `scenes_score`. */
+	scenesCancel: (job: number) => __TAURI_INVOKE<void>("scenes_cancel", { job }),
+	/**  The frames Scenes accepted (the page shows the green label as accepted only for these). */
+	scenesAccepted: () => __TAURI_INVOKE<SceneAccepted[]>("scenes_accepted"),
+	/**  Remembers, or forgets, that Scenes accepted a frame. */
+	scenesSetAccepted: (path: string, version: number | null, accepted: boolean) => __TAURI_INVOKE<null>("scenes_set_accepted", { path, version, accepted }),
+	/**
+	 *  Scores frames the cull store has not measured, from the engine's small analysis
+	 *  preview of each (the same measurement as Auto Cull, kept in the same cache, so
+	 *  either finds the other's). Reports every frame's score; a frame that could not
+	 *  be read has an `error`. Stopped by `scenes_cancel`, keeping what it measured.
+	 */
+	scenesScore: (job: number, items: CullTarget[]) => __TAURI_INVOKE<SceneScore[]>("scenes_score", { job, items }),
 	folderMovePlan: (job: number, req: FolderMoveRequest) => __TAURI_INVOKE<FolderMovePlan>("folder_move_plan", { job, req }),
 	folderMove: (job: number, req: FolderMoveRequest, copy: boolean, overwrite: FolderConflict[]) => __TAURI_INVOKE<FolderMoveSummary>("folder_move", { job, req, copy, overwrite }),
 	renamePreview: (items: RenameItem[]) => __TAURI_INVOKE<RenameResult>("rename_preview", { items }),
@@ -2265,6 +2285,76 @@ export type SaveReply = {
 	edited: boolean,
 };
 
+/**
+ *  A frame the user accepted in Scenes (the green label is written to the library
+ *  by the page; this is the memory of who wrote it).
+ */
+export type SceneAccepted = {
+	path: string,
+	version?: number,
+};
+
+export type SceneBlock = {
+	/**  milliseconds since 1970 as if the camera's clock were UTC; None for the no-time block */
+	startMs: number | null,
+	endMs: number | null,
+	noTime: boolean,
+	/**  some frame's time is its file's modified time, not the camera's */
+	approx: boolean,
+	scenes: SceneRec[],
+};
+
+/**  One photo as the page lists it. */
+export type SceneItem = {
+	path: string,
+	version?: number,
+	name: string,
+	/**  "YYYY:MM:DD HH:MM:SS", with a fraction when the camera recorded one; empty when there is no time */
+	takenAt?: string,
+	/**  the time is the file's modified time, not the camera's */
+	fromFile?: boolean,
+};
+
+export type SceneParams = {
+	/**  a gap above this many seconds starts a new scene */
+	gapSec: number,
+	/**  a gap above this many seconds starts a new time block */
+	blockGapSec: number,
+	/**  a frame this many bits (or more) away from the scene's recent frames starts a new scene */
+	similarity: number,
+};
+
+/**  One scene: indexes into the request's items, in capture order. */
+export type SceneRec = {
+	frames: number[],
+	/**  frames of the scene with no cached thumbnail yet, grouped by time alone */
+	unhashed: number,
+};
+
+export type SceneScore = {
+	path: string,
+	version: number,
+	quality: number | null,
+	error: string | null,
+};
+
+export type ScenesBuild = {
+	blocks: SceneBlock[],
+	/**  each item's cached quality (0-1), in the request's order, None while unscored */
+	quality: (number | null)[],
+	/**  the photos are on a network volume */
+	network: boolean,
+	hashed: number,
+	unhashed: number,
+	reused: number,
+	millis: number,
+};
+
+export type ScenesRequest = {
+	items: SceneItem[],
+	params?: SceneParams | null,
+};
+
 export type SchemaEnumValue = {
 	name: string,
 	value: number,
@@ -2597,6 +2687,33 @@ export type TopPageReply = {
 	next: string | null,
 };
 
+/**  One directory of a source, as the page draws it. */
+export type TreeNode = {
+	/**  The directory this one is under (its rel path; "" is the source root). */
+	parent: string,
+	/**  Under the source root, '/' separated. "" is the source root itself. */
+	rel: string,
+	name: string,
+	has_children: boolean,
+	/**  Present photos directly in it. */
+	direct: number,
+	/**  Present photos in it and everything below. */
+	subtree: number,
+	/**  "ok", "stalled", "denied", "error" or "gone" (gone only while photos remain below it). */
+	status: string,
+};
+
+export type TreeReply = {
+	/**  What the page passes next time: unchanged while nothing about this source moved. */
+	generation: number,
+	/**  The page's generation is still current: `nodes` and `root` are empty and its rows stand. */
+	unchanged: boolean,
+	/**  The source root's own counts and whether it has folders under it. None when unchanged. */
+	root: TreeNode | null,
+	/**  The children of each asked folder, each in name order. */
+	nodes: TreeNode[],
+};
+
 export type UprightReply = {
 	rotation: number,
 	lensshift_v: number,
@@ -2655,30 +2772,3 @@ export type ZoomUsage = {
 	maxMm: number | null,
 	bins: number[],
 };
-/**  One directory of a source, as the page draws it. */
-export type TreeNode = {
-	/**  The directory this one is under (its rel path; "" is the source root). */
-	parent: string,
-	/**  Under the source root, '/' separated. "" is the source root itself. */
-	rel: string,
-	name: string,
-	has_children: boolean,
-	/**  Present photos directly in it. */
-	direct: number,
-	/**  Present photos in it and everything below. */
-	subtree: number,
-	/**  "ok", "stalled", "denied", "error" or "gone" (gone only while photos remain below it). */
-	status: string,
-};
-
-export type TreeReply = {
-	/**  What the page passes next time: unchanged while nothing about this source moved. */
-	generation: number,
-	/**  The page's generation is still current: `nodes` and `root` are empty and its rows stand. */
-	unchanged: boolean,
-	/**  The source root's own counts and whether it has folders under it. None when unchanged. */
-	root: TreeNode | null,
-	/**  The children of each asked folder, each in name order. */
-	nodes: TreeNode[],
-};
-

@@ -61,7 +61,7 @@ pub struct Analysed {
     pub result: CullAnalysis,
 }
 
-fn hasher() -> image_hasher::Hasher {
+pub(crate) fn hasher() -> image_hasher::Hasher {
     HasherConfig::new().hash_alg(HashAlg::DoubleGradient).hash_size(16, 16).to_hasher()
 }
 

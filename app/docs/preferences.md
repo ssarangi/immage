@@ -787,14 +787,18 @@ on this computer, with warnings and an example). See
 
 ## Culling
 
-Defaults for [Auto cull](library.md#auto-cull) and AI grading with Google
-Gemini.
+Defaults for [Auto cull](library.md#auto-cull), the options of
+[Scenes](library.md#scenes) and AI grading with Google Gemini.
 
 - **Auto cull defaults**: the starting values of the Auto Cull window: **Shoot
   type**, **Duplicates to reject**, **Highlights (%)**, **Blur threshold** and
   **Similarity**. **Reset to Immage's defaults** puts them back.
 - **Apply defaults**: the **Highlight rating** and **Highlight color label** that
   Apply starts with. Neither is set by default.
+- **Scenes**: **Accept also gives one star** (off by default: Accept writes the
+  green color label only) and **Score scenes in the background** (**Automatic**
+  scores local drives only, since scoring reads a preview of every photo;
+  **Always** and **Never** override that). See [Scenes](library.md#scenes).
 - **Cache and model**: **Clear analysis cache** forgets every photo's
   measurements, so the next cull measures them again; past sessions are kept.
   **Gemini model** is **Automatic**: Immage uses the newest available flash

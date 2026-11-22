@@ -16,7 +16,7 @@ import type { ImageEntry } from "./library";
 import { formatNumber, t } from "./i18n";
 import { placeLabel, placePins } from "./critiquePins";
 
-export type Tab = "cull" | "critique";
+export type Tab = "cull" | "critique" | "scene";
 // what the photo's overlay shows: the region under the pointer or keyboard, the
 // one a click pinned, and whether the softest region is outlined
 export type Sel = { hot: number | null; pinned: number | null; blur: boolean };
@@ -217,9 +217,10 @@ function Empty({ icon, title, body, action }: { icon: React.ReactNode; title: st
     <h3>{title}</h3><p className="cull-note">{body}</p>{action}</div>;
 }
 
-export function CullSide({ image, tab, onTab, crit, sel, onSel, onChanges, onOpenPrefs }: {
+export function CullSide({ image, tab, onTab, crit, sel, onSel, onChanges, onOpenPrefs, scenePanel }: {
   image: ImageEntry; tab: Tab; onTab: (t: Tab) => void; crit: Crit; sel: Sel; onSel: (s: Sel) => void;
   onChanges: (changes: CullChange[]) => void; onOpenPrefs: () => void;
+  scenePanel?: React.ReactNode;   // the scene view's Scene tab, first among the tabs
 }) {
   const d = useDecision(image.path, image.version);
   const [busy, setBusy] = useState(false);
@@ -252,10 +253,11 @@ export function CullSide({ image, tab, onTab, crit, sel, onSel, onChanges, onOpe
   const loading = crit.phase === "loading";
   const noKey = crit.phase === "error" && !!crit.prefs;
   const failed = crit.phase === "error" && !crit.prefs;
-  const tabs: { id: Tab; icon?: React.ReactNode }[] = [{ id: "critique", icon: <Sparkles size={14} aria-hidden="true" /> }, { id: "cull" }];
+  const tabs: { id: Tab; icon?: React.ReactNode }[] = [...(scenePanel ? [{ id: "scene" as Tab }] : []),
+    { id: "critique", icon: <Sparkles size={14} aria-hidden="true" /> }, { id: "cull" }];
   const verdictKey = d ? (d.status === "reject" ? "reject" : d.best ? "best" : "keep") : "keep";
 
-  const foot = tab === "cull"
+  const foot = tab === "scene" ? null : tab === "cull"
     ? d && <div className="cull-override" role="group" aria-label={t("cull.inspector.override")}>
         <button type="button" className="cull-btn" aria-pressed={d.status === "keep"} disabled={busy || d.status === "keep"}
                 title={t("cull.inspector.keepHint")} onClick={() => void decide("keep", null)}>{t("cull.inspector.keep")}</button>
@@ -278,6 +280,7 @@ export function CullSide({ image, tab, onTab, crit, sel, onSel, onChanges, onOpe
         className="cull-tab" onClick={() => onTab(id)}>{icon}{t(`cull.tab.${id}`)}</button>)}
     </div>
     <section id={`cull-panel-${tab}`} role="tabpanel" aria-labelledby={`cull-tab-${tab}`} className="cull-pane">
+      {tab === "scene" && scenePanel}
       {tab === "cull" && (d ? <>
         <div className="cull-verdict">
           <span className={`cull-tile ${d.status}`} aria-hidden="true">{d.status === "reject" ? <Minus size={18} /> : <Check size={18} />}</span>

@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later
+     Copyright (C) 2026 the Immage authors -->
+<!-- Dev-only harness: the real Scenes timeline, scene cards and scene view with synthetic photos and
+     fixture states, in a plain browser (npm run dev, then /harness/scenes.html?state=ready). Not an
+     entry of the production build. See scenes.tsx for the parameters. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scenes harness</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <pre id="shift-report" hidden></pre>
+    <script type="module" src="/harness/scenes.tsx"></script>
+  </body>
+</html>

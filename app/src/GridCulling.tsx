@@ -14,8 +14,9 @@ import { LABEL_COLORS, fetchCachedThumb, fetchThumb, fileKind, type ImageEntry }
 import { KeywordingPanel, parseKeyword } from "./Keywording";
 import { ZoomBar } from "./Toolbar";
 import { formatNumber, t } from "./i18n";
+import type { SceneLightbox } from "./SceneLightbox";
 
-export function GridCulling({ images, allImages, selection, anchor, thumbnail, activeEditorId, prepare, onEdit, onMeta, onKeywords, onCullChanges, onOpenCullPrefs }: {
+export function GridCulling({ images: gridImages, allImages, selection, anchor, thumbnail, activeEditorId, prepare, onEdit, onMeta, onKeywords, onCullChanges, onOpenCullPrefs, scene }: {
   images: ImageEntry[]; allImages: ImageEntry[]; selection: Set<number>; anchor: number | null;
   thumbnail: (id: number) => ImageBitmap | undefined;
   activeEditorId?: number;
@@ -24,7 +25,10 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
   onKeywords: (id: number, keywords: string[]) => void;
   onCullChanges: (changes: CullChange[]) => void;   // library entries an override rewrote
   onOpenCullPrefs: () => void;                      // Preferences > Culling
+  scene?: SceneLightbox | null;                     // the scene view: this lightbox over one scene's frames
 }) {
+  // in the scene view the lightbox steps through the scene's frames, not the grid's photos
+  const images = scene ? scene.frames : gridImages;
   const zoomAnchor = useRef<{ix: number; iy: number; sx: number; sy: number} | null>(null);
   const space = useRef(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
@@ -60,11 +64,11 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
   const setZoom = (value: number | null) => { zoomRef.current = value; setZoomState(value); };
   const detailed = zoom !== null;
   const cameraFit = cameraPreviews && !detailed;
-  const current = images.find(i => i.imgid === photo);
+  const current = images.find(i => i.imgid === photo) ?? (scene ? images.find(i => i.imgid === scene.startId) : undefined);
   // auto cull under review: the inspector beside the photo, its overlay over it
   const reviewing = useReviewing();
   const [tabChosen, setTabChosen] = useState<Tab | null>(null);   // null: Cull while reviewing, else Critique
-  const tab: Tab = tabChosen ?? (reviewing ? "cull" : "critique");
+  const tab: Tab = tabChosen ?? (scene ? "scene" : reviewing ? "cull" : "critique");
   const [sel, setSel] = useState<Sel>(NO_SEL);
   const decision = useDecision(current?.path ?? "", current?.version);
   const crit = useCritique(current);
@@ -117,6 +121,16 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
   }, [current?.imgid, current?.width, current?.height, detail, paintSize]);
   const previousIndex = useRef(0);
   useEffect(() => { if (current) previousIndex.current = images.indexOf(current); else if (photo !== null) setPhoto(fallbackPhoto(images, previousIndex.current)); }, [images, photo]);
+  // a scene opened (or another scene chosen) shows its first frame; closing the lightbox closes the scene
+  const sceneShown = useRef(false);
+  useEffect(() => {
+    if (scene) { direction.current = 1; setPhoto(scene.startId); }
+    else if (sceneShown.current) { sceneShown.current = false; setPhoto(null); }
+  }, [scene?.key]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (scene && photo !== null) sceneShown.current = true;
+    else if (scene && photo === null && sceneShown.current) { sceneShown.current = false; scene.onClose(); }
+  }, [photo]);   // eslint-disable-line react-hooks/exhaustive-deps
   const keywords = async (items: ImageEntry[]) => {
     const generation = ++keywordGeneration.current;
     setTargets(items); setLists([]); setError("");
@@ -191,6 +205,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
           || !!focused?.closest('input:not([type="range"]),textarea,[contenteditable=true]'),
         modalOpen: !!document.querySelector(".modal-backdrop"),
         hasTarget: !!target || chosen.length > 0, hasCurrent: !!current,
+        scene: !!scene && photo !== null, shift: e.shiftKey,
       });
       if (kind === "ignore") return;
       e.stopImmediatePropagation();
@@ -211,7 +226,12 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
         }
         case "rate": onMeta(current!, { rating: action.value, rejected: false }); break;
         case "label": onMeta(current!, { labels: current!.labels ^ (1 << action.bit) }); break;
-        case "toggleReject": onMeta(current!, { rejected: !current!.rejected }); break;
+        case "toggleReject":
+          if (scene) scene.decide(current!, current!.rejected ? "undecided" : "rejected");
+          else onMeta(current!, { rejected: !current!.rejected });
+          break;
+        case "decide": scene?.decide(current!, action.state); break;
+        case "scene": scene?.onScene(action.by); break;
       }
     };
     window.addEventListener("keydown", key, true);
@@ -407,7 +427,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
       onClick={e => { if (e.target === e.currentTarget) setPhoto(null); }} aria-modal="true">
       <CullLightbox dialogLabel={t("library.culling.preview")}
         head={<LightboxHead filename={current.filename} index={images.indexOf(current) + 1} total={images.length}
-          onEdit={() => onEdit(current)} onKeywords={() => void keywords([current])} onClose={() => setPhoto(null)} />}
+          onEdit={() => onEdit(current)} onKeywords={() => void keywords([current])} onClose={() => setPhoto(null)} context={scene?.context} />}
         stage={<>
         <div ref={viewport} style={{ flex: 1, minWidth: 0, overflow: detailed ? "auto" : "visible", minHeight: 0,
           cursor: detailed && spaceHeld ? (panning ? "grabbing" : "grab") : detailed ? "zoom-out" : "zoom-in" }}
@@ -448,8 +468,10 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
           onStep={dir => { const next = images[images.indexOf(current) + dir]; if (next) { direction.current = dir; setPhoto(next.imgid); } }} />
         </>}
         side={<CullSide image={current} tab={tab} onTab={setTabChosen} crit={crit} sel={sel} onSel={setSel}
-          onChanges={onCullChanges} onOpenPrefs={openPrefs} />}
-        foot={<div className="culling-bottom-bar">
+          onChanges={onCullChanges} onOpenPrefs={openPrefs} scenePanel={scene?.panel(current)} />}
+        foot={<>
+        {scene?.strip(current, id => { direction.current = 1; setPhoto(id); })}
+        <div className="culling-bottom-bar">
           <div className="culling-rating-controls">
             <span className="tool-group" role="group" aria-label={t("library.culling.rating")}>
               <button className={`tool${current.rejected ? " on" : ""}`} aria-label={t("library.culling.reject")} aria-pressed={current.rejected}
@@ -487,7 +509,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
               setZoom(zoomRef.current === null ? 1 : null);
             }} />
           </div>
-        </div>} />
+        </div></>} />
     </div>}
     {!!targets.length && <div className="modal-backdrop" data-grid-keywords-dialog role="dialog"
       aria-modal="true" aria-label={t("library.culling.gridKeywords")}>

@@ -46,7 +46,7 @@ const createHandler = new Function('env', `with(env) { ${body}; return key; }`);
 function fixture(overrides = {}) {
   const calls = [];
   const images = [{ imgid: 1, labels: 0 }, { imgid: 2, labels: 0 }, { imgid: 3, labels: 0 }];
-  const env = { writing: false, targets: [], photo: null, current: null, images, allImages: images,
+  const env = { writing: false, targets: [], photo: null, current: null, images, allImages: images, scene: null,
     selection: new Set([1,2]), anchor: 2, keywordTargets, cullingKey, pickCullingTarget, direction: {current:1},
     zoomRef: {current:null}, zoomAnchor: {current:null},
     document: { querySelector: selector => selector.includes(':hover') ? {getAttribute: () => '3'} : null },

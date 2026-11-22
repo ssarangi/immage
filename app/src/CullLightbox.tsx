@@ -10,13 +10,15 @@ import { ChevronLeft, ChevronRight, SlidersHorizontal, Tag, X } from "lucide-rea
 import type { ReactNode } from "react";
 import { formatNumber, t } from "./i18n";
 
-export function LightboxHead({ filename, index, total, onEdit, onKeywords, onClose }: {
+export function LightboxHead({ filename, index, total, onEdit, onKeywords, onClose, context }: {
   filename: string; index: number; total: number; onEdit: () => void; onKeywords: () => void; onClose: () => void;
+  context?: string;   // the scene view: the scene's time and frame count
 }) {
   return <div className="culling-toolbar">
     <div className="culling-photo-info">
       <bdi className="culling-filename" title={filename}>{filename}</bdi>
       <span className="culling-photo-count">{t("library.culling.position", { n: formatNumber(index), total: formatNumber(total) })}</span>
+      {context && <span className="culling-photo-count">{context}</span>}
     </div>
     <div className="culling-actions">
       <button type="button" className="tool labeled" title={t("library.culling.edit")} onClick={onEdit}>

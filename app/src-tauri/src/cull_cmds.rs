@@ -80,7 +80,7 @@ pub struct CullOverrideResult {
     pub changes: Vec<CullChange>,
 }
 
-fn store_path(state: &AppState) -> PathBuf {
+pub(crate) fn store_path(state: &AppState) -> PathBuf {
     state.runtime.join("cull.sqlite")
 }
 
@@ -119,7 +119,7 @@ fn decode_jpeg(bytes: &[u8]) -> Result<image::RgbImage, String> {
     Ok(reader.decode().map_err(|e| e.to_string())?.to_rgb8())
 }
 
-fn analyse_target(app: &AppHandle, store: &Store, target: &CullTarget, size: i64, modified_ms: i64) -> Result<Analysed, String> {
+pub(crate) fn analyse_target(app: &AppHandle, store: &Store, target: &CullTarget, size: i64, modified_ms: i64) -> Result<Analysed, String> {
     if let Some((result, hash)) = store.cached(target, size, modified_ms) {
         if let Some(hash) = cull::hash_from_string(&hash) {
             return Ok(Analysed { hash, result });

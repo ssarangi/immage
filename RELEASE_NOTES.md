@@ -7,6 +7,24 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- **Scenes:** the grid has a new **Grid | Scenes** switch (also **View > Scenes**
+  and Shift+S). Scenes shows the open folder as a vertical timeline of time
+  blocks, grouped by day, each a row of scene cards: bursts grouped by capture
+  time (to the tenth of a second where the camera recorded it) and by how the
+  frames look, with the best frame, the frame count, a quality score and the
+  camera, lens, focal length, aperture, shutter speed and ISO. A scene opens in
+  the culling preview with a Scene tab, a filmstrip of its frames sharpest
+  first, and Accept, Undecided and Reject (A, U and X; N and Shift+N for the
+  next and previous scene). Accept gives the green color label, Reject is the
+  ordinary reject flag, and nothing is moved or deleted. Grouping reads only
+  the thumbnails the grid already made, so a network drive is not read again,
+  and a folder of 20,000 photos groups in a few seconds (a second time in
+  about a tenth of a second) and scrolls smoothly, drawing only the cards on
+  screen. Photos with no camera time use the file date, marked with ~, or go to
+  a last No capture time block. Quality scores come from Auto Cull's
+  measurements and are filled in as you open scenes; Preferences > Culling can
+  score every scene in the background (on local drives by default) and make
+  Accept also give one star.
 - **Library cards:** The Folders and Catalog cards fold and open from the
   keyboard as well as the mouse (Enter or Space on the header), and tell
   screen readers whether they are open. A folded Catalog card still shows its

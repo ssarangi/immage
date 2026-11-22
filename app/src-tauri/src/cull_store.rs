@@ -246,6 +246,25 @@ impl Store {
             .and_then(|(analysis, hash)| serde_json::from_str(&analysis).ok().map(|a| (a, hash)))
     }
 
+    /// The quality (0-1) of each photo's cached measurement, in the order asked, by
+    /// path and version alone: no file is looked at, so on a network share this is
+    /// free. A photo changed since it was measured shows its old score until it is
+    /// scored again; the Scenes timeline only displays it.
+    pub fn qualities(&self, items: &[(&str, i64)]) -> Vec<Option<f64>> {
+        let Ok(mut stmt) = self.db.prepare_cached(
+            "SELECT analysis_json FROM cull_analysis_cache WHERE path = ?1 AND version = ?2 AND feature_set_version = ?3",
+        ) else {
+            return vec![None; items.len()];
+        };
+        items
+            .iter()
+            .map(|(path, version)| {
+                let text: Option<String> = stmt.query_row(params![path, version, FEATURE_SET_VERSION], |row| row.get(0)).optional().ok().flatten();
+                text.and_then(|t| serde_json::from_str::<CullAnalysis>(&t).ok()).map(|a| a.quality_score)
+            })
+            .collect()
+    }
+
     pub fn cache_put(&self, target: &CullTarget, size: i64, modified_ms: i64, hash: &str, analysis: &CullAnalysis) -> Result<(), String> {
         self.db
             .execute(

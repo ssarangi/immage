@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
+import { ScenesSwitch } from "./ScenesView";
 import { BanIcon, FilterIcon, LibraryIcon, MagnifierIcon, PanelIcon, ResetIcon, SlidersIcon, StarIcon, icon } from "./icons";
 import { effectiveFilter, clearAll, findCount, serverPickers, setStars, withFilter, type FindState } from "./findModel";
 import { LABEL_COLORS } from "./library";
@@ -99,11 +100,13 @@ export function GridZoomBar({ size, min, max, standard, onSize }: {
 // the bar under the filmstrip: rate and reject the open image, filter the
 // folder, and show or hide the side panels and the filmstrip
 export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind, onFindMenu, savedMenu,
-                   layout, zoomBar, viewTools, onLayout, ref, pin, grid, onToggleGrid, rightPanel }: {
+                   layout, zoomBar, viewTools, onLayout, ref, pin, grid, onToggleGrid, rightPanel, scenes, onScenes }: {
   ref: React.RefObject<HTMLDivElement | null>;
   viewTools: React.ReactNode;               // undo, redo, before/after, compare
   onToggleGrid: () => void;                 // grid and filmstrip, as the Library button on the rail does
   grid: boolean;                            // the magnifier shows only in the grid, the one view it opens the lightbox in
+  scenes: boolean;                          // the grid shows its photos as scenes (Scenes mode)
+  onScenes: (on: boolean) => void;
   pin: React.ReactNode;
   find: FindState;                          // what is searched and filtered: the stars, flags and labels set it
   immichAvailable: boolean;
@@ -212,6 +215,7 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
         {/* in the first group, which stays on screen: the right-hand one scrolls out of view in a narrow window */}
         {grid && <>
           <span className="sep" />
+          <ScenesSwitch scenes={scenes} onScenes={onScenes} />
           <button className="tool cull-open" title={t("cull.toolbar.title")} aria-label={t("cull.toolbar.title")}
                   onClick={() => window.dispatchEvent(new CustomEvent("auto-cull-open"))}>{t("cull.toolbar.button")}</button>
         </>}
