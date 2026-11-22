@@ -1268,6 +1268,7 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   /* recessed below the window color, so it separates from the panel behind it in every theme */
   background: color-mix(in srgb, var(--window) 72%, black); box-shadow: inset 0 0 0 1px var(--inset);
 }
+html[data-scheme="light"] .filmstrip.grid { background: color-mix(in srgb, var(--window) 94%, black); }
 .filmstrip.grid.empty { display: flex; align-items: center; justify-content: center; }
 .grid-empty { color: var(--text-3); font-size: var(--fs-body); }
 .strip-slot.floating.revealed {

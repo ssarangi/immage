@@ -125,6 +125,11 @@ Improvements
   offline comes later.
   Preferences > General has a Catalog card with disk use and a Rebuild catalog
   button that asks twice.
+- **Catalog benchmark:** `immage catalog bench <folder|source>` measures a
+  folder or network share read-only (listing rate, stat and head-read latency
+  per format, embedded preview cost, database write time, CPU and memory) and
+  writes a JSON and a text report without file names. It backs off when the
+  share slows down instead of stopping.
 - **Quick start guide:** the first-run tour now also shows Statistics, Find
   (filters, Smart and Filename search, Ask Gemini), Cull and Critique with
   Gemini in the grid (G, F and ⇧⌘G, Shift+Ctrl+G on Windows and Linux), and the AI models in Preferences
@@ -137,11 +142,6 @@ Performance
 - **Indexing large folders:** storing photo metadata in the search index no
   longer slows down as the index grows. A batch of 20,000 photos took 9 seconds
   (30 seconds when many photos shared a fingerprint) and now takes 1.6 seconds.
-- **Catalog benchmark:** `immage catalog bench <folder|source>` measures a
-  folder or network share read-only (listing rate, stat and head-read latency
-  per format, embedded preview cost, database write time, CPU and memory) and
-  writes a JSON and a text report without file names. It backs off when the
-  share slows down instead of stopping.
 
 Bug fixes
 

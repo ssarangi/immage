@@ -6528,7 +6528,12 @@ export default function App() {
     openFolder: (d) => { void showFolder(d); setGrid(true); },
     cullFolder: async (d) => {
       await showFolder(d); setGrid(true);
-      window.setTimeout(() => window.dispatchEvent(new CustomEvent("auto-cull-open")), 250);
+      // open the dialog once this folder's photos are listed, however long a slow
+      // share takes (up to a minute), instead of after a fixed delay that a slow listing outlasts
+      const until = Date.now() + 60_000;
+      while (Date.now() < until && !(folderRef.current === d && shownRef.current.length)) await new Promise((r) => window.setTimeout(r, 100));
+      if (folderRef.current === d && shownRef.current.length) window.dispatchEvent(new CustomEvent("auto-cull-open"));
+      else setStatus(t("cull.folder.noPhotos"));
     },
     statsFolder: async (d) => {
       await showFolder(d);

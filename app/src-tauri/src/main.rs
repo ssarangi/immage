@@ -64,11 +64,11 @@ mod catalog_relink;
 mod catalog_thumb_src;
 mod catalog_thumbs;
 mod catalog_thumb_job;
+mod catalog_bench;
 #[cfg(test)]
 mod catalog_meta_fixtures;
 mod typed_catalog;
 #[cfg(test)]
-mod catalog_bench;
 mod catalog_fakefs;
 mod scrub;
 mod support_bundle;

@@ -5449,6 +5449,7 @@
   "cull.job.title": "Auto Cull",
   "cull.job.done": "Auto Cull: {total} measured, {reject} to reject. Review them in the Cull panel.",
   "cull.job.failed": "Auto Cull failed",
+  "cull.folder.noPhotos": "This folder has no photos to cull",
   "cull.stage.grouping": "grouping look-alikes",
   "cull.panel.title": "Cull",
   "cull.panel.close": "Back to Find",
