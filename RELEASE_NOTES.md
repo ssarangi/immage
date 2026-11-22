@@ -13,6 +13,21 @@ Improvements
   work: a ring with the count (Indexing 1,240 / 8,000), Paused, or a warning
   triangle when a source needs attention, without moving anything. A folded
   Folders card shows a folder move or copy in progress.
+- **Catalog folder tree:** each source in the Catalog card opens into its
+  folders, as a tree like the Folders list, with the number of photos in every
+  folder (including its subfolders while Include subfolders is on). The tree
+  and counts come from the Catalog, so you can browse them, and find a folder,
+  with a drive or NAS asleep or unplugged. They grow and count up as a source
+  is indexed, without moving the rows you are looking at; a folder the index
+  could not read shows a triangle. Click a folder to open it in the grid, or
+  use its menu (Cull, Statistics, Show in Folders, Copy path). A folder open
+  from one tree is marked in the other, and Show in Catalog and Show in Folders
+  scroll to it without opening it. An offline folder shows what the Catalog
+  knows and a Check again button; browsing its photos offline is not available
+  yet. The folder trees (Folders and Catalog) now work from the keyboard (arrow
+  keys, Home, End, Enter, type-ahead, Menu key), tell screen readers they are
+  trees, mirror in right-to-left languages, and every row is now the same
+  height, a few pixels different from before in the Folders list.
 - **Folder browser:** Add folder and Add to Catalog now choose a folder in
   Immage's own browser instead of the system dialog. It follows the app's theme
   and lists your home folders, every mounted drive and network share (so a NAS

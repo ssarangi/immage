@@ -624,6 +624,19 @@ pub async fn catalog_rebuild(app: AppHandle) -> Result<i64, String> {
     .await
 }
 
+/// The folders under each of `parents` ("" is the source's root) with their photo counts, from the
+/// catalog alone: it never touches the source's path. `generation` is the one the last reply gave;
+/// while nothing about the source moved the reply is `unchanged`.
+#[tauri::command]
+#[specta::specta]
+pub async fn catalog_tree_children(app: AppHandle, source_id: i64, parents: Vec<String>, generation: Option<u32>) -> Result<crate::catalog_tree::TreeReply, String> {
+    blocking(move || {
+        let cat = catalog(&app)?;
+        crate::catalog_tree::cache().children(&cat.db, source_id, &parents, generation)
+    })
+    .await
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn catalog_status(app: AppHandle) -> Result<CatalogStatus, String> {

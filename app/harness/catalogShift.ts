@@ -7,7 +7,10 @@
 //     short states (offline, idle, never indexed) share theirs;
 //  2. within a state, hover and keyboard focus on every control move nothing (CSS :hover and
 //     :focus-visible are mirrored onto classes, as a script cannot hover);
-//  3. the Rebuild row of Preferences keeps its box when it asks for the second click (view=prefs).
+//  3. the Rebuild row of Preferences keeps its box when it asks for the second click (view=prefs);
+//  4. the folder tree (view=tree): expanding moves only the rows below by exactly the rows added, and a state
+//     change, a count from 12 to 1,000,000, the first folder arriving and an error triangle appearing move
+//     nothing; rows are 28 px; the tree's roles and ARIA numbers are right; a 110,101-folder tree draws a window.
 // verify/catalog-shift.test.mjs runs it in headless Chrome with ?shift=1 and asserts zero movement.
 import { SHORT, TALL } from "./catalogFixtures";
 
@@ -17,7 +20,7 @@ const frames = (n = 3) => new Promise<void>((done) => { setTimeout(done, 25 * n)
 const page = () => document.querySelector<HTMLElement>("[data-harness-page]")!;
 const rect = (r: DOMRect): R => ({ x: r.left, y: r.top + (page()?.scrollTop ?? 0), w: r.width, h: r.height });
 // bars fill and text runs change with the data; their boxes are fixed and measured on the containers
-const SKIP = ".cat-bar > i";
+const SKIP = ".cat-bar > i, .twisty > svg, .twisty > svg *";
 
 function snapshot(root: Element = page()): Snap {
   const out: Snap = new Map();
@@ -29,7 +32,10 @@ function snapshot(root: Element = page()): Snap {
   }
   return out;
 }
-const describe = (n: Node) => { const el = n as Element; return `${el.tagName.toLowerCase()}.${(el.className ?? "").toString().split(" ").join(".")}`; };
+const describe = (n: Node) => {
+  const el = n as Element;
+  return `${el.tagName.toLowerCase()}.${(el.className ?? "").toString().split(" ").join(".")}${el.closest("[data-key]") ? ` in ${el.closest("[data-key]")!.getAttribute("data-key")}` : ""}`;
+};
 function diff(a: Snap, b: Snap) {
   let max = 0, worst = "", compared = 0;
   for (const [n, r] of a) {
@@ -60,9 +66,8 @@ function mirrorPseudoClasses() {
 const withClass = (el: Element, cls: string, on: boolean) => {
   for (let e: Element | null = el; e && e !== document.body; e = e.parentElement) { if (cls === "__fv" && e !== el) break; e.classList.toggle(cls, on); }
 };
-const ROWS = [".cat-list li:nth-child(1) .cat-row", ".cat-list li:nth-child(1) .cat-slot", ".cat-list li:nth-child(1) .cat-state",
-  ".cat-list li:nth-child(2) .cat-row", ".cat-list li:nth-child(3) .cat-row", ".cat-list li:nth-child(4) .cat-row", ".cat-list li:nth-child(5) .cat-row",
-  ".cat-list li:nth-child(1) .cat-volume", ".cat-list li:nth-child(2) .cat-volume"];
+const ROWS = ['[data-key="src:1:"]', '[data-key="src:1:"] .cat-slot', '[data-key="src:1:"] .cat-state',
+  '[data-key="src:2:"]', '[data-key="src:3:"]', '[data-key="src:4:"]', '[data-key="src:5:"]', ".cat-volume"];
 const CARD = [".cat-card", ".cat-head", ".cat-head-ring", ".cat-head-text", ".cat-acts", ".cat-phases", ".cat-phase:nth-child(1)", ".cat-phase:nth-child(2)",
   ".cat-phase:nth-child(3)", ".cat-phase:nth-child(1) .cat-bar", ".cat-phase:nth-child(2) .cat-bar", ".cat-phase:nth-child(3) .cat-bar", ".cat-foot", ".cat-foot-a", ".cat-foot-b"];
 const SHORT_CARD = [".cat-card", ".cat-head", ".cat-acts", ".cat-foot", ".cat-foot-a", ".cat-foot-b"];
@@ -77,7 +82,7 @@ const boxesOf = (sels: string[]) => {
 async function interactions(failures: { what: string; delta: number; worst: string }[], label: string) {
   const base = snapshot();
   let n = 0, compared = 0, maxDelta = 0;
-  for (const el of Array.from(page().querySelectorAll<HTMLElement>("button, a, input, [role=button]"))) {
+  for (const el of Array.from(page().querySelectorAll<HTMLElement>("button, a, input, [role=button], [role=treeitem]"))) {
     const name = `${el.tagName.toLowerCase()}.${el.className.toString().split(" ").join(".")} "${(el.getAttribute("aria-label") ?? el.textContent ?? "").trim().slice(0, 24)}"`;
     for (const [cls, what] of [["__hover", "hover"], ["__fv", "focus"]] as const) {
       withClass(el, cls, true); if (cls === "__fv") el.focus(); await frames(1);
@@ -132,6 +137,195 @@ async function headerTest(failures: { what: string; delta: number; worst: string
   return { ok: failures.length === 0, states: keys.length, interactions: r.n, compared: r.compared, maxDelta: r.maxDelta, fixedMaxDelta: c.max, fixedWorst: c.worst, shown, failures };
 }
 
+type Failure = { what: string; delta: number; worst: string };
+type TreeH = H & {
+  expand(keys: string[], on?: boolean): void; select(key: string | null): void; scrollTo(key: string): void;
+  setCount(id: number, rel: string, parent: string, count: number): void;
+  addFolder(id: number, parent: string, name: string, count: number, status?: string): void;
+  clear(id: number): void; setStatus(id: number, rel: string, parent: string, status: string): void; grow(id: number): void;
+};
+// the footer is sticky (its place depends on the scroll) and its own fixed boxes are tested with the card
+const TREE_SKIP = ".cat-footer, .cat-add, .panel-title";
+// the containers around the rows grow with the rows; it is the rows that must not move
+const GROWS = (el: Element) => el.matches(".catalog-panel, .cat-body, .ftree") || el.contains(document.querySelector(".ftree"));
+const treeSnap = (): Snap => {
+  const out = snapshot();
+  for (const n of Array.from(out.keys())) if ((n as Element).closest(TREE_SKIP) || GROWS(n as Element)) out.delete(n);
+  return out;
+};
+
+/** Nodes in both snapshots: above `from` they must be where they were, at or below it exactly `by` lower. */
+function shifted(a: Snap, b: Snap, from: number, by: number, label: string, failures: Failure[]) {
+  let compared = 0;
+  for (const [n, r] of a) {
+    const s = b.get(n);
+    if (!s) continue;
+    compared++;
+    const want = r.y >= from ? by : 0;
+    const d = Math.max(Math.abs(r.x - s.x), Math.abs(r.w - s.w), Math.abs(r.h - s.h), Math.abs(s.y - r.y - want));
+    if (d > 0.01) { failures.push({ what: label, delta: Math.round(d * 100) / 100, worst: describe(n) }); break; }
+  }
+  return compared;
+}
+
+async function treeTest(failures: Failure[]) {
+  const h = (window as unknown as { __h: TreeH }).__h;
+  const checks: Record<string, unknown> = {};
+  let compared = 0;
+  const key = (rel: string, id = 1) => `src:${id}:${rel}`;
+  const rowTop = (k: string) => (document.querySelector(`[data-key="${k}"]`) as HTMLElement | null)?.getBoundingClientRect().top ?? NaN;
+  const pageTop = () => page().scrollTop;
+
+  // 1. expanding a folder moves the rows below it by exactly the rows added, and nothing else
+  h.set("idle"); await frames();
+  for (const [what, k, rows] of [["expand 2018", key("2018"), 2], ["expand 2019", key("2019"), 4]] as const) {
+    const before = treeSnap();
+    const at = rowTop(k) + pageTop() + 28;      // the first added row's top
+    h.expand([k]); await frames();
+    const after = treeSnap();
+    compared += shifted(before, after, at, rows * 28, what, failures);
+    const before2 = treeSnap();
+    h.expand([k], false); await frames();
+    compared += shifted(after, treeSnap(), at, -rows * 28, `${what} back`, failures);
+    void before2;
+  }
+  h.expand([key("2019"), key("2019/Iceland")]); await frames();
+
+  // 2. a source going from online to indexing to paused to offline and back moves no row
+  const states = ["idle", "reading", "thumbs", "paused", "offline", "partial", "idle"];
+  const base = treeSnap();
+  const rowsOf = (m: Snap) => { const o = new Map<Node, R>(); for (const [n, r] of m) if ((n as Element).closest(".folder-row, .ftree-other")) o.set(n, r); return o; };
+  const baseRows = rowsOf(base);
+  let stateDelta = 0;
+  for (const st of states) {
+    h.set(st); await frames();
+    const d = diff(baseRows, rowsOf(treeSnap()));
+    compared += d.compared; stateDelta = Math.max(stateDelta, d.max);
+    if (d.max > 0) failures.push({ what: `state ${st}`, delta: d.max, worst: d.worst });
+  }
+  checks.stateDelta = stateDelta;
+  h.set("idle"); await frames();
+
+  // 3. a count from 12 to 999 to 1,000,000 and back moves no box of any row
+  const day = "2019/Iceland";
+  let countDelta = 0;
+  const reference = treeSnap();
+  for (const n of [12, 999, 99_999, 100_000, 1_000_000, 12]) {
+    h.setCount(1, `${day}/Day 1`, day, n); await frames();
+    const d = diff(reference, treeSnap());
+    compared += d.compared; countDelta = Math.max(countDelta, d.max);
+    if (d.max > 0) failures.push({ what: `count ${n}`, delta: d.max, worst: d.worst });
+  }
+  checks.countDelta = countDelta;
+  // the count slot says the compact number above 99,999 and the whole number in its tooltip
+  h.setCount(1, `${day}/Day 1`, day, 1_234_567); await frames();
+  const big = document.querySelector<HTMLElement>(`[data-key="${key(`${day}/Day 1`)}"] .cat-count`);
+  checks.compactCount = big?.textContent ?? null;
+  if (!big || big.textContent === "1,234,567" || !big.getAttribute("aria-label")?.includes("1,234,567")) failures.push({ what: "count above 99,999 is not compact, or lost its full number", delta: 1, worst: String(big?.textContent) });
+  h.setCount(1, `${day}/Day 1`, day, 12); await frames();
+
+  // 5. a folder's error triangle appears in its own slot
+  const reference2 = treeSnap();
+  h.setStatus(1, "2019/Misc", "2019", "denied"); await frames();
+  const d5 = diff(reference2, treeSnap());
+  compared += d5.compared;
+  if (d5.max > 0) failures.push({ what: "an error triangle appeared and moved something", delta: d5.max, worst: d5.worst });
+  const tri = document.querySelector(`[data-key="${key("2019/Misc")}"] .cat-state`);
+  if (!tri?.querySelector("svg") || !tri.getAttribute("aria-label")) failures.push({ what: "the error triangle has no shape or no label", delta: 1, worst: String(tri?.outerHTML) });
+  checks.triangle = tri?.getAttribute("aria-label") ?? null;
+  checks.hoverFocus = await interactions(failures, "tree");
+
+  // 6. the rows are 28 px, and the tree has its roles
+  const heights = new Set(Array.from(document.querySelectorAll<HTMLElement>(".folder-row, .ftree-other")).map((e) => Math.round(e.getBoundingClientRect().height * 100) / 100));
+  checks.rowHeights = [...heights];
+  if (heights.size !== 1 || !heights.has(28)) failures.push({ what: `rows are not all 28 px high: ${[...heights].join(", ")}`, delta: 1, worst: "" });
+  const tree = document.querySelector('[role="tree"]');
+  const items = Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"]'));
+  const problems: string[] = [];
+  if (!tree?.getAttribute("aria-label")) problems.push("tree has no name");
+  if (items.filter((e) => e.tabIndex === 0).length !== 1) problems.push(`${items.filter((e) => e.tabIndex === 0).length} rows on the tab order`);
+  for (const e of items) {
+    for (const a of ["aria-level", "aria-setsize", "aria-posinset"]) if (!e.getAttribute(a)) problems.push(`${e.dataset.key}: no ${a}`);
+    const kids = e.querySelector(".twisty:not(.none)") !== null;
+    if (kids !== (e.getAttribute("aria-expanded") !== null)) problems.push(`${e.dataset.key}: aria-expanded does not match its chevron`);
+    if (!e.closest('[role="tree"]')) problems.push(`${e.dataset.key}: outside the tree`);
+    if (e.querySelector(".cat-count") && !e.querySelector(".cat-count")!.getAttribute("aria-label")) problems.push(`${e.dataset.key}: count has no label`);
+  }
+  const lvl = (k: string) => document.querySelector(`[data-key="${k}"]`)?.getAttribute("aria-level");
+  if (lvl(key("")) !== "1" || lvl(key("2019")) !== "2" || lvl(key("2019/Iceland")) !== "3") problems.push("aria-level does not follow the depth");
+  checks.aria = { items: items.length, problems };
+  for (const p of problems) failures.push({ what: `aria: ${p}`, delta: 1, worst: p });
+
+  // 7. keys: down moves focus, right opens, left closes (the tree's own handler, on real key events)
+  const first = document.querySelector<HTMLElement>(`[data-key="${key("")}"]`)!;
+  first.focus(); await frames();
+  const press = async (k: string) => { (document.activeElement as HTMLElement).dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true })); await frames(); };
+  await press("ArrowDown");
+  const afterDown = (document.activeElement as HTMLElement).dataset.key;
+  await press("ArrowDown");
+  const second = (document.activeElement as HTMLElement).dataset.key;
+  const rtl = document.documentElement.dir === "rtl";   // Left and Right swap in a right-to-left tree
+  await press(rtl ? "ArrowLeft" : "ArrowRight");     // 2018 is a closed folder: it opens
+  const opened = document.querySelector(`[data-key="${second}"]`)?.getAttribute("aria-expanded");
+  await press(rtl ? "ArrowRight" : "ArrowLeft");
+  const closed = document.querySelector(`[data-key="${second}"]`)?.getAttribute("aria-expanded");
+  await press("End");
+  const last = (document.activeElement as HTMLElement).dataset.key;
+  checks.keys = { afterDown, second, opened, closed, last };
+  if (afterDown !== key("2017") || second !== key("2018") || opened !== "true" || closed !== "false" || !last?.startsWith("src:4")) failures.push({ what: "keyboard navigation", delta: 1, worst: JSON.stringify(checks.keys) });
+  // 4. a source found while indexing: the first folder takes the "finding folders" line's place
+  h.set("finding"); await frames(); h.clear(1); await frames();
+  const message = document.querySelector(".folder-message");
+  checks.finding = message?.textContent ?? null;
+  if (!message) failures.push({ what: "no 'finding folders' line while a source is indexed with no folder yet", delta: 1, worst: "" });
+  const lineBox = message ? rect(message.getBoundingClientRect()) : null;
+  const waiting = treeSnap();
+  h.addFolder(1, "", "first", 3); await frames();
+  const arrived = document.querySelector(`[data-key="${key("first")}"]`);
+  if (!arrived) failures.push({ what: "the first folder did not appear", delta: 1, worst: "" });
+  else if (lineBox) {
+    const r = rect(arrived.getBoundingClientRect());
+    const d = Math.max(Math.abs(r.y - lineBox.y), Math.abs(r.h - lineBox.h));
+    if (d > 0.01) failures.push({ what: "the first folder is not where the line was", delta: d, worst: "first" });
+    checks.arrivalDelta = d;
+  }
+  compared += shifted(waiting, treeSnap(), 1e9, 0, "first folder arrives", failures);
+  for (let i = 0; i < 3; i++) { h.grow(1); await frames(); }   // counts grow in place while the scan reads on
+  h.set("idle"); await frames();
+
+  return { ok: failures.length === 0, compared, checks, failures };
+}
+
+// a tree of 110,101 folders, every folder open: only a window of rows is in the page, and scrolling moves it
+async function bigTest(failures: Failure[]) {
+  const h = (window as unknown as { __h: TreeH }).__h;
+  h.set("idle"); await frames(6);
+  const count = () => document.querySelectorAll('[role="treeitem"]').length;
+  const box = document.querySelector<HTMLElement>('[role="tree"]')!;
+  const out: Record<string, unknown> = { drawnAtTop: count(), scrollHeight: box.scrollHeight, clientHeight: box.clientHeight };
+  const firstKey = () => (document.querySelector('[role="treeitem"]') as HTMLElement | null)?.dataset.key;
+  const top = firstKey();
+  const t0 = performance.now();
+  const paint = () => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+  box.scrollTop = 28 * 50_000; await paint(); await frames(4);
+  out.scrollMs = Math.round(performance.now() - t0);
+  out.scrollTopSet = box.scrollTop; out.firstAfter = firstKey();
+  out.drawnMiddle = count(); out.topKeyMoved = firstKey() !== top;
+  box.scrollTop = box.scrollHeight; await paint(); await frames(4);
+  out.drawnEnd = count();
+  const items = Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"]'));
+  out.lastKey = items[items.length - 1]?.dataset.key;
+  if (count() > 60) failures.push({ what: `${count()} rows in the page at the end of a 110,101-row tree`, delta: count(), worst: "" });
+  if ((out.drawnAtTop as number) > 60 || (out.drawnMiddle as number) > 60) failures.push({ what: "more than 60 rows drawn", delta: 1, worst: JSON.stringify(out) });
+  if (box.scrollHeight < 28 * 110_000) failures.push({ what: `scroll height ${box.scrollHeight} is not the whole list's`, delta: 1, worst: "" });
+  if (!out.topKeyMoved) failures.push({ what: "scrolling did not move the window", delta: 1, worst: "" });
+  // the tab stop stays mounted when it scrolls out of the window
+  const tabbable = Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"]')).filter((e) => e.tabIndex === 0).length;
+  out.tabbableMounted = tabbable;
+  if (tabbable !== 1) failures.push({ what: `${tabbable} rows on the tab order in the big tree`, delta: 1, worst: "" });
+  return { ok: failures.length === 0, big: out, failures };
+}
+
 export async function runShiftTest() {
   const h = (window as unknown as { __h: H }).__h;
   mirrorPseudoClasses();
@@ -140,6 +334,7 @@ export async function runShiftTest() {
   const view = new URLSearchParams(location.search).get("view") ?? "card";
 
   if (new URLSearchParams(location.search).get("fold") === "1") return headerTest(failures);
+  if (view === "tree") return new URLSearchParams(location.search).get("tree") === "big" ? bigTest(failures) : treeTest(failures);
 
   if (view === "prefs") {
     const boxes: Record<string, Record<string, R>> = {};

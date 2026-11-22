@@ -1091,39 +1091,48 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .rail-group { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .rail-sep { flex: none; width: 20px; height: 1px; margin: 5px 0; background: var(--border, #333); }
 
-/* remembered folders */
-.folders { list-style: none; margin: 0; padding: 0 8px; }
-.folders ul { list-style: none; margin: 0; padding: 0; }
-.folders .folder-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  border-radius: 8px;
-  cursor: pointer;
+/* remembered folders, and the Catalog's folders: one tree (FolderTreeView.tsx). every row is 28px high so
+   a window of rows is arithmetic and nothing shifts; the indent is a logical property, so a right-to-left
+   layout mirrors it */
+:root { --offline-opacity: 0.55; }
+.folders, .ftree { list-style: none; margin: 0; padding: 0 8px; position: relative; }
+.ftree .folder-row {
+  display: flex; align-items: center; gap: 6px; height: 28px; box-sizing: border-box;
+  padding-block: 0; padding-inline-end: 8px; padding-inline-start: calc(8px + var(--depth, 0) * 14px);
+  border-radius: 8px; cursor: pointer;
 }
-.folders .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.folders .icon { color: var(--text-2); flex: none; }
-.folders .folder-row:hover { background: var(--card); }
-.folders .folder-row.active { background: var(--inset); }
+.ftree .folder-row:focus-visible { outline: 2px solid var(--focus, var(--accent)); outline-offset: -2px; }
+.ftree .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext; }
+.ftree .icon { color: var(--text-2); flex: none; }
+.ftree-icon { flex: none; display: grid; place-items: center; color: var(--text-2); }
+.ftree-icon .icon { width: 16px; height: 16px; }
+.ftree .folder-row:hover { background: var(--card); }
+.ftree .folder-row.active { background: var(--inset); }
+/* the folders of a Catalog source that is not connected: what the Catalog knows, dimmed but still usable */
+.ftree .folder-row.offline { opacity: var(--offline-opacity); }
+.ftree-other { height: 28px; box-sizing: border-box; display: flex; align-items: center; padding-inline: 0; }
+.ftree-other > * { min-width: 0; flex: 1; }
+.ftree .folder-message { padding-inline-start: calc(8px + var(--depth, 0) * 14px + 22px); gap: 6px; color: var(--text-3); font-size: var(--fs-small); }
+.ftree .folder-message > .twisty, .ftree .folder-message > .ftree-icon, .ftree .folder-message > .name-edit { flex: none; }
+.ftree .folder-message > .name-edit { flex: 1; }
+.ftree .folder-message .cat-finding { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ftree-kept { position: absolute; inset-inline-start: 0; top: 0; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+.ftree.long { overflow-y: auto; overflow-anchor: auto; }
 /* a drive's heading over its folders, when there is more than one drive */
-.folders .folder-volume {
-  display: flex; align-items: center; gap: 6px; padding: 6px 8px 3px;
-  font-size: 12px; font-weight: 600; color: var(--text-2); cursor: pointer;
-}
-.folders .folder-volume:hover { color: var(--text); }
-.folders .folder-volume .host { flex: none; font-weight: 400; opacity: 0.7; }
+.ftree .folder-volume { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.ftree .folder-volume-row { display: flex; align-items: center; gap: 6px; height: 28px; padding-inline: 8px; cursor: pointer; }
+.ftree .folder-volume-row:hover { color: var(--text); }
+.ftree .folder-volume .host { flex: none; font-weight: 400; opacity: 0.7; }
 /* green while the drive answers, red while it doesn't (volumes.rs, answering) */
-.folders .drive-dot { width: 6px; height: 6px; flex: none; margin: 0 2px; border-radius: 50%; background: #5fd068; }
-.folders .drive-dot.off { background: #ff6b6b; }
-.folders .folder-row.offline { opacity: 0.45; }
+.ftree .drive-dot { width: 6px; height: 6px; flex: none; margin: 0 2px; border-radius: 50%; background: var(--cat-ok); }
+.ftree .drive-dot.off { background: var(--cat-error); }
 /* the open photo's folder, when the filmstrip shows another (a parent, with
    its subfolders) */
-.folders .folder-row.has-photo { background: color-mix(in srgb, var(--inset) 50%, transparent); }
+.ftree .folder-row.has-photo { background: color-mix(in srgb, var(--inset) 50%, transparent); }
 /* a folder under dragged photos (photoDrag.ts), which takes the drop. not
    .drop-target: that is the window's file drop overlay, a fixed full-window
    panel, and a row with it covered the window in grey */
-.folders .folder-row.drop-into { background: var(--hover); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.ftree .folder-row.drop-into { background: var(--hover); box-shadow: inset 0 0 0 1.5px var(--accent); }
 body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user-select: none !important; }
 /* the dragged photos beside the pointer: the thumbnail and their count,
    with a + while ⌥/Alt copies */
@@ -1147,17 +1156,21 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .modal.move-photos .move-clashes { list-style: none; margin: 0; padding: 0; max-height: 200px; overflow-y: auto; }
 .modal.move-photos .move-clashes .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modal.move-photos .move-clashes select { flex: none; }
-.folders .photo-dot { width: 5px; height: 5px; flex: none; margin: 0 4px; border-radius: 50%; background: var(--text-2); }
-.folders .twisty {
+.ftree .photo-dot { width: 5px; height: 5px; flex: none; margin: 0 4px; border-radius: 50%; background: var(--text-2); }
+.ftree .twisty {
   flex: none; display: flex; align-items: center; justify-content: center; width: 16px; height: 16px;
   padding: 0; background: none; border: none; border-radius: 4px; color: var(--text-2); cursor: pointer;
   transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.folders .twisty svg { width: 12px; height: 12px; }
-.folders .twisty:hover { color: var(--text); }
-.folders .twisty.open { transform: rotate(90deg); }
-.folders .twisty.none { visibility: hidden; }
-.folders .remove {
+.ftree .twisty svg { width: 12px; height: 12px; }
+.ftree .twisty:hover { color: var(--text); }
+.ftree .twisty.open { transform: rotate(90deg); }
+.ftree .twisty.none { visibility: hidden; }
+/* right to left: the chevron points left when shut and turns down all the same */
+[dir="rtl"] .ftree .twisty { transform: scaleX(-1); }
+[dir="rtl"] .ftree .twisty.open { transform: scaleX(-1) rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .ftree .twisty { transition: none; } }
+.ftree .remove {
   visibility: hidden;
   padding: 0 4px;
   background: none;
@@ -1167,7 +1180,7 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   line-height: 1;
   cursor: pointer;
 }
-.folders .folder-row:hover .remove { visibility: visible; }
+.ftree .folder-row:hover .remove, .ftree .folder-row:focus-visible .remove { visibility: visible; }
 .folder.add { margin-top: 4px; color: var(--text-2); background: transparent; border: 1px dashed var(--ui-border-3a3a3a, #3a3a3a); }
 .modal-body .swatch { width: 20px; height: 20px; margin: 0; border: 2px solid var(--ui-border-444444, #444); }
 .modal-body .swatch.on { border-color: var(--accent); }
@@ -3239,34 +3252,26 @@ html[data-scheme="light"] .filmstrip.grid { background: color-mix(in srgb, var(-
   border: none; border-radius: 6px; background: none; color: var(--text-2); font-size: 18px; line-height: 1; cursor: pointer;
 }
 .catalog-panel .cat-add:hover, .catalog-panel .cat-add:focus-visible { background: var(--hover); color: var(--text); }
-.cat-list, .cat-list ul { list-style: none; margin: 0; padding: 0 6px; }
-.cat-list ul { padding: 0; }
-.cat-row {
-  display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 8px; cursor: pointer; box-sizing: border-box;
-}
-.cat-row:hover { background: var(--card); }
-.cat-row.active, .cat-row.focused { background: var(--inset); }
-.cat-row:focus-visible { outline: 2px solid var(--focus, var(--accent)); outline-offset: -2px; }
-.cat-row.offline { opacity: 0.55; }
-.cat-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cat-row-icon { flex: none; display: grid; place-items: center; color: var(--text-2); }
-.cat-row-icon .icon { width: 16px; height: 16px; }
+.cat-list { padding: 0 6px; }
+.cat-list .folder-row.focused { background: var(--inset); }
+.cat-list .folder-row.focused.active { background: var(--inset); }
 .cat-slot { position: relative; flex: none; width: 8ch; height: 22px; }
+.cat-count.zero { opacity: 0.6; }
 .cat-count { position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-end; color: var(--text-3);
   font-size: var(--fs-small); font-variant-numeric: tabular-nums; }
 .cat-more {
   position: absolute; inset: 0; display: grid; place-items: center; padding: 0; border: none; border-radius: 6px;
   background: var(--hover); color: var(--text); cursor: pointer; opacity: 0; font-size: 14px; line-height: 1;
 }
-.cat-row:hover .cat-more, .cat-row:focus-within .cat-more, .cat-more:focus-visible { opacity: 1; }
+.folder-row:hover .cat-more, .folder-row:focus-within .cat-more, .cat-more:focus-visible { opacity: 1; }
 .cat-state { flex: none; width: 16px; height: 16px; display: grid; place-items: center; color: var(--text-2); }
 .cat-glyph, .cat-ring { width: 16px; height: 16px; display: block; }
 .cat-glyph.ok { color: var(--cat-ok); }
 .cat-glyph.warn { color: var(--cat-warn); }
-.cat-volume { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; font-size: var(--fs-small); font-weight: 600; color: var(--text-2); }
+.cat-volume { display: flex; align-items: center; gap: 6px; height: 28px; box-sizing: border-box; padding: 0 8px; font-size: var(--fs-small); font-weight: 600; color: var(--text-2); }
 .cat-volume .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cat-volume .host { flex: none; font-weight: 400; opacity: 0.7; }
-.cat-volume-state { flex: none; font-weight: 400; color: var(--text-3); }
+.cat-volume-state { flex: none; width: 9ch; text-align: end; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--text-3); }
 .cat-empty { padding: 4px 14px 0; }
 .cat-empty p, .cat-reassure { margin: 0 0 8px; color: var(--text-3); font-size: var(--fs-small); line-height: 1.45; }
 .catalog-panel .folder.add { margin: 4px 12px 0; width: calc(100% - 24px); }
@@ -3277,6 +3282,10 @@ html[data-scheme="light"] .filmstrip.grid { background: color-mix(in srgb, var(-
   position: relative; box-sizing: border-box; margin: 8px 8px 0; padding: 10px 12px; overflow: hidden;
   display: flex; flex-direction: column; gap: 8px; background: var(--inset); border-radius: var(--radius-card);
 }
+.cat-footer { position: sticky; bottom: 0; z-index: 2; background: var(--panel); padding-top: 4px; }
+.cat-card.cat-offline { height: 118px; gap: 2px; }
+.cat-offline .cat-title, .cat-offline .cat-sub { flex: none; }
+.cat-offline .cat-acts { margin-top: auto; justify-content: flex-start; }
 .cat-card.tall { height: 262px; }
 .cat-card.short { height: 138px; }
 .cat-card.short .cat-phases { display: none; }

@@ -9,7 +9,8 @@ import { settings } from "./settings";
 // read last, newest first; remembered between launches
 export type Library = { folders: string[]; current: string | null; image: string | null; expanded: string[];
                  hidden: string[]; sampled?: boolean; version?: number; grid?: boolean; recent?: string[];
-                 volumes?: Record<string, Volume>; foldedVolumes?: string[]; hostNames?: Record<string, string> };
+                 volumes?: Record<string, Volume>; foldedVolumes?: string[]; hostNames?: Record<string, string>;
+                 catalogExpanded?: string[] };
 export function loadLibrary(): Library {
   try {
     return { folders: [], current: null, image: null, expanded: [], hidden: [],

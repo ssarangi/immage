@@ -447,6 +447,9 @@ pub struct CatalogDb {
     tx: Mutex<Option<SyncSender<Msg>>>,
     thread: Mutex<Option<JoinHandle<()>>>,
     failure: Arc<Mutex<Option<String>>>,
+    /// Per source, counts the changes to which directories and photos exist (a scan batch, the end
+    /// of a run, a removed source). The folder tree's cache (catalog_tree.rs) is valid for one value.
+    shape: Arc<Mutex<HashMap<i64, u64>>>,
     /// Held for the life of the handle; dropping it releases the lock.
     _lock: Option<std::fs::File>,
 }
@@ -479,15 +482,18 @@ impl CatalogDb {
         let failure = Arc::new(Mutex::new(None));
         let (tx, rx) = sync_channel::<Msg>(QUEUE_DEPTH);
         let fail = failure.clone();
+        let shape: Arc<Mutex<HashMap<i64, u64>>> = Arc::new(Mutex::new(HashMap::new()));
+        let writer_shape = shape.clone();
         let thread = std::thread::Builder::new()
             .name("catalog-writer".into())
-            .spawn(move || writer(conn, rx, fail))
+            .spawn(move || writer(conn, rx, fail, writer_shape))
             .map_err(|e| CatalogError::Other(e.to_string()))?;
         Ok(Self {
             path: path.to_path_buf(),
             tx: Mutex::new(Some(tx)),
             thread: Mutex::new(Some(thread)),
             failure,
+            shape,
             _lock: lock,
         })
     }
@@ -517,6 +523,16 @@ impl CatalogDb {
 
     fn sender(&self) -> Result<SyncSender<Msg>, String> {
         self.tx.lock().unwrap().clone().ok_or_else(|| "the catalog is closed".to_string())
+    }
+
+    /// A source's shape counter: changes whenever its directories or photos were added, removed or marked.
+    pub fn shape(&self, source_id: i64) -> u64 {
+        self.shape.lock().unwrap().get(&source_id).copied().unwrap_or(0)
+    }
+
+    /// Marks a source's shape changed, for a write made through `exec` that adds or removes its directories or photos.
+    pub fn touch_shape(&self, source_id: i64) {
+        *self.shape.lock().unwrap().entry(source_id).or_insert(0) += 1;
     }
 
     /// A write error the writer hit while applying scan batches, if any.
@@ -559,7 +575,10 @@ impl CatalogDb {
     /// Ends a run: the sweep (only when `finish.sweep`), the run's totals, the
     /// source's state, and the job.
     pub fn finish_run(&self, finish: Finish) -> Result<RunTotals, String> {
-        self.exec(move |c| finish_run(c, &finish))
+        let source_id = finish.source_id;
+        let done = self.exec(move |c| finish_run(c, &finish));
+        self.touch_shape(source_id);
+        done
     }
 
     pub fn close(&self) {
@@ -619,7 +638,7 @@ fn reconcile_on_open(conn: &Connection) -> rusqlite::Result<()> {
 
 // ---- the writer -----------------------------------------------------------
 
-fn writer(mut conn: Connection, rx: Receiver<Msg>, failure: Arc<Mutex<Option<String>>>) {
+fn writer(mut conn: Connection, rx: Receiver<Msg>, failure: Arc<Mutex<Option<String>>>, shape: Arc<Mutex<HashMap<i64, u64>>>) {
     let mut carry: Option<Msg> = None;
     loop {
         let msg = match carry.take() {
@@ -655,6 +674,15 @@ fn writer(mut conn: Connection, rx: Receiver<Msg>, failure: Arc<Mutex<Option<Str
                 if let Err(e) = apply(&mut conn, &batch) {
                     eprintln!("catalog: write failed: {e}");
                     *failure.lock().unwrap() = Some(e.to_string());
+                }
+                // after the commit, so a reader that sees the new value sees the rows
+                let mut shape = shape.lock().unwrap();
+                for m in &batch {
+                    match m {
+                        Msg::Dir(d) => *shape.entry(d.source_id).or_insert(0) += 1,
+                        Msg::Notes(source, ..) => *shape.entry(*source).or_insert(0) += 1,
+                        _ => {}
+                    }
                 }
             }
         }

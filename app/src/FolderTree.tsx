@@ -5,46 +5,45 @@
 // opens into its subfolders, read from disk when first opened and again
 // whenever it is reopened, so folders made since (by an import) show.
 // with folders on more than one drive, each drive is a heading over its
-// folders, so a 2026 on the Mac and a 2026 on a NAS are told apart
-import { useCallback, useEffect, useRef, useState } from "react";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
+// folders, so a 2026 on the Mac and a 2026 on a NAS are told apart.
+// this is the Folders adapter: it owns the data (listSubfolders), the drag and
+// drop, New Folder and the host rename, and hands FolderTreeView a flat list of
+// rows; the Catalog tree (CatalogCard.tsx) draws through the same view
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { commands, type SubFolder, type Volume } from "./commands";
-import { FILE_MANAGER } from "./ExportDialog";
-import { useMenuClose } from "./FileMenu";
 import { NameEdit } from "./MasksPanel";
 import { baseName, within } from "./paths";
 import { pressPhoto, usePhotoDrag } from "./photoDrag";
 import { t } from "./i18n";
-import { folderCatalog } from "./catalogModel";
-import type { SourceStatus } from "./bindings";
+import { FolderTreeView, chevron } from "./FolderTreeView";
+import { FolderMenu, type FolderTools } from "./FolderMenu";
+import type { TreeRow } from "./folderTreeModel";
 
-// what a folder's menu can do with the Catalog and the other tools (App supplies them)
-export type FolderTools = {
-  sources: SourceStatus[];
-  onCull(path: string): void;
-  onStats(path: string): void;
-  onAddToCatalog(path: string): void;
-  onOpenInCatalog(source: SourceStatus): void;
-  onRemoveFromCatalog(source: SourceStatus): void;
-};
+export type { FolderTools };
 
 // the drive a folder is on (folder_volumes, volumes.rs)
 export type { Volume };
 
-// points right, and turns down when what it opens opens
-const chevron = (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"
-       strokeLinecap="round" strokeLinejoin="round"><path d="m9 5 7 7-7 7" /></svg>
-);
+// what a Folders row needs to be drawn
+type Data = {
+  path: string;
+  offline: boolean;
+  /** a drive heading */
+  drive?: { mount: string; volume: Volume | undefined; open: boolean };
+  /** the row where a new subfolder is being named */
+  creating?: boolean;
+};
 
-export function FolderTree({ roots, volumes, hostNames, folded, current, photo, expanded, hidden, refresh, icon, driveIcon, networkIcon,
+export function FolderTree({ roots, volumes, hostNames, folded, current, origin = "folders", photo, reveal, expanded, hidden, refresh, icon, driveIcon, networkIcon,
                              onToggle, onFold, onOpen, onRemove, onDropFolder, transfer, onRenameHost, onError, tools }: {
   roots: string[];
   volumes: Map<string, Volume>;        // by root
   hostNames: Record<string, string>;   // the user's names for servers, by host
   folded: Set<string>;                 // drive headings closed, by mount
   current: string | null;
+  origin?: "folders" | "catalog" | null; // which tree the open folder was opened from; the other one marks it quietly
   photo: string | null;                // the open photo's folder: scrolled to, and marked when not `current`
+  reveal?: { path: string; n: number } | null; // "Show in Folders": scrolled to when `n` changes (App opens what is above it)
   expanded: Set<string>;
   hidden: Set<string>;                 // subfolders taken off the tree
   refresh: number;                     // bumped to read every open folder again
@@ -115,147 +114,134 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
     return () => { stale = true; };
   }, [expanded, refresh, made]);
 
-  // the photo's folder is scrolled to once per photo folder, when its row
-  // first shows: its parents' subfolders are read after it opens
-  const revealed = useRef<string | null>(null);
-  const reveal = (el: HTMLDivElement | null) => {
-    if (!el || revealed.current === photo) return;
-    revealed.current = photo;
-    el.scrollIntoView({ block: "nearest" });
-  };
-
-  const row = (path: string, name: string, depth: number, hasChildren: boolean, offline = false): React.ReactNode => {
-    const open = expanded.has(path);
-    const kids = open ? children.get(path)?.filter((k) => !hidden.has(k.path)) : undefined;
-    const holdsPhoto = path === photo && path !== current;
-    const busy = transfer && [transfer.source, transfer.target].some((root) => within(path, root));
-    opens.current.set(path, hasChildren && !offline && !busy);
-    // the photos' own folder, or a drive not answering, takes no drop
-    const refuse = offline || busy || (drag !== null && drag.from.length === 1 && drag.from[0] === path);
-    const target = drag !== null && drag.over === path;
-    return (
-      <li key={path}>
-        <div className={`folder-row${path === current ? " active" : ""}${holdsPhoto ? " has-photo" : ""}${offline ? " offline" : ""}`
-                        + `${target ? ` drop-into${drag.copy ? " copy" : ""}` : ""}`}
-             data-folder-path={path} data-folder-refuse={refuse ? "1" : undefined}
-             title={busy ? t("dialogs.folderMove.busy") : offline ? t("library.folders.pathOffline", { path }) : path}
-             ref={path === photo ? reveal : undefined}
-             style={{ paddingLeft: 8 + depth * 14 }} onClick={() => { if (!busy) onOpen(path); }}
-             onPointerDown={(e) => {
-               if (offline || transfer || (e.target as Element).closest("button, input")) return;
-               pressPhoto(e, { folder: { path, name }, count: () => 1, from: () => [path],
-                 drop: (dest, copy) => onDropFolder(path, dest, copy) });
-             }}
-             onContextMenu={(e) => {
-               e.preventDefault();
-               e.stopPropagation();
-               setMenu({ x: e.clientX, y: e.clientY, path, offline });
-             }}>
-          <button className={`twisty${open ? " open" : ""}${hasChildren ? "" : " none"}`} tabIndex={-1}
-                  onClick={(e) => { e.stopPropagation(); if (hasChildren) onToggle(path); }}>
-            {chevron}
-          </button>
-          {icon}<span className="name">{name}</span>
-          {holdsPhoto && <span className="photo-dot" title={t("library.folders.openPhoto")} />}
-          <button className="remove" title={t("library.folders.removeFromList")}
-                  onClick={(e) => { e.stopPropagation(); onRemove(path); }}>×</button>
-        </div>
-        {(creating === path || (kids && kids.length > 0)) && (
-          <ul>
-            {creating === path && (
-              <li>
-                <div className="folder-row" style={{ paddingLeft: 8 + (depth + 1) * 14 }}>
-                  <span className="twisty none">{chevron}</span>
-                  {icon}<NameEdit shown={t("library.folders.newFolder")} onDone={named} />
-                </div>
-              </li>
-            )}
-            {kids?.map((k) => row(k.path, k.name, depth + 1, k.has_children, offline))}
-          </ul>
-        )}
-      </li>
-    );
-  };
-
-  // a root's twisty shows until it is known to have no subfolders
-  const rootRow = (r: string, depth: number) =>
-    row(r, baseName(r), depth, children.get(r)?.length !== 0, volumes.get(r)?.online === false);
-
-  // drives in the order their first folder was added
-  const drives = new Map<string, string[]>();
-  for (const r of roots) {
-    const mount = volumes.get(r)?.mount ?? "";
-    drives.set(mount, [...(drives.get(mount) ?? []), r]);
-  }
-  const folderMenu = menu && (
-    <FolderMenu {...menu} onClose={closeMenu} tools={tools}
-                onNew={() => newFolder(menu.path)} onRemove={() => onRemove(menu.path)} />
-  );
-  if (drives.size < 2) return <>
-    <ul className="folders">{roots.map((r) => rootRow(r, 0))}</ul>
-    {folderMenu}
-  </>;
-  return (<>
-    <ul className="folders">
-      {[...drives].map(([mount, list]) => {
+  // the rows: drive headings (when there is more than one drive), then each
+  // root and, under every open folder, its subfolders
+  const rows = useMemo(() => {
+    const out: TreeRow<Data>[] = [];
+    const byDrive = new Map<string, string[]>();
+    for (const r of roots) {
+      const mount = volumes.get(r)?.mount ?? "";
+      byDrive.set(mount, [...(byDrive.get(mount) ?? []), r]);
+    }
+    const headed = byDrive.size >= 2;
+    const add = (path: string, name: string, depth: number, hasChildren: boolean, offline: boolean, parentKey: string | null) => {
+      const open = expanded.has(path);
+      out.push({ key: path, parentKey, depth, kind: "folder", path, name, hasChildren, open, data: { path, offline } });
+      if (creating === path) {
+        out.push({ key: `new:${path}`, parentKey: path, depth: depth + 1, kind: "message", path: "", name: "", hasChildren: false, open: false,
+                   data: { path, offline, creating: true } });
+      }
+      if (!open) return;
+      for (const k of children.get(path)?.filter((c) => !hidden.has(c.path)) ?? []) add(k.path, k.name, depth + 1, k.has_children, offline, path);
+    };
+    const root = (r: string, depth: number, parentKey: string | null) =>
+      add(r, baseName(r), depth, children.get(r)?.length !== 0, volumes.get(r)?.online === false, parentKey);
+    if (!headed) {
+      for (const r of roots) root(r, 0, null);
+    } else {
+      for (const [mount, list] of byDrive) {
         const v = volumes.get(list[0]);
         const open = !folded.has(mount);
+        const key = `drive:${mount}`;
+        out.push({ key, parentKey: null, depth: 0, kind: "heading", path: "", name: v?.name || mount, hasChildren: false, open,
+                   data: { path: "", offline: false, drive: { mount, volume: v, open } } });
+        if (open) for (const r of list) root(r, 1, key);
+      }
+    }
+    return out;
+  }, [roots, volumes, folded, expanded, children, hidden, creating]);
+
+  // the photo's folder is scrolled to once per photo folder, when its row
+  // first shows: its parents' subfolders are read after it opens. "Show in
+  // Folders" is scrolled to once per request
+  const target = useRef({ key: "", n: 0, photo: null as string | null, reveal: 0 });
+  const has = (key: string) => rows.some((r) => r.key === key);
+  if (reveal && reveal.n !== target.current.reveal && has(reveal.path)) {
+    target.current = { ...target.current, key: reveal.path, n: target.current.n + 1, reveal: reveal.n };
+  } else if (photo && photo !== target.current.photo && has(photo)) {
+    target.current = { ...target.current, key: photo, n: target.current.n + 1, photo };
+  }
+  const scrollTo = target.current.n ? { key: target.current.key, n: target.current.n } : null;
+
+  const folderMenu = menu && (
+    <FolderMenu {...menu} variant="folders" onClose={closeMenu} tools={tools}
+                onNew={() => newFolder(menu.path)} onRemove={() => onRemove(menu.path)} />
+  );
+  return (<>
+    <FolderTreeView<Data> rows={rows} label={t("library.folders.label")} className="folders" selectedKey={origin === "catalog" ? null : current}
+      scrollTo={scrollTo}
+      onOpen={(row) => {
+        const busy = transfer && [transfer.source, transfer.target].some((root) => within(row.path, root));
+        if (!busy) onOpen(row.path);
+      }}
+      onToggle={(row) => onToggle(row.path)}
+      onMenu={(row, x, y) => setMenu({ x, y, path: row.path, offline: row.data.offline })}
+      rowAttrs={(r) => {
+        const { path, offline } = r.data;
+        const holdsPhoto = path === photo && path !== current;
+        const alsoCatalog = path === current && origin === "catalog";
+        const busy = transfer && [transfer.source, transfer.target].some((root) => within(path, root));
+        opens.current.set(path, r.hasChildren && !offline && !busy);
+        // the photos' own folder, or a drive not answering, takes no drop
+        const refuse = offline || busy || (drag !== null && drag.from.length === 1 && drag.from[0] === path);
+        const into = drag !== null && drag.over === path;
+        return {
+          className: `${holdsPhoto ? "has-photo" : ""}${offline ? " offline" : ""}${into ? ` drop-into${drag.copy ? " copy" : ""}` : ""}${alsoCatalog ? " also" : ""}`,
+          "data-folder-path": path, "data-folder-refuse": refuse ? "1" : undefined,
+          title: busy ? t("dialogs.folderMove.busy") : offline ? t("library.folders.pathOffline", { path }) : path,
+          onPointerDown: (e) => {
+            if (offline || transfer || (e.target as Element).closest("button, input")) return;
+            pressPhoto(e, { folder: { path, name: r.name }, count: () => 1, from: () => [path],
+              drop: (dest, copy) => onDropFolder(path, dest, copy) });
+          },
+          onContextMenu: (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setMenu({ x: e.clientX, y: e.clientY, path, offline });
+          },
+        };
+      }}
+      renderItem={(r) => {
+        const { path } = r.data;
+        const holdsPhoto = path === photo && path !== current;
+        const alsoCatalog = path === current && origin === "catalog";
+        return <>
+          <span className="ftree-icon">{icon}</span><span className="name">{r.name}</span>
+          {holdsPhoto && <span className="photo-dot" title={t("library.folders.openPhoto")} />}
+          {alsoCatalog && <span className="photo-dot" role="img" aria-label={t("catalog.tree.alsoCatalog")} title={t("catalog.tree.alsoCatalog")} />}
+          <button className="remove" title={t("library.folders.removeFromList")} tabIndex={-1}
+                  onClick={(e) => { e.stopPropagation(); onRemove(path); }}>×</button>
+        </>;
+      }}
+      renderOther={(r) => {
+        if (r.data.creating) {
+          return <><span className="twisty none">{chevron}</span><span className="ftree-icon">{icon}</span><NameEdit shown={t("library.folders.newFolder")} onDone={named} /></>;
+        }
+        const { mount, volume: v, open } = r.data.drive!;
         // a share mounted by its address shows it, unless the user named it
         const host = v?.host ? hostNames[v.host] || v.host : null;
         return (
-          <li key={`drive:${mount}`}>
-            <div className="folder-volume" title={v?.host ? `${mount}\n${t("fields.drive.onHost", { host })}${host !== v.host ? ` (${v.host})` : ""}` : mount}
-                 onClick={() => onFold(mount)}>
-              <span className={`twisty${open ? " open" : ""}`}>{chevron}</span>
-              {v?.network ? networkIcon : driveIcon}
-              <span className="name">{v?.name || mount}</span>
-              {v?.host && (editingHost === mount
-                ? <NameEdit shown={host!} onDone={(to) => {
-                    setEditingHost(null);
-                    if (to !== null && to !== host) onRenameHost(v.host!, to === v.host ? "" : to);
-                  }} />
-                : <span className="host" title={t("library.folders.renameHost")}
-                        onClick={(e) => e.stopPropagation()}
-                        onDoubleClick={(e) => { e.stopPropagation(); setEditingHost(mount); }}>{host}</span>)}
-              <span className={`drive-dot${v?.online === false ? " off" : ""}`}
-                    title={v?.online === false ? t("library.folders.offline") : t("library.folders.connected")} />
-            </div>
-            {open && <ul>{list.map((r) => rootRow(r, 1))}</ul>}
-          </li>
+          <div className="folder-volume-row" role="button" tabIndex={-1} aria-expanded={open}
+               title={v?.host ? `${mount}\n${t("fields.drive.onHost", { host })}${host !== v.host ? ` (${v.host})` : ""}` : mount}
+               onClick={() => onFold(mount)}>
+            <span className={`twisty${open ? " open" : ""}`}>{chevron}</span>
+            {v?.network ? networkIcon : driveIcon}
+            <span className="name">{v?.name || mount}</span>
+            {v?.host && (editingHost === mount
+              ? <NameEdit shown={host!} onDone={(to) => {
+                  setEditingHost(null);
+                  if (to !== null && to !== host) onRenameHost(v.host!, to === v.host ? "" : to);
+                }} />
+              : <span className="host" title={t("library.folders.renameHost")}
+                      onClick={(e) => e.stopPropagation()}
+                      onDoubleClick={(e) => { e.stopPropagation(); setEditingHost(mount); }}>{host}</span>)}
+            <span className={`drive-dot${v?.online === false ? " off" : ""}`} role="img"
+                  aria-label={v?.online === false ? t("library.folders.offline") : t("library.folders.connected")}
+                  title={v?.online === false ? t("library.folders.offline") : t("library.folders.connected")} />
+          </div>
         );
-      })}
-    </ul>
+      }}
+    />
     {folderMenu}
   </>);
-}
-
-// a folder's right-click menu: a new subfolder in it, the folder in the
-// file manager, and taking it off the list, as its × does
-function FolderMenu({ x, y, path, offline, tools, onNew, onRemove, onClose }: {
-  x: number; y: number; path: string; offline: boolean; tools?: FolderTools;
-  onNew: () => void; onRemove: () => void; onClose: () => void;
-}) {
-  const ref = useMenuClose(onClose);
-  const left = Math.min(x, window.innerWidth - 230), top = Math.min(y, window.innerHeight - (tools ? 270 : 130));
-  const here = tools ? folderCatalog(path, tools.sources) : null;
-  const why = offline ? t("library.folders.notConnected") : undefined;
-  return (
-    <div ref={ref} className="context-menu" style={{ left, top }}>
-      {tools && here && <>
-        <button disabled={offline} title={why} onClick={() => { onClose(); tools.onCull(path); }}>{t("catalog.folder.cull")}</button>
-        <button onClick={() => { onClose(); tools.onStats(path); }}>{t("catalog.folder.stats")}</button>
-        <div className="menu-sep" />
-        {here.kind === "none" && <button disabled={offline} title={why} onClick={() => { onClose(); tools.onAddToCatalog(path); }}>{t("catalog.folder.add")}</button>}
-        {here.kind !== "none" && <button onClick={() => { onClose(); tools.onOpenInCatalog(here.source); }}>{t("catalog.folder.open")}</button>}
-        {here.kind === "root" && <button onClick={() => { onClose(); tools.onRemoveFromCatalog(here.source); }}>{t("catalog.folder.remove")}</button>}
-        <div className="menu-sep" />
-      </>}
-      <button disabled={offline} title={why} onClick={() => { onClose(); onNew(); }}>{t("library.folders.newFolderMenu")}</button>
-      <div className="menu-sep" />
-      <button disabled={offline} title={why}
-              onClick={() => { onClose(); void revealItemInDir(path).catch(() => {}); }}>{t("library.menu.showIn", { manager: FILE_MANAGER })}</button>
-      <div className="menu-sep" />
-      <button onClick={() => { onClose(); onRemove(); }}>{t("library.folders.removeFromList")}</button>
-    </div>
-  );
 }

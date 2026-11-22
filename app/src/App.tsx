@@ -211,6 +211,10 @@ export default function App() {
   const [hidden, setHidden] = useState<Set<string>>(() => new Set(loadLibrary().hidden));
   const hiddenRef = useRef(hidden);
   hiddenRef.current = hidden;
+  // which tree the open folder was opened from (the other tree marks it quietly), and the
+  // Folders row "Show in Folders" brings into view
+  const [folderOrigin, setFolderOrigin] = useState<{ path: string; which: "folders" | "catalog" } | null>(null);
+  const [foldersReveal, setFoldersReveal] = useState<{ path: string; n: number } | null>(null);
   const unhide = (dir: string) => {
     const next = new Set([...hiddenRef.current].filter((h) => !within(dir, h)));
     if (next.size === hiddenRef.current.size) return;
@@ -6528,7 +6532,31 @@ export default function App() {
   useEffect(() => { if (!findLocked) setFindFocus(0); }, [findLocked]);
   // the Catalog card and the folder menu's Catalog, Cull and Statistics entries (catalogUi.tsx)
   const catalogUi = useCatalogUi({
-    openFolder: (d) => { void showFolder(d); setGrid(true); },
+    openFolder: (d) => { setFolderOrigin({ path: d, which: "catalog" }); void showFolder(d); setGrid(true); },
+    fromCatalog: (d) => setFolderOrigin({ path: d, which: "catalog" }),
+    origin: folderOrigin && folderOrigin.path === folder ? folderOrigin.which : "folders",
+    includeSub,
+    cardOpen: leftOpen.has("catalog"),
+    showCard: () => setLeftOpen((old) => {
+      if (old.has("catalog")) return old;
+      try { settings.set("immage.catalog.open", "1"); } catch { /* not kept */ }
+      return new Set([...old, "catalog"]);
+    }),
+    inFolders: (p) => folders.some((r) => within(p, r)),
+    showInFolders: (p) => {
+      const root = folders.find((r) => within(p, r));
+      if (!root) return;
+      // open the folders between the root and this one, then bring its row into view
+      const next = new Set(expandedRef.current);
+      for (let a = parentDir(p); a.length >= root.length && within(a, root); a = parentDir(a)) next.add(a);
+      setExpandedTo(next);
+      setLeftOpen((old) => {
+        if (old.has("folders")) return old;
+        try { settings.set("immage.folders.open", "1"); } catch { /* not kept */ }
+        return new Set([...old, "folders"]);
+      });
+      setFoldersReveal((r) => ({ path: p, n: (r?.n ?? 0) + 1 }));
+    },
     cullFolder: async (d) => {
       await showFolder(d); setGrid(true);
       // open the dialog once this folder's photos are listed, however long a slow
@@ -6748,7 +6776,8 @@ export default function App() {
                             setFoldedVolumes(next);
                             saveLibrary({ foldedVolumes: [...next] });
                           }}
-                          onOpen={(d) => { void showFolder(d); setGrid(true); }} onRemove={removeFolder}
+                          origin={folderOrigin && folderOrigin.path === folder ? folderOrigin.which : "folders"} reveal={foldersReveal}
+                          onOpen={(d) => { setFolderOrigin({ path: d, which: "folders" }); void showFolder(d); setGrid(true); }} onRemove={removeFolder}
                           onError={setStatus} tools={catalogUi.tools}
                           onRenameHost={(host, name) => {
                             const next = { ...hostNames, [host]: name };

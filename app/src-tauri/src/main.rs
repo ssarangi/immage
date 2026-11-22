@@ -56,6 +56,7 @@ mod catalog_sources;
 mod catalog_scan;
 mod catalog_cli;
 mod catalog_cmds;
+mod catalog_tree;
 mod catalog_meta;
 mod catalog_meta_iso;
 mod catalog_meta_tiff;

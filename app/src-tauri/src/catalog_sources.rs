@@ -714,14 +714,16 @@ pub fn remove_preview(c: &Connection, id: i64) -> Result<RemovePreview, String> 
 /// Removes the source and, by cascade, everything the catalog knows under it.
 /// Never touches a file. (There are no annotations in schema v1 to keep.)
 pub fn remove_source(db: &CatalogDb, id: i64) -> Result<(), String> {
-    db.exec(move |c| {
+    let done = db.exec(move |c| {
         // scan_gone and scan_notes carry no foreign key (they are run-scoped)
         let tx = c.transaction().map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM scan_gone WHERE run_id IN (SELECT id FROM scan_runs WHERE source_id=?1)", [id]).map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM scan_notes WHERE source_id=?1", [id]).map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM sources WHERE id=?1", [id]).map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())
-    })
+    });
+    db.touch_shape(id);
+    done
 }
 
 #[derive(Debug, Clone, Serialize, specta::Type)]

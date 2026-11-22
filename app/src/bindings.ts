@@ -44,6 +44,12 @@ export const commands = {
 	jobsActive: () => __TAURI_INVOKE<Progress[]>("jobs_active"),
 	catalogStatus: () => __TAURI_INVOKE<CatalogStatus>("catalog_status"),
 	/**
+	 *  The folders under each of `parents` ("" is the source's root) with their photo counts, from the
+	 *  catalog alone: it never touches the source's path. `generation` is the one the last reply gave;
+	 *  while nothing about the source moved the reply is `unchanged`.
+	 */
+	catalogTreeChildren: (sourceId: number, parents: string[], generation: number | null) => __TAURI_INVOKE<TreeReply>("catalog_tree_children", { sourceId, parents, generation }),
+	/**
 	 *  Marks every photo's metadata as not read so the page can index again (scan, metadata,
 	 *  thumbnails). Refused while a job runs. Never opens or changes a photo file.
 	 */
@@ -2649,3 +2655,30 @@ export type ZoomUsage = {
 	maxMm: number | null,
 	bins: number[],
 };
+/**  One directory of a source, as the page draws it. */
+export type TreeNode = {
+	/**  The directory this one is under (its rel path; "" is the source root). */
+	parent: string,
+	/**  Under the source root, '/' separated. "" is the source root itself. */
+	rel: string,
+	name: string,
+	has_children: boolean,
+	/**  Present photos directly in it. */
+	direct: number,
+	/**  Present photos in it and everything below. */
+	subtree: number,
+	/**  "ok", "stalled", "denied", "error" or "gone" (gone only while photos remain below it). */
+	status: string,
+};
+
+export type TreeReply = {
+	/**  What the page passes next time: unchanged while nothing about this source moved. */
+	generation: number,
+	/**  The page's generation is still current: `nodes` and `root` are empty and its rows stand. */
+	unchanged: boolean,
+	/**  The source root's own counts and whether it has folders under it. None when unchanged. */
+	root: TreeNode | null,
+	/**  The children of each asked folder, each in name order. */
+	nodes: TreeNode[],
+};
+

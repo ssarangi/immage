@@ -77,13 +77,55 @@ word in its tooltip, and the shape is different for every state:
 | Dotted ring | A share that is asleep, or not indexed yet |
 
 Sources on the same drive or share are grouped under its name, with a word for
-whether it is online. Click a source to open its folder in the grid. Right-click
-it, or use the **…** button, for **Open in Library**, **Pause** / **Resume** /
-**Stop**, **Check for changes** (or **Index now** the first time), **Show in
-the file manager** and **Remove from Catalog…**.
+whether it is online. Each source is the top of its own folder tree, drawn
+exactly like the [Folders](library.md#folders) tree: click the arrow to open it
+into its folders, and click a folder to open it in the grid. Right-click a
+source, or use the **…** button, for **Open in Library**, **Cull this
+folder…**, **Statistics for this folder**, **Pause** / **Resume** / **Stop**,
+**Check for changes** (or **Index now** the first time), **Show in Folders**,
+**Show in the file manager**, **Copy path** and **Remove from Catalog…**.
 
 Removing a source says how many photos leave the Catalog. Your files, sidecars
 and edits are not touched, and the folder stays in your Folders list.
+
+### Folders in the Catalog
+
+Every folder of a source shows how many photos are in it: the photos in it and
+in all its folders below it while **Include subfolders** is on, only the ones
+directly in it while it is off, as the grid will show them. Counts come from
+the Catalog, never from the drive, so the tree opens at once and works with a
+NAS asleep or unplugged. Above 99,999 a count is abbreviated (1.2M); hover it
+for the whole number. A folder that is gone from the disk disappears from the
+tree unless photos of it are still in the Catalog; a folder with no photos
+shows 0, dimmed. A folder the index could not read shows a triangle.
+
+While a source is being indexed its tree grows as folders are found, and the
+counts rise in place, refreshed about every two seconds. Nothing opens by
+itself, the rows you are looking at do not jump, and until the first folder is
+found the row under the source says "Finding folders…". A source that has not
+been indexed yet has no arrow.
+
+The tree works from the keyboard like the Folders tree: Up, Down, Left, Right,
+Home, End, Enter or Space to open a folder, `*`, the Menu key or Shift+F10, and
+type-ahead (Left and Right swap in a right-to-left language). The folders you
+have open are remembered between launches.
+
+A folder opened from one tree is marked in the other with a small dot ("Also
+open from Folders", "Also open from Catalog"), when the same folder is in both.
+The row of the tree you opened it from is highlighted. A folder's menu has
+**Show in Folders** (or, from a folder in Folders that is in the Catalog,
+**Show in Catalog**), which only scrolls the other tree to it and opens what is
+above it; it does not open the folder.
+
+A folder's menu in the Catalog has **Open**, **Cull this folder…**,
+**Statistics for this folder**, **Show in Folders**, **Show in the file
+manager**, **Copy path**, and a grayed line saying which source it is part of.
+A folder cannot be removed from the Catalog by itself, and photos cannot be
+dragged into or out of Catalog folders: move photos in Folders and the Catalog
+follows on its next check.
+
+The first-index card for the source you last clicked stays at the bottom of the
+card while a long tree scrolls.
 
 ### Folding the card
 
@@ -105,11 +147,17 @@ ring alone; hover it for the full line.
 ## A source that is offline
 
 When a drive or share is not connected, its row is dimmed, with an empty ring.
-Its photos stay counted in the Catalog. In this first version an offline source
-cannot be browsed or edited: reconnect to open it, and **Check for changes**
-and **Show in the file manager** wait until it is back. Nothing is changed or
-queued while it is away. Browsing cached photos and thumbnails offline is the
-next step.
+Its photos stay counted in the Catalog and its whole folder tree stays
+browsable: the tree and the counts come from the Catalog, so you can find a
+folder and see how many photos it holds without the drive. Its folders are
+dimmed too, with the tooltip "Not connected. Showing what the Catalog knows."
+
+Clicking an offline folder selects it and shows a card under the tree with the
+number of photos, when the source was last checked, and **Check again**, which
+looks at the connections once more and opens the folder if its drive is back.
+Its photos are not shown in the grid yet. **Cull this folder…**,
+**Statistics for this folder**, **Check for changes** and **Show in the file
+manager** wait until it is back. Nothing is changed or queued while it is away.
 
 ## Folder menu
 
@@ -120,8 +168,8 @@ Right-click a folder in **Folders**:
 - **Statistics for this folder** opens [Statistics](statistics.md) with the
   **This folder** scope.
 - **Add to Catalog…** for a folder that is not in the Catalog. For one that is,
-  **Open in Catalog** and, for a source's own folder, **Remove from Catalog…**
-  instead.
+  **Show in Catalog** (which opens the Catalog's tree to the folder) and, for a
+  source's own folder, **Remove from Catalog…** instead.
 
 ## Preferences
 
@@ -139,7 +187,7 @@ Statistics still read, is separate from the Catalog for now.
 
 ## Not in this version
 
-- Browsing an offline source's cached photos and thumbnails in the grid.
+- Showing an offline source's cached photos and thumbnails in the grid (its folders and counts are browsable now), and rating or labeling them while it is away.
 - Collections (saved searches and albums) beside Sources. Saved Find filters
   keep working as before.
 - Checking sources automatically when Immage starts, a speed test before adding

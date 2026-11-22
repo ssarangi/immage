@@ -29,9 +29,15 @@ and shows its indexing progress when folded.
   same. The folder is chosen in Immage's own browser (see below), not the
   system's dialog.
 - Click a folder in the tree to open it. The arrow beside it shows its
-  subfolders.
+  subfolders. The tree works from the keyboard: Up and Down move between
+  rows, Right opens a folder (and then moves into it), Left closes it (and
+  then moves to its parent), Home and End go to the first and last row, Enter
+  or Space opens the folder in the grid, `*` opens its siblings, the Menu key
+  or Shift+F10 opens its menu, and typing a few letters jumps to a folder by
+  name. In a right-to-left language Left and Right swap. Every row is the same
+  height, and the tree is announced to screen readers as a tree.
 - Right-click a folder for **Cull this folder…**, **Statistics for this
-  folder**, **Add to Catalog…** (or **Open in Catalog** and **Remove from
+  folder**, **Add to Catalog…** (or **Show in Catalog** and **Remove from
   Catalog…** for one that is in the [Catalog](catalog.md)),
   **New Folder…**, **Show in Finder** (Explorer
   on Windows, the file manager on Linux) and **Remove from List**.
@@ -39,9 +45,10 @@ and shows its indexing progress when folded.
   subfolders with the name selected: type a name and press Enter, or press
   Esc to cancel. The folder is made on disk, and an existing name is
   refused. You can then drag photos onto it.
-- The **Catalog** card below Folders lists the folders Immage has indexed, with
-  their photo counts, a state symbol and the first-index progress. It does not
-  replace Folders: see [Catalog](catalog.md).
+- The **Catalog** card below Folders lists the folders Immage has indexed as
+  trees, like this one, with photo counts and a state symbol, and shows the
+  first-index progress. A folder open from either tree is marked in the other
+  with a small dot. It does not replace Folders: see [Catalog](catalog.md).
 - Hover a folder and click **×** to take it off the list, whether it is
   one you added or a subfolder inside one. A subfolder taken off the list
   is left out of **Include subfolders** too. Its files stay where they

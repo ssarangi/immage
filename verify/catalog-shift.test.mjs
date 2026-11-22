@@ -48,7 +48,7 @@ const text = (dom) => dom.slice(dom.indexOf('<div id="root">')).replace(/<[^>]*>
 
 for (const [w, h, theme, size] of [[1440, 900, 'dark', 320], [1440, 900, 'light', 320], [1000, 700, 'dark', 260], [2560, 1528, 'grey', 420]]) {
   test(`the Catalog card keeps its boxes in every state, and nothing moves on hover or focus: ${w}x${h} ${theme}, panel ${size}px`, { skip }, () => {
-    const r = report(dump(`shift=1&theme=${theme}&w=${size}`, w, h), 'shift-report');
+    const r = report(dump(`shift=1&open=0&theme=${theme}&w=${size}`, w, h), 'shift-report');
     assert.equal(r.error, undefined, r.error);
     assert.ok(r.states >= 15, `only ${r.states} states`);
     assert.ok(r.interactions > 100, `only ${r.interactions} interactions ran`);
@@ -87,9 +87,42 @@ test('the Rebuild row keeps its box when it asks for the second click', { skip }
 });
 
 test('the shift test fails on a style that lets the card grow with its text (negative control)', { skip }, () => {
-  const r = report(dump('shift=1&break=1&w=260'), 'shift-report');
+  const r = report(dump('shift=1&open=0&break=1&w=260'), 'shift-report');
   assert.equal(r.ok, false);
   assert.ok(r.fixedMaxDelta >= 6, `expected a large delta, got ${r.fixedMaxDelta}`);
+});
+
+for (const [theme, dir, size] of [['dark', 'ltr', 320], ['light', 'ltr', 320], ['dark', 'rtl', 320], ['grey', 'ltr', 260]]) {
+  test(`the Catalog folder tree: expanding moves only the rows below, and a state change, a count of 1,000,000, the first folder and an error triangle move nothing: ${theme} ${dir} ${size}px`, { skip }, () => {
+    const r = report(dump(`view=tree&shift=1&theme=${theme}&dir=${dir}&w=${size}&h=1500&deep=0`, 1440, 1700), 'shift-report');
+    assert.equal(r.error, undefined, r.error);
+    assert.deepEqual(r.failures, [], `moved or wrong: ${JSON.stringify(r.failures.slice(0, 5))}`);
+    assert.ok(r.compared > 1500, `only ${r.compared} measurements`);
+    assert.equal(r.checks.stateDelta, 0);
+    assert.equal(r.checks.countDelta, 0);
+    assert.equal(r.checks.arrivalDelta, 0, 'the first folder takes the "finding folders" line\'s place');
+    assert.deepEqual(r.checks.rowHeights, [28]);
+    assert.match(r.checks.compactCount, /^1[.,]2.?M$|^1,2M$|^1\.2M$|1[.,]2/, `compact count was ${r.checks.compactCount}`);
+    assert.equal(r.checks.aria.problems.length, 0, r.checks.aria.problems.join('; '));
+    assert.ok(r.checks.aria.items > 15);
+    assert.equal(r.ok, true);
+  });
+}
+
+test('the folder tree test fails on rows that grow with their text and a count slot that grows with its number (negative control)', { skip }, () => {
+  const r = report(dump('view=tree&shift=1&break=tree&h=1500', 1440, 1700), 'shift-report');
+  assert.equal(r.ok, false);
+  assert.ok(r.failures.length >= 2, `expected failures, got ${JSON.stringify(r.failures)}`);
+  assert.ok(r.failures.some((f) => /count|28 px/.test(f.what)), JSON.stringify(r.failures.slice(0, 4)));
+});
+
+test('a tree of 110,101 folders, all open, draws a window of rows, keeps the scroll height of the whole list, and keeps its tab stop mounted', { skip }, () => {
+  const r = report(dump('view=tree&shift=1&tree=big&expand=all&h=700&w=360&theme=dark', 1440, 900, 120000), 'shift-report');
+  assert.equal(r.error, undefined, r.error);
+  assert.deepEqual(r.failures, [], JSON.stringify(r.failures));
+  assert.ok(r.big.drawnAtTop <= 60 && r.big.drawnMiddle <= 60 && r.big.drawnEnd <= 60, JSON.stringify(r.big));
+  assert.ok(r.big.scrollHeight >= 28 * 110000, JSON.stringify(r.big));
+  assert.equal(r.big.topKeyMoved, true);
 });
 
 test('every state says what is happening in plain words', { skip }, () => {
