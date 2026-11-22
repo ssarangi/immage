@@ -1101,9 +1101,10 @@ fn preview_cache_name(name: String, prefer_source: bool, camera_preview: bool) -
 // a library thumbnail from the cache, as JPEG, or nothing when it has none
 // for the photo as it is now: as the open folder's listing found it, else
 // as a stat finds it. the engine is not asked
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn thumb_cached(state: State<'_, AppState>, caches: State<'_, Caches>, path: String, version: i64,
+pub(crate) async fn thumb_cached(app: tauri::AppHandle, state: State<'_, AppState>, caches: State<'_, Caches>, path: String, version: i64,
                                  size: u32, prefer_source: Option<bool>, camera_preview: Option<bool>) -> Result<bindings::Frame, String> {
     // browsing: Smart search leaves network drives until it stops
     state.tagged.mark_active();
@@ -1114,7 +1115,16 @@ pub(crate) async fn thumb_cached(state: State<'_, AppState>, caches: State<'_, C
         let photo = Path::new(&path);
         let name = cache::listed_thumb_name(&listed, photo, version, size)?;
         let name = preview_cache_name(name, prefer_source, camera_preview);
-        let bytes = thumbs.read(&name)?;
+        let Some(bytes) = thumbs.read(&name) else {
+            // not in the cache: the Catalog may have made it (catalog_thumbs.rs), as the
+            // file is now and with the sidecar it has now; kept here for the next look
+            if size != crate::catalog_thumbs::GRID_SIZE || version != 0 || prefer_source || camera_preview { return None; }
+            let (file, side) = cache::listed_fingerprints(&listed, photo, version)?;
+            let (len, nanos) = file.split_once(':')?;
+            let bytes = crate::catalog_cmds::thumb_fallback(&app, photo, len.parse().ok()?, nanos.parse().ok()?, &side)?;
+            if thumbs.write(&name, &bytes).is_ok() { thumbs.set_known(photo, version, size, &name); }
+            return Some(bytes);
+        };
         // a cache from before known thumbnails learns them as it is read
         if size > 0 && !prefer_source && !camera_preview { thumbs.set_known(photo, version, size, &name); }
         Some(bytes)

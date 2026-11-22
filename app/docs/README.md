@@ -8,7 +8,7 @@ darktable's raw processing underneath.
   its own, so darktable opens an Immage edit and renders it the same.
 - **Edits live beside your photos**, in an XMP sidecar next to each file.
   The photo itself is never changed, and there is nothing to save.
-- **No catalog.** You open folders directly. For a library you can search,
+- **No catalog to manage.** You open folders directly. For a library you can search,
   Immage works with [Immich](immich.md): imports check against it, the
   Library panel searches it, and exports can go straight into an album.
 
@@ -48,10 +48,16 @@ is also on the [Immage website](https://immage.photo/guide/).
   filtering, virtual copies, metadata and keywords
 - [Import](import.md): copying photos off a card, verified, without
   duplicates
-- [Statistics](statistics.md): your cameras, lenses and focal lengths, and
-  which of them make your keepers; click anything to filter
+- [Auto cull](library.md#auto-cull) and
+  [AI critique](library.md#ai-critique-and-natural-language-search): flag blurry
+  and duplicate photos in a shoot and review them, ask Google Gemini for a
+  critique of a photo, or describe photos in words (the options are in
+  [Preferences > Culling](preferences.md#culling))
+- [Statistics](statistics.md): your cameras, lenses, exposure, when and where
+  you shoot, and the frames you rate highest; click anything to filter
 - [Catalog command line](catalog-cli.md): `immage catalog` indexes folders and
-  network shares from a terminal, safely, with resumable scans
+  network shares from a terminal, safely, with resumable scans, and makes
+  thumbnails the library grid reuses
 - [Immage Accelerator (Experimental)](immage-accelerator.md): browse and filter photos on a
   mapped network share using the NAS index.
 - [Immich](immich.md): connecting your server, searching it, exporting to
@@ -97,7 +103,9 @@ is also on the [Immage website](https://immage.photo/guide/).
 - [Credits and licenses](credits.md): acknowledgments, source availability and map attribution.
 
 
-- [Preferences](preferences.md): every setting
+- [Preferences](preferences.md): every setting, including
+  [AI models](preferences.md#general) (optional model packs, downloaded only
+  when you agree) and [Culling](preferences.md#culling)
 - [Keyboard shortcuts](shortcuts.md)
 - [Troubleshooting and reporting issues](troubleshooting.md): what to include,
   performance benchmarks and crash logs

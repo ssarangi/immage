@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "check:harness": "tsc --noEmit -p tsconfig.harness.json",
     "pretauri": "node scripts/prune_target.mjs",
     "tauri": "tauri",
     "posttauri": "node scripts/prune_target.mjs"

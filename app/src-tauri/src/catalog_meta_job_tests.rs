@@ -749,8 +749,8 @@ fn schema_v2_migrates_a_v1_catalog_without_losing_anything() {
     }
     let db = CatalogDb::open(&path).unwrap();
     let c = db.read().unwrap();
-    assert_eq!(c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
-    assert_eq!(catalog_db::SCHEMA_VERSION, 2);
+    assert_eq!(c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), catalog_db::SCHEMA_VERSION);
+    assert_eq!(catalog_db::SCHEMA_VERSION, 3);
     // the data and states survive; the new columns are NULL
     let rows: Vec<(String, i64, String, i64, Option<i64>)> = c
         .prepare("SELECT name, meta_state, make, iso, raw_width FROM photos ORDER BY id")

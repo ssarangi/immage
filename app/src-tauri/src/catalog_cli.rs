@@ -11,6 +11,8 @@
 
 use crate::catalog_db::{CatalogDb, CatalogError, FILE, SCHEMA_VERSION};
 use crate::catalog_meta_job::{coverage, run_metadata, MetaConfig, MetaProgress, MetaReport};
+use crate::catalog_thumb_job::{run_thumbnails, ThumbProgress, ThumbReport};
+use crate::catalog_thumbs::{self as thumbs, Signals, Store, ThumbConfig, WholeJpegs};
 use crate::catalog_scan::{run_scan, Progress, RealFs, ScanConfig, ScanControl, ScanOptions, ScanReport};
 use crate::catalog_sources::{
     self as sources, add_source, availability, find_source, host_hash, list_sources, reconcile, system_uuid_of, AddError,
@@ -85,12 +87,17 @@ struct Args {
     positional: Vec<String>,
 }
 
-const WITH_VALUE: &[&str] = &["--db", "--catalog", "--concurrency", "--name", "--policy", "--source", "--size", "--first-read"];
+const WITH_VALUE: &[&str] = &[
+    "--db", "--catalog", "--concurrency", "--name", "--policy", "--source", "--size", "--first-read", "--store", "--cache", "--cache-limit",
+    "--whole-jpegs", "--decode-workers", "--quality", "--store-limit",
+];
+// in the spec but not built yet: refused with a clear message (exit 2)
+const RESERVED: &[&str] = &["--keep-annotations", "--read-only", "--regenerate"];
 const BOOLEAN: &[&str] = &[
     "--json", "--quiet", "--no-color", "--verbose", "--yes", "--progress", "--all", "--light", "--no-thumbnails",
-    "--metadata-only", "--no-subfolders", "--index", "--skip-test", "--allow-offline", "--keep-annotations", "--watch",
-    "--deep", "--fix", "--help", "--read-only", "--treat-as-network", "--no-treat-as-network", "--dir-skip", "--no-dir-skip",
-    "--regenerate", "--missing-only", "--metadata", "--skip-failed", "--no-sidecars", "--no-relink", "--no-adaptive",
+    "--metadata-only", "--no-subfolders", "--index", "--skip-test", "--allow-offline", "--watch",
+    "--deep", "--fix", "--help", "--missing-only", "--metadata", "--skip-failed", "--no-sidecars", "--no-relink", "--no-adaptive", "--thumbnails",
+    "--no-publish", "--gc",
 ];
 
 fn parse_args(raw: &[String]) -> Result<Args, String> {
@@ -126,9 +133,12 @@ fn parse_args(raw: &[String]) -> Result<Args, String> {
                     "--verbose" => a.verbose = true,
                     "--yes" => a.yes = true,
                     "--progress" => a.progress = true,
+                    // output is never colored, so there is nothing to turn off
                     "--no-color" => {}
                     other => a.flags.push(other.to_string()),
                 }
+            } else if RESERVED.contains(&flag) {
+                return Err(format!("{flag} is reserved and not available yet."));
             } else {
                 return Err(format!("Unknown option {flag}. Try: immage catalog --help"));
             }
@@ -353,8 +363,9 @@ Commands:
                                 --no-subfolders, --index, --skip-test, --allow-offline)
   remove-source <id|name>       Forget a source and what the catalog knows of it (--yes)
   scan [<source>...|--all]      Find photos (first index or full check); --light skips unchanged folders;
-                                --metadata then reads their metadata
+                                --metadata then reads their metadata; --thumbnails also makes thumbnails
   metadata [<source>...|--all]  Read the headers and sidecars of new and changed photos, then relink renames
+  thumbnails [<source>...|--all]  Make small thumbnails of photos whose metadata is read (see below)
   rescan <source>               Same as scan, for a source that is already indexed
   status [<source>] [--watch]   What the catalog holds and what is running
   verify [--deep] [--fix]       Check the catalog's integrity (read only; --fix repairs the catalog only)
@@ -364,7 +375,9 @@ Options:
   --catalog <dir>    The folder holding catalog.sqlite
   --json             Machine output on stdout
   --progress         With --json, progress events as NDJSON on stderr
-  --quiet  --verbose --yes --concurrency <n>
+  --quiet  --verbose  --no-color (accepted: output is never colored)  --yes  --concurrency <n>
+  Reserved, not available yet (exit 2): --keep-annotations, --read-only, --regenerate
+  The catalog database must be on a local disk: a path on a network share is refused (exit 2).
 
 Exit codes: 0 ok, 1 failure, 2 usage, 3 catalog problem, 4 source unreachable,
 5 finished but partial, 130 interrupted (safe to rerun).
@@ -392,8 +405,29 @@ Readers: 2 on a network share, 4 on a local drive. Ctrl-C keeps the progress; ru
 Example: immage catalog metadata 2 --json
 ";
 
+const HELP_THUMBNAILS: &str = "\
+Usage: immage catalog thumbnails [<source>...|--all] [--size PX] [--quality N] [--concurrency N]
+                                 [--decode-workers N] [--whole-jpegs no|idle|yes] [--skip-failed] [--missing-only]
+                                 [--no-publish] [--gc] [--no-adaptive] [--store DIR] [--cache DIR]
+Makes a small JPEG (default 480 px on the long edge) for each photo whose metadata is read and that has
+no current thumbnail, with the fewest reads: a RAW's embedded preview in one ranged read of its stored
+offset and length (about 400 KB for a Sony ARW), a JPEG's Exif thumbnail when it is at least 256 px,
+otherwise the JPEG itself when --whole-jpegs allows (no: only files under 768 KB; idle, the default:
+whenever the app is not being browsed, so on the command line always; yes). A whole 19 MB JPEG is
+19 MB over the network. HEIC, TIFF and previews that do not decode are recorded for the app's engine.
+Thumbnails are kept per photo in the catalog's store (default: beside catalog.sqlite) and hard-linked
+into the app's library thumbnail cache (--cache is the app cache folder, default the platform's), so
+the grid shows them without any work: --no-publish skips the link. --gc links again what a move or a
+cache eviction broke and trims the store to its limit (--store-limit MB, default 3072), without reading
+photos. Readers: 2 on a network share, 4 on a local drive; decoders: cores minus one, at low priority.
+--missing-only (the default) makes only photos without a current thumbnail. Failed photos are retried after an hour, a day and a week. Nothing is written to the volume, and a
+read error never marks a source offline or a photo missing. Ctrl-C keeps the progress.
+Example: immage catalog thumbnails --all --whole-jpegs no
+";
+
 const HELP_SCAN: &str = "\
-Usage: immage catalog scan [<source>...|--all] [--light] [--concurrency N] [--metadata]
+Usage: immage catalog scan [<source>...|--all] [--light] [--concurrency N] [--metadata] [--metadata-only]
+                           [--thumbnails] [--no-thumbnails]
 Lists the source's folders and records every photo's name, size and modified time. Nothing is read
 from the files and nothing is changed on the volume. Photos that are gone are marked missing only
 when the whole walk finished without a problem and the volume was online throughout.
@@ -426,6 +460,7 @@ pub fn run(raw: Vec<String>, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             "add-source" => HELP_ADD,
             "scan" | "rescan" => HELP_SCAN,
             "metadata" => HELP_METADATA,
+            "thumbnails" => HELP_THUMBNAILS,
             _ => HELP,
         });
         return EXIT_OK;
@@ -439,7 +474,8 @@ pub fn run(raw: Vec<String>, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
         "metadata" => cmd_metadata(&args, &mut o),
         "status" => cmd_status(&args, &mut o),
         "verify" => cmd_verify(&args, &mut o),
-        "thumbnails" | "rebuild" | "backup" | "restore" => {
+        "thumbnails" => cmd_thumbnails(&args, &mut o),
+        "rebuild" | "backup" | "restore" => {
             o.warn(format!("immage catalog {cmd} is not available in this version yet."));
             EXIT_FAIL
         }
@@ -454,6 +490,7 @@ fn catalog_error(o: &mut Out, e: &CatalogError) -> i32 {
     o.warn(e.to_string());
     match e {
         CatalogError::Locked | CatalogError::Newer { .. } | CatalogError::Corrupt(_) => EXIT_CATALOG,
+        CatalogError::Network(_) => EXIT_USAGE,
         CatalogError::Other(_) => EXIT_FAIL,
     }
 }
@@ -798,10 +835,8 @@ fn cmd_scan(args: &Args, o: &mut Out, alias: bool) -> i32 {
         o.warn("There are no sources to scan.");
         return EXIT_OK;
     }
-    if args.flag("--no-thumbnails") {
-        o.warn("--no-thumbnails: thumbnails are not part of this version yet.");
-    }
-    let chain_metadata = args.flag("--metadata") || args.flag("--metadata-only");
+    let chain_thumbs = args.flag("--thumbnails") && !args.flag("--no-thumbnails") && !args.flag("--metadata-only");
+    let chain_metadata = args.flag("--metadata") || args.flag("--metadata-only") || chain_thumbs;
     install_sigint();
     let (mut offline, mut partial, mut interrupted) = (0usize, false, false);
     for src in &chosen {
@@ -889,6 +924,15 @@ fn cmd_scan(args: &Args, o: &mut Out, alias: bool) -> i32 {
                 MetaEnd::Interrupted => interrupted = true,
                 MetaEnd::Offline => offline += 1,
                 MetaEnd::Failed => return EXIT_FAIL,
+            }
+            if chain_thumbs && !INTERRUPTED.load(Ordering::SeqCst) {
+                match thumbs_source(&db, args, o, src, abs_root) {
+                    MetaEnd::Ok => {}
+                    MetaEnd::Partial => partial = true,
+                    MetaEnd::Interrupted => interrupted = true,
+                    MetaEnd::Offline => offline += 1,
+                    MetaEnd::Failed => return EXIT_FAIL,
+                }
             }
         }
     }
@@ -1202,6 +1246,10 @@ fn cov_json(c: &crate::catalog_meta_job::MetaCoverage) -> Value {
     json!({"done": c.done, "pending": c.pending, "failed": c.failed, "unparsed": c.unparsed})
 }
 
+fn tcov_json(c: &thumbs::ThumbCoverage) -> Value {
+    json!({"done": c.done, "pending": c.pending, "failed": c.failed, "deferred": c.deferred, "kept_missing": c.kept_missing, "bytes": c.bytes})
+}
+
 fn status_once(args: &Args, o: &mut Out) -> i32 {
     let path = args.db_path();
     let conn = match CatalogDb::reader(&path) {
@@ -1233,7 +1281,7 @@ fn status_once(args: &Args, o: &mut Out) -> i32 {
     let offline = avail.len() - online;
     // running jobs' last progress, and anything that needs attention
     let mut running_lines = Vec::new();
-    if let Ok(mut st) = conn.prepare("SELECT source_id, progress FROM jobs WHERE state='running'") {
+    if let Ok(mut st) = conn.prepare("SELECT source_id, progress FROM jobs WHERE state='running' AND kind='scan'") {
         if let Ok(rows) = st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Option<String>>(1)?))) {
             for (sid, prog) in rows.flatten() {
                 if let (Some(s), Some(p)) = (sources_all.iter().find(|s| s.id == sid), prog.and_then(|p| serde_json::from_str::<Value>(&p).ok())) {
@@ -1246,6 +1294,7 @@ fn status_once(args: &Args, o: &mut Out) -> i32 {
         }
     }
     let cov = coverage(&conn, focus.as_ref().map(|f| f.id)).unwrap_or_default();
+    let tcov = thumbs::coverage(&conn, focus.as_ref().map(|f| f.id)).unwrap_or_default();
     let mut attention: Vec<String> = Vec::new();
     for (s, a) in &avail {
         if focus.as_ref().is_some_and(|f| f.id != s.id) {
@@ -1275,9 +1324,11 @@ fn status_once(args: &Args, o: &mut Out) -> i32 {
             "sources": { "total": avail.len(), "online": online, "offline": offline },
             "jobs": { "running": running, "queued": queued },
             "metadata": cov_json(&cov),
+            "thumbnails": tcov_json(&tcov),
             "sources_list": avail.iter().filter(|(s, _)| focus.as_ref().is_none_or(|f| f.id == s.id)).map(|(s, a)| {
                 let mut v = source_json(s, a);
                 v["metadata"] = cov_json(&coverage(&conn, Some(s.id)).unwrap_or_default());
+                v["thumbnails"] = tcov_json(&thumbs::coverage(&conn, Some(s.id)).unwrap_or_default());
                 v
             }).collect::<Vec<_>>(),
             "running": running_lines, "attention": attention,
@@ -1292,6 +1343,11 @@ fn status_once(args: &Args, o: &mut Out) -> i32 {
         o.say(format!(
             "Metadata {} read, {} waiting, {} failed, {} not understood",
             fmt_n(cov.done as u64), fmt_n(cov.pending as u64), fmt_n(cov.failed as u64), fmt_n(cov.unparsed as u64)
+        ));
+        o.say(format!(
+            "Thumbs   {} made, {} waiting, {} failed, {} for the app, {} kept for missing photos ({})",
+            fmt_n(tcov.done as u64), fmt_n(tcov.pending as u64), fmt_n(tcov.failed as u64), fmt_n(tcov.deferred as u64),
+            fmt_n(tcov.kept_missing as u64), fmt_mb(tcov.bytes as u64)
         ));
         for l in &running_lines {
             o.say(format!("Running  {l}"));
@@ -1427,3 +1483,373 @@ pub fn log_host(host: &str) -> String {
 #[cfg(test)]
 #[path = "catalog_cli_tests.rs"]
 mod tests;
+
+// ---- thumbnails ---------------------------------------------------------------------------
+
+/// The app's cache folder (what Tauri's `app_cache_dir` is): the library thumbnail
+/// cache is its `thumbs` folder.
+pub fn cache_root() -> PathBuf {
+    let home = || std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    #[cfg(target_os = "macos")]
+    let base = home().join("Library/Caches");
+    #[cfg(windows)]
+    let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(home);
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let base = std::env::var_os("XDG_CACHE_HOME").filter(|v| !v.is_empty()).map(PathBuf::from).unwrap_or_else(|| home().join(".cache"));
+    base.join("app.immage")
+}
+
+/// The catalog's own thumbnail store: beside the catalog file unless `--store` says.
+fn thumb_store(args: &Args) -> Store {
+    let dir = args.value("--store").map(PathBuf::from).unwrap_or_else(|| {
+        args.db_path().parent().map(|p| p.join("catalog-thumbs")).unwrap_or_else(|| PathBuf::from("catalog-thumbs"))
+    });
+    let mut s = Store::new(dir);
+    if let Some(mb) = args.value("--store-limit").and_then(|v| v.parse::<u64>().ok()) {
+        s.cap = mb * 1024 * 1024;
+    }
+    s
+}
+
+/// The grid's thumbnail cache, with the limit Preferences set (1 GB if none).
+fn grid_cache(args: &Args) -> std::sync::Arc<crate::cache::DiskCache> {
+    let root = args.value("--cache").map(PathBuf::from).unwrap_or_else(cache_root);
+    let runtime = args.db_path().parent().map(Path::to_path_buf).unwrap_or_default();
+    let limit = args
+        .value("--cache-limit")
+        .and_then(|v| v.parse::<u64>().ok())
+        .map(|mb| mb * 1024 * 1024)
+        .or_else(|| {
+            let text = crate::settings::read_key(&runtime, "immage.cacheLimits")?;
+            serde_json::from_str::<Value>(&text).ok()?["thumbs"].as_u64()
+        })
+        .unwrap_or(crate::cache::DEFAULT_LIMITS.thumbs);
+    crate::cache::DiskCache::new(root.join("thumbs"), limit, true)
+}
+
+fn thumb_config(args: &Args, network: bool) -> Result<ThumbConfig, String> {
+    let mut cfg = ThumbConfig::for_network(network);
+    cfg.lower_priority = true;
+    if let Some(n) = args.concurrency {
+        cfg.read_workers = n;
+    }
+    if let Some(n) = args.value("--decode-workers") {
+        cfg.decode_workers = n.parse::<usize>().ok().filter(|n| (1..=64).contains(n)).ok_or("--decode-workers must be between 1 and 64")?;
+    }
+    if let Some(v) = args.value("--size") {
+        cfg.edge = v.parse::<u32>().ok().filter(|n| (64..=2048).contains(n)).ok_or("--size must be between 64 and 2048")?;
+    }
+    if let Some(v) = args.value("--quality") {
+        cfg.quality = v.parse::<u8>().ok().filter(|n| (30..=95).contains(n)).ok_or("--quality must be between 30 and 95")?;
+    }
+    if let Some(v) = args.value("--whole-jpegs") {
+        cfg.whole_jpegs = WholeJpegs::parse(v).ok_or("--whole-jpegs must be no, idle or yes")?;
+    }
+    cfg.retry_failed = !args.flag("--skip-failed");
+    cfg.adaptive = !args.flag("--no-adaptive");
+    cfg.publish = !args.flag("--no-publish");
+    Ok(cfg)
+}
+
+pub fn thumb_progress_line(name: &str, p: &ThumbProgress) -> String {
+    if p.phase == "publishing" {
+        return format!("{name:<20} linking thumbnails into the cache");
+    }
+    let n = p.done + p.failed + p.deferred;
+    let mut s = format!("{name:<20} making thumbnails {} of {}", fmt_n(n), fmt_n(p.total));
+    if p.rate_per_s >= 1.0 {
+        s += &format!(", {}/s", fmt_n(p.rate_per_s as u64));
+    }
+    if p.paused {
+        s += " (paused)";
+    } else if p.yielding {
+        s += " (waiting while the app is in use)";
+    } else if let Some((lo, hi)) = p.eta_s {
+        s += &format!(", about {} left ({}-{})", fmt_short((lo + hi) / 2), fmt_short(lo), fmt_short(hi));
+    }
+    if p.failed > 0 {
+        s += &format!(", {} failed", p.failed);
+    }
+    s
+}
+
+fn thumb_json(src: &Source, r: &ThumbReport) -> Value {
+    let per = |n: u64| if r.done > 0 { (n as f64 / r.done as f64 * 10.0).round() / 10.0 } else { 0.0 };
+    json!({
+        "source": src.id, "name": src.name, "state": r.state, "resumed": r.resumed,
+        "thumbnails": {
+            "total": r.total, "done": r.done, "failed": r.failed, "deferred": r.deferred, "skipped": r.skipped, "raced": r.raced,
+            "from_preview": r.from_preview, "from_exif": r.from_exif, "from_jpeg": r.from_jpeg, "from_engine": r.from_engine,
+            "linked": r.linked, "reads": r.reads, "bytes_read": r.bytes_read, "bytes_read_per_thumbnail": per(r.bytes_read),
+            "thumbnail_bytes": r.thumb_bytes,
+            "elapsed_s": (r.elapsed.as_secs_f64() * 100.0).round() / 100.0, "per_s": r.per_s.round(),
+            "p50_ms": (r.p50_ms * 10.0).round() / 10.0, "p95_ms": (r.p95_ms * 10.0).round() / 10.0,
+            "gc": r.gc.as_ref().map(|g| json!({"partials": g.partials, "orphans": g.orphans, "rows_without_file": g.rows_without_file,
+                "evicted_present": g.evicted_present, "evicted_missing": g.evicted_missing, "bytes_freed": g.bytes_freed, "bytes_after": g.bytes_after})),
+        },
+        "error": r.error,
+    })
+}
+
+fn print_thumb_summary(o: &mut Out, src: &Source, r: &ThumbReport) {
+    let secs = r.elapsed.as_secs_f64();
+    match r.state {
+        "complete" => {
+            if r.total == 0 {
+                o.say(format!("{}: thumbnails are up to date ({} photos already have one).", src.name, fmt_n(r.skipped)));
+            } else {
+                o.say(format!(
+                    "{}: made {} thumbnails in {} ({}/s): {} from previews, {} from Exif thumbnails, {} from whole JPEGs; {} failed, {} left for the app.",
+                    src.name, fmt_n(r.done), fmt_dur(secs), fmt_n(r.per_s as u64), fmt_n(r.from_preview), fmt_n(r.from_exif), fmt_n(r.from_jpeg),
+                    fmt_n(r.failed), fmt_n(r.deferred)
+                ));
+            }
+            if r.failed > 0 {
+                o.say(format!("{}: {} photos could not be made; they are tried again later.", src.name, fmt_n(r.failed)));
+            }
+        }
+        "offline" => o.say(format!("{}: the volume stopped answering after {} photos. Nothing was marked failed or missing; run it again to continue.", src.name, fmt_n(r.done))),
+        "disk_full" => o.say(format!("{}: stopped after {} photos: the disk is nearly full. Free some space and run it again.", src.name, fmt_n(r.done))),
+        "interrupted" | "cancelled" => o.say(format!("{}: stopped after {} photos.", src.name, fmt_n(r.done))),
+        _ => o.say(format!("{}: failed: {}", src.name, r.error.clone().unwrap_or_default())),
+    }
+    if let Some(g) = &r.gc {
+        if g.orphans + g.evicted_present + g.evicted_missing + g.partials > 0 {
+            o.say(format!(
+                "{}: store cleanup: {} orphans, {} partial files, {} trimmed ({} of photos that are gone), now {}.",
+                src.name, fmt_n(g.orphans), fmt_n(g.partials), fmt_n(g.evicted_present + g.evicted_missing), fmt_n(g.evicted_missing), fmt_mb(g.bytes_after)
+            ));
+        }
+    }
+    if o.verbose {
+        o.warn(format!(
+            "{}: {} reads, {} read ({} per thumbnail), {} written, p50 {:.1} ms, p95 {:.1} ms, {} linked into the cache",
+            src.name, fmt_n(r.reads), fmt_mb(r.bytes_read), fmt_mb(r.bytes_read.checked_div(r.done).unwrap_or(0)), fmt_mb(r.thumb_bytes), r.p50_ms, r.p95_ms, fmt_n(r.linked)
+        ));
+    }
+}
+
+/// Runs the thumbnail job for one online source and prints its result.
+fn thumbs_source(db: &CatalogDb, args: &Args, o: &mut Out, src: &Source, abs_root: &str) -> MetaEnd {
+    let network = sources::treats_as_network(src, crate::volumes::is_network_fs(&src.fs_type));
+    let cfg = match thumb_config(args, network) {
+        Ok(c) => c,
+        Err(e) => {
+            o.warn(e);
+            return MetaEnd::Failed;
+        }
+    };
+    let store = thumb_store(args);
+    let cache = cfg.publish.then(|| grid_cache(args));
+    let fs = RealFs::new(PathBuf::from(abs_root));
+    let ctl = ScanControl::default();
+    let sig = Signals::default();
+    install_sigint();
+    let name: String = src.name.chars().take(20).collect();
+    let (mut last, mut printed) = (None::<Instant>, false);
+    let done = AtomicBool::new(false);
+    let result = std::thread::scope(|sc| {
+        sc.spawn(|| {
+            while !done.load(Ordering::SeqCst) {
+                if INTERRUPTED.load(Ordering::SeqCst) {
+                    ctl.interrupt();
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        });
+        let r = run_thumbnails(db, &fs, src, Path::new(abs_root), &store, cache.as_deref(), &cfg, &ctl, &sig, &mut |p: &ThumbProgress| {
+            if o.quiet && !o.progress_events {
+                return;
+            }
+            if o.json {
+                if o.progress_events && p.phase != "done" {
+                    let ev = json!({"event":"progress","source":p.source_id,"phase":p.phase,"done":p.done + p.failed + p.deferred,"total":p.total,
+                        "rate":p.rate_per_s.round(),"eta_s":p.eta_s.map(|(a,b)|json!([a,b])),"failed":p.failed,"workers":p.workers});
+                    let _ = writeln!(o.err, "{ev}");
+                }
+                return;
+            }
+            let line = thumb_progress_line(&name, p);
+            if o.tty {
+                let _ = write!(o.err, "\r\x1b[2K{line}");
+                let _ = o.err.flush();
+                printed = true;
+                if p.phase == "done" {
+                    let _ = write!(o.err, "\r\x1b[2K");
+                    printed = false;
+                }
+            } else if p.phase != "done" && last.is_none_or(|t| t.elapsed() >= PLAIN_PROGRESS_EVERY) {
+                last = Some(Instant::now());
+                let _ = writeln!(o.err, "{line}");
+            }
+        });
+        done.store(true, Ordering::SeqCst);
+        r
+    });
+    if printed && o.tty {
+        let _ = write!(o.err, "\r\x1b[2K");
+    }
+    let report = match result {
+        Ok(r) => r,
+        Err(e) => {
+            o.warn(format!("{}: {e}", src.name));
+            return MetaEnd::Failed;
+        }
+    };
+    if o.json {
+        o.data(&thumb_json(src, &report));
+    } else {
+        print_thumb_summary(o, src, &report);
+    }
+    match report.state {
+        "complete" if report.failed > 0 => MetaEnd::Partial,
+        "complete" => MetaEnd::Ok,
+        "interrupted" | "cancelled" => MetaEnd::Interrupted,
+        "offline" => MetaEnd::Offline,
+        _ => MetaEnd::Failed,
+    }
+}
+
+fn cmd_thumbnails(args: &Args, o: &mut Out) -> i32 {
+    let db = match open_rw(args, o) {
+        Ok(d) => d,
+        Err(c) => return c,
+    };
+    let all = match db.read().and_then(|c| list_sources(&c).map_err(CatalogError::Other)) {
+        Ok(l) => l,
+        Err(e) => return catalog_error(o, &e),
+    };
+    let keys: Vec<&String> = args.positional.iter().skip(1).collect();
+    let chosen: Vec<Source> = if args.flag("--all") || (keys.is_empty() && args.flag("--gc")) {
+        all.iter().filter(|s| s.enabled).cloned().collect()
+    } else if keys.is_empty() {
+        o.warn("Give a source (id or name) or --all.");
+        return EXIT_USAGE;
+    } else {
+        let mut v = Vec::new();
+        for k in keys {
+            match all.iter().find(|s| s.id.to_string() == *k).or_else(|| all.iter().find(|s| s.name.eq_ignore_ascii_case(k))) {
+                Some(s) => v.push(s.clone()),
+                None => {
+                    o.warn(format!("No source \"{k}\"."));
+                    return EXIT_USAGE;
+                }
+            }
+        }
+        v
+    };
+    if chosen.is_empty() {
+        o.warn("There are no sources.");
+        return EXIT_OK;
+    }
+    if let Err(e) = thumb_config(args, false) {
+        o.warn(e);
+        return EXIT_USAGE;
+    }
+    let (mut offline, mut partial, mut interrupted) = (0usize, false, false);
+    if args.flag("--gc") {
+        let store = thumb_store(args);
+        let cache = grid_cache(args);
+        for src in &chosen {
+            if let Availability::Online { abs_root, .. } = wake_and_resolve(&db, src) {
+                match thumbs::publish_source(&db, &store, &cache, src, Path::new(&abs_root)) {
+                    Ok(r) => {
+                        if o.json {
+                            o.data(&json!({"source": src.id, "name": src.name, "linked": r.linked, "already": r.already, "skipped_edited": r.skipped_edited, "no_file": r.no_file}));
+                        } else {
+                            o.say(format!("{}: {} thumbnails linked into the cache, {} already there.", src.name, fmt_n(r.linked), fmt_n(r.already)));
+                        }
+                    }
+                    Err(e) => {
+                        o.warn(format!("{}: {e}", src.name));
+                        return EXIT_FAIL;
+                    }
+                }
+            } else if !o.json {
+                o.say(format!("{}: not reachable; its thumbnails stay as they are.", src.name));
+            }
+        }
+        return match thumbs::gc(&db, &store) {
+            Ok(g) => {
+                if o.json {
+                    o.data(&json!({"gc": {"partials": g.partials, "orphans": g.orphans, "rows_without_file": g.rows_without_file,
+                        "evicted_present": g.evicted_present, "evicted_missing": g.evicted_missing, "bytes_freed": g.bytes_freed, "bytes_after": g.bytes_after}}));
+                } else {
+                    o.say(format!(
+                        "Store: {} orphans and {} partial files removed, {} trimmed ({} of gone photos), {} now.",
+                        fmt_n(g.orphans), fmt_n(g.partials), fmt_n(g.evicted_present + g.evicted_missing), fmt_n(g.evicted_missing), fmt_mb(g.bytes_after)
+                    ));
+                }
+                EXIT_OK
+            }
+            Err(e) => {
+                o.warn(e);
+                EXIT_FAIL
+            }
+        };
+    }
+    for src in &chosen {
+        if INTERRUPTED.load(Ordering::SeqCst) {
+            interrupted = true;
+            break;
+        }
+        let a = match wake_and_resolve(&db, src) {
+            Availability::Online { abs_root, .. } if !Path::new(&abs_root).is_dir() => Availability::Offline { reason: "folder not found".into() },
+            other => other,
+        };
+        let Availability::Online { abs_root, .. } = &a else {
+            offline += 1;
+            if o.json {
+                o.data(&json!({"source": src.id, "name": src.name, "state": "offline", "thumbnails": null}));
+            } else {
+                o.say(format!("{}: not reachable ({}). Nothing was read or changed.", src.name, a.word()));
+            }
+            continue;
+        };
+        match thumbs_source(&db, args, o, src, abs_root) {
+            MetaEnd::Ok => {}
+            MetaEnd::Partial => partial = true,
+            MetaEnd::Interrupted => interrupted = true,
+            MetaEnd::Offline => offline += 1,
+            MetaEnd::Failed => return EXIT_FAIL,
+        }
+    }
+    if interrupted {
+        o.warn("Interrupted. Progress is saved; run the same command again to continue.");
+        EXIT_INTERRUPTED
+    } else if offline == chosen.len() {
+        EXIT_OFFLINE
+    } else if partial || offline > 0 {
+        EXIT_PARTIAL
+    } else {
+        EXIT_OK
+    }
+}
+
+#[cfg(test)]
+mod hygiene_tests {
+    use super::*;
+
+    #[test]
+    fn reserved_flags_are_refused_with_usage() {
+        for f in ["--keep-annotations", "--read-only", "--regenerate"] {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            let code = run(vec!["status".into(), f.into()], &mut out, &mut err);
+            assert_eq!(code, EXIT_USAGE, "{f}");
+            assert!(String::from_utf8(err).unwrap().contains("not available yet"), "{f}");
+        }
+        for f in ["--dir-skip", "--treat-as-network"] {
+            assert!(parse_args(&[f.into()]).is_err(), "{f}");
+        }
+    }
+
+    #[test]
+    fn a_network_database_is_a_usage_error() {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let mut o = Out { out: &mut out, err: &mut err, json: false, quiet: false, verbose: false, progress_events: false, tty: false };
+        let e = CatalogError::Network("/mnt/nas/catalog.sqlite is on a network share".into());
+        assert_eq!(catalog_error(&mut o, &e), EXIT_USAGE);
+        assert!(String::from_utf8(err).unwrap().contains("local disk"));
+    }
+}

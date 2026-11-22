@@ -18,7 +18,7 @@ in, edit them, send them out.
 | Button | What it opens |
 | --- | --- |
 | **Import** | the importer (⇧⌘I). See [Import](import.md). |
-| **Statistics** | cameras, lenses and focal lengths across the library (View > Statistics). See [Statistics](statistics.md). |
+| **Statistics** | your library as numbers: cameras, lenses, exposure, when and where you shoot, and your top images (View > Statistics). See [Statistics](statistics.md). |
 | **Library** | the grid view of the folder (G); click again to return to the filmstrip. In the grid, Find fills the right-hand panel. See [Library](library.md). |
 | **Adjustments** | the develop panels. See [Adjustments](adjustments.md). |
 | **Crop** | the crop tool (R); a second click applies it. See [Crop](crop.md). |
@@ -176,7 +176,11 @@ the photo:
   a dark surround, or **White**, which shows the photo as on a print. L
   steps through them.
 
-The toolbar under the filmstrip also has buttons to show or hide the
+The toolbar under the filmstrip starts with the labelled **Grid** button, which
+switches between the grid and the filmstrip as the rail's Library button and G
+do (it is lit in the grid, so an open photo no longer needs its folder clicked
+to get back). In the grid it also has **Cull**, which opens
+[Auto cull](library.md#auto-cull). It also has buttons to show or hide the
 Library panel and the filmstrip. In Grid view, the **Find panel** button
 shows or hides Find. In the photo editing view, the **Adjustments panel**
 button controls the editing panel. Immage remembers each panel's width and
@@ -207,7 +211,9 @@ pointer over another menu opens that one. The arrow keys move through the
 enabled items, Enter chooses the highlighted one and Escape closes the menu.
 
 The View menu dims commands that are unavailable in the current view. Culling
-Preview, **Photo > Auto Cull...** and **Photo > Critique with Gemini...** require a local photo in the grid. Full Screen Preview and Before /
+Preview, **Photo > Auto Cull...** and **Photo > Critique with Gemini...** (⇧⌘G)
+require a local photo in the grid. **View > Statistics** opens the
+[Statistics](statistics.md) view from any view. Full Screen Preview and Before /
 After require a photo in the editor.
 
 Menu items do nothing while a dialog is open, as the keys do. While you type

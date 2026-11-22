@@ -115,12 +115,15 @@ export function highIsoShare(bins: readonly { id: string; n: number }[]): number
   return total > 0 ? high / total : 0;
 }
 
+/** Fewer frames than this in the pooled months: no seasonality sentence. */
+export const MONTH_MIN = 24;
 export interface MonthInsight { month: number; n: number; ratio: number; topRate: number }
 /** The busiest month (1 to 12), against the average month, and how many of its frames are top images. */
 export function monthInsight(months: readonly { n: number; top: number }[]): MonthInsight | null {
   const total = months.reduce((a, m) => a + m.n, 0);
   const i = peakIndex(months.map((m) => m.n));
-  if (i < 0 || !total) return null;
+  // a handful of frames has no "typical month" to compare with
+  if (i < 0 || total < MONTH_MIN) return null;
   const avg = total / months.length;
   return { month: i + 1, n: months[i].n, ratio: months[i].n / avg, topRate: months[i].top / months[i].n };
 }

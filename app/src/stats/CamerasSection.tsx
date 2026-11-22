@@ -132,7 +132,7 @@ export function CamerasSection() {
         <div className="st-card">
           <h3>{t("stats.cameras.keeper")}</h3>
           <p className="st-sub">{loading ? <i className="st-sk st-sk-line" /> : t("stats.cameras.keeperSub", { threshold, avg: avg === null ? "–" : pct(avg) })}</p>
-          {empty ? <NoMatch onClear={() => update(clearAll)} /> :
+          {empty ? <NoMatch onClear={() => update(clearAll)} /> : !loading && keeperRows.length === 0 ? <div className="st-nomatch"><span>{t("stats.keeper.notEnough", { n: RANK_MIN })}</span></div> :
             <RankedBars rows={keeperRows} accent="green" selected={selBodies} v2Kind="muted" loadingRows={loading ? KEEPER_ROWS : 0}
                         onToggle={(id, add) => update((s) => toggleValue(s, "bodies", id, add))}
                         ariaFor={(r, i) => t("stats.keeper.aria", { rank: i + 1, name: r.name, rate: r.v1, n: r.v2 })} />}

@@ -34,6 +34,7 @@ export function StatsHeader({ state, update, folder, onRefresh, onClose, busy }:
   const [to, setTo] = useState(state.scope.kind === "dateRange" ? state.scope.to : presets()[2].to);
   useEffect(() => {
     if (!range) return;
+    pop.current?.querySelector("input")?.focus({ preventScroll: true });   // the keyboard lands in the popover it just opened
     const down = (e: PointerEvent) => { if (!pop.current?.contains(e.target as Node) && !(e.target as Element).closest("[data-range-btn]")) setRange(false); };
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setRange(false); } };
     window.addEventListener("pointerdown", down, true);

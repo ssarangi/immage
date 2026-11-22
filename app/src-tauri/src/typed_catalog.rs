@@ -6,6 +6,8 @@
 
 use crate::catalog_meta_job::{MetaCoverage, MetaReport};
 use crate::catalog_scan::ScanReport;
+use crate::catalog_thumb_job::ThumbReport;
+use crate::catalog_thumbs::ThumbCoverage;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -116,6 +118,8 @@ pub struct CatalogStatus {
     /// Photos by metadata state: read, waiting, failed (retried by the next run) and
     /// unparsed (a format the Rust extractor cannot read).
     pub metadata: MetaCoverage,
+    /// Photos by thumbnail state (catalog_thumbs.rs).
+    pub thumbnails: ThumbCoverage,
 }
 
 /// What a finished metadata run reports (the `catalog://metadata-finished` event).
@@ -167,6 +171,65 @@ impl From<&MetaReport> for MetaSummary {
             p95_ms: r.p95_ms,
             relinked: r.relink.relinked,
             ambiguous: r.relink.ambiguous,
+            error: r.error.clone(),
+        }
+    }
+}
+
+/// What a finished thumbnail run reports (the `catalog://thumbnails-finished` event).
+#[derive(Debug, Clone, Serialize, Type)]
+pub struct ThumbSummary {
+    pub source_id: i64,
+    pub job_id: i64,
+    /// complete | cancelled | interrupted | offline | disk_full | failed
+    pub state: String,
+    pub resumed: bool,
+    pub elapsed_s: f64,
+    pub total: u64,
+    pub done: u64,
+    pub failed: u64,
+    /// Left for the app's engine, or for a policy that allows whole JPEGs.
+    pub deferred: u64,
+    pub skipped: u64,
+    pub from_preview: u64,
+    pub from_exif: u64,
+    pub from_jpeg: u64,
+    pub from_engine: u64,
+    /// Thumbnails linked into the library thumbnail cache.
+    pub linked: u64,
+    pub reads: u64,
+    pub bytes_read: u64,
+    pub thumbnail_bytes: u64,
+    pub per_s: f64,
+    pub p50_ms: f64,
+    pub p95_ms: f64,
+    pub error: Option<String>,
+}
+
+impl From<&ThumbReport> for ThumbSummary {
+    fn from(r: &ThumbReport) -> Self {
+        Self {
+            source_id: r.source_id,
+            job_id: r.job_id,
+            state: r.state.to_string(),
+            resumed: r.resumed,
+            elapsed_s: r.elapsed.as_secs_f64(),
+            total: r.total,
+            done: r.done,
+            failed: r.failed,
+            deferred: r.deferred,
+            skipped: r.skipped,
+            from_preview: r.from_preview,
+            from_exif: r.from_exif,
+            from_jpeg: r.from_jpeg,
+            from_engine: r.from_engine,
+            linked: r.linked,
+            reads: r.reads,
+            bytes_read: r.bytes_read,
+            thumbnail_bytes: r.thumb_bytes,
+            per_s: r.per_s,
+            p50_ms: r.p50_ms,
+            p95_ms: r.p95_ms,
             error: r.error.clone(),
         }
     }

@@ -75,3 +75,6 @@
   .st-tc-im img, .st-tcs-im img, .st-top-body { transition: none; }
   .st-tc:hover .st-tc-im img, .st-tcs-im:hover img { transform: none; }
 }
+
+/* the strip scrolls and clips: its cards and links draw their focus ring inside */
+.st-tstrip-scroll :focus-visible { outline-offset: -3px; }

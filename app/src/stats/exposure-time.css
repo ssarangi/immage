@@ -90,3 +90,8 @@ button.st-month:hover { background: var(--inset); }
 @media (prefers-reduced-motion: reduce) {
   .st-iris-arc, .st-hour .st-wedge-fill { transition: none !important; }
 }
+
+/* Seasonality is shorter than the clock beside it: the chart and its insight sit in the middle of the card, not at the top over a gap */
+.st-grid-time > .st-card:last-child { display: flex; flex-direction: column; }
+.st-grid-time > .st-card:last-child .st-months { margin-top: auto; }
+.st-grid-time > .st-card:last-child .st-insight-slot { margin-bottom: auto; }

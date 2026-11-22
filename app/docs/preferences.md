@@ -167,10 +167,15 @@ starts with default settings. To start with defaults on purpose, see
 
 **AI models** (below Library)
 
-Optional model packs that run on this computer. Nothing downloads until you
+Optional model packs that run on this computer. No pack downloads until you
 press **Download**, and nothing looks at your photos until you turn an analysis
 on. None of them send your photos anywhere. The online Gemini critique is
 separate: the group's first paragraph links to Preferences > Culling.
+
+The models the editing tools use (Select Object, the other AI masks and AI
+Denoise) are not packs yet and are not listed here: each downloads the first time
+you use its tool, as [Masks](masks.md) and [Detail](adjustments.md#detail)
+describe, and runs on this computer.
 
 - **Summary strip.** *Installed* counts the packs on this computer ("1 of 1
   pack"), *On disk* totals what they and any kept partial downloads use, with

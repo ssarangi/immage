@@ -76,6 +76,55 @@ pub(crate) fn mount_points() -> std::collections::HashSet<std::path::PathBuf> {
 // whether the path is on a network share, from the mount table alone
 pub fn on_network(path: &Path) -> bool { drive_of(path).is_some_and(|v| v.network) }
 
+// why a database file may not live at this path, or None when it may: its
+// mount is a network file system (or an automount, which is one until
+// something is mounted), or the mount cannot be told and the path is under
+// /mnt or /media. SQLite's WAL needs shared memory and working locks, which
+// network file systems do not give. A path that does not exist yet is judged
+// by its nearest existing parent, symlinks resolved.
+pub fn network_refusal(path: &Path) -> Option<String> {
+    let path = resolve_for_mount(path);
+    #[cfg(target_os = "linux")]
+    {
+        let table = std::fs::read_to_string("/proc/self/mounts").ok();
+        refusal_from(table.as_deref(), &path)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        on_network(&path).then(|| format!("{} is on a network share", path.display()))
+    }
+}
+
+fn resolve_for_mount(path: &Path) -> std::path::PathBuf {
+    let abs = if path.is_absolute() { path.to_path_buf() } else { std::env::current_dir().unwrap_or_default().join(path) };
+    let mut tail = Vec::new();
+    let mut at = abs.as_path();
+    loop {
+        if let Ok(real) = std::fs::canonicalize(at) {
+            let mut out = real;
+            for part in tail.iter().rev() { out.push(part); }
+            return out;
+        }
+        match (at.parent(), at.file_name()) {
+            (Some(parent), Some(name)) => { tail.push(name.to_os_string()); at = parent; }
+            _ => return abs,
+        }
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn refusal_from(table: Option<&str>, path: &Path) -> Option<String> {
+    match table.and_then(|t| mount_of(t, path)) {
+        Some((source, mount, fs)) if is_network_fs(&fs) || fs == "autofs" => Some(format!(
+            "{} is on a network share ({source} at {mount}, type {fs})", path.display())),
+        Some(_) => None,
+        None if path.starts_with("/mnt") || path.starts_with("/media") => Some(format!(
+            "{} is under /mnt or /media and its file system could not be determined; it may be a network share",
+            path.display())),
+        None => None,
+    }
+}
+
 // how long a drive has to answer, and how long an answer is trusted for
 const DRIVE_WAIT: Duration = Duration::from_secs(3);
 const DRIVE_FRESH: Duration = Duration::from_secs(2);
@@ -412,6 +461,39 @@ mod tests {
 //nas.local/Pictures /mnt/Pictures cifs rw,vers=3.0 0 0
 nas:/export/photos /mnt/My\\040Photos nfs4 rw 0 0
 ";
+
+    const OWNER: &str = "\
+/dev/nvme0n1p2 / ext4 rw,relatime 0 0
+tmpfs /tmp tmpfs rw 0 0
+systemd-1 /mnt/synology/Photos_Backup autofs rw,fd=44,pgrp=1,timeout=0,direct 0 0
+//SynologyDS220.local/Photos/Photos_Backup /mnt/synology/Photos_Backup cifs rw,vers=3.0 0 0
+nas:/export/db /mnt/nfs nfs4 rw 0 0
+/dev/sdb1 /mnt/local ext4 rw 0 0
+";
+
+    #[test]
+    fn a_database_is_refused_on_a_network_share() {
+        let r = |p: &str| refusal_from(Some(OWNER), Path::new(p));
+        assert!(r("/mnt/synology/Photos_Backup/catalog.sqlite").unwrap().contains("cifs"));
+        assert!(r("/mnt/synology/Photos_Backup/new/dir/catalog.sqlite").is_some());
+        assert!(r("/mnt/nfs/catalog.sqlite").unwrap().contains("nfs4"));
+        assert!(r("/home/me/.local/share/app.immage/catalog.sqlite").is_none());
+        assert!(r("/tmp/x/catalog.sqlite").is_none());
+        assert!(r("/mnt/local/catalog.sqlite").is_none());
+        // idle automount: refused too
+        let idle = "/dev/nvme0n1p2 / ext4 rw 0 0\nsystemd-1 /mnt/synology/P autofs rw 0 0\n";
+        assert!(refusal_from(Some(idle), Path::new("/mnt/synology/P/c.sqlite")).is_some());
+        // mount undetermined: refused under /mnt and /media only
+        assert!(refusal_from(None, Path::new("/mnt/x/c.sqlite")).is_some());
+        assert!(refusal_from(None, Path::new("/media/me/x/c.sqlite")).is_some());
+        assert!(refusal_from(None, Path::new("/home/me/c.sqlite")).is_none());
+    }
+
+    #[test]
+    fn network_refusal_resolves_missing_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(network_refusal(&dir.path().join("not/yet/catalog.sqlite")).is_none());
+    }
 
     #[test]
     fn longest_mount_wins() {

@@ -9,7 +9,9 @@
 
 .stats-view {
   --stat-cyan: #5cd6d0; --stat-amber: #f4b84a; --stat-green: #6ed08d; --stat-violet: #ab98f6; --stat-rose: #f580a6;
-  --stat-neutral: #8a8a8a;
+  --stat-neutral: #9a9a9a;
+  /* the app's --text-3 is 3:1 on a dark card; captions here are small text, so they use a readable mix (AA on card, panel and inset) */
+  --text-3: color-mix(in srgb, var(--text-2) 90%, var(--window));
   --stat-wash: 12%;           /* tint strength of a soft accent fill */
   --stat-glow: 0 0 14px;      /* glow of bars and rings; none in a light scheme */
   --stat-glow-a: 55%;
@@ -20,8 +22,8 @@
   display: flex; flex-direction: column; background: var(--window); color: var(--text); outline: none;
 }
 :root[data-scheme="light"] .stats-view {
-  --stat-cyan: #0a7f84; --stat-amber: #a86500; --stat-green: #23783f; --stat-violet: #6347c7; --stat-rose: #b83561;
-  --stat-neutral: #6a6a6a; --stat-wash: 14%; --stat-glow: 0 0; --stat-glow-a: 0%;
+  --stat-cyan: #08666a; --stat-amber: #834f00; --stat-green: #1e6837; --stat-violet: #6045c1; --stat-rose: #a22f55;
+  --stat-neutral: #5c5c5c; --stat-wash: 14%; --stat-glow: 0 0; --stat-glow-a: 0%;
 }
 .stats-view *, .stats-view *::before, .stats-view *::after { box-sizing: border-box; }
 .stats-view [hidden] { display: none !important; }
@@ -51,7 +53,7 @@
 .st-btn:disabled { opacity: .5; }
 .st-btn.primary { background: var(--accent); color: var(--on-accent); font-weight: 600; }
 .st-btn.primary:hover:not(:disabled) { filter: brightness(.92); background: var(--accent); }
-.st-field { background: var(--inset); border-radius: var(--radius-ctl); padding: 0 6px 0 10px; height: 32px; font-size: var(--fs-small); color: var(--text-2); display: inline-flex; gap: 8px; align-items: center; }
+.st-field { background: var(--inset); border: 1px solid var(--border); border-radius: var(--radius-ctl); padding: 0 6px 0 10px; height: 32px; font-size: var(--fs-small); color: var(--text-2); display: inline-flex; gap: 8px; align-items: center; }
 .st-stepper { display: inline-flex; align-items: center; gap: 2px; padding: 2px; }
 .st-stepper button { width: 22px; height: 22px; border-radius: 6px; color: var(--text-2); }
 .st-stepper button:hover:not(:disabled) { background: var(--hover); color: var(--text); }
@@ -78,7 +80,7 @@
 
 /* ---- body and scroll ---- */
 .st-body { flex: 1; min-height: 0; margin: 0 8px 8px; border-radius: var(--radius-panel); background: var(--panel); overflow: hidden; position: relative; display: flex; }
-.st-scroll { flex: 1; overflow-y: auto; position: relative; scrollbar-gutter: auto; }
+.st-scroll { flex: 1; overflow-y: auto; position: relative; scrollbar-gutter: auto; scroll-padding-top: 96px; } /* the sticky nav (83 px) never covers what Tab scrolls into view */
 .st-wrap { width: min(100% - 56px, 1280px); margin: 0 auto; }
 @media (min-width: 1800px) { .st-wrap { width: min(100% - 96px, 1900px); } }
 .st-dimmable { transition: opacity .15s; }
@@ -121,7 +123,8 @@
 @keyframes st-spin { to { transform: rotate(360deg); } }
 
 /* ---- stat cards ---- */
-.st-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(176px, 1fr)); gap: 12px; margin: 18px 0 6px; }
+.st-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin: 18px 0 6px; }
+@media (max-width: 1259px) { .st-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .st-stats-error { margin: 18px 0 6px; }
 .st-stat { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 14px 14px 12px; display: flex; flex-direction: column;
   gap: 3px; height: 148px; text-align: left; position: relative; min-width: 0; }
@@ -135,7 +138,7 @@
 .st-mini-svg { width: 100%; height: 24px; }
 
 /* ---- sticky nav and filter bar ---- */
-.st-nav { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--panel) 97%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
+.st-nav { position: sticky; top: 0; z-index: 20; background: var(--panel); border-bottom: 1px solid var(--border); }
 .st-nav-row { display: flex; align-items: flex-end; gap: 2px; height: 42px; }
 .st-tab { height: 42px; padding: 0 13px; font-size: var(--fs-body); font-weight: 600; color: var(--text-2); border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 7px; white-space: nowrap; border-radius: 0 !important; }
 .st-tab:hover { color: var(--text); }
@@ -280,6 +283,8 @@ button.st-row:hover { background: var(--hover); }
 .st-pc-open svg { width: 14px; height: 14px; }
 .st-pc:hover .st-pc-open, .st-pc-open:focus-visible, .st-pc:focus-within .st-pc-open { opacity: 1; }
 .st-pc-open:hover { background: color-mix(in srgb, #000 75%, transparent); }
+/* rings inside a clipping parent (a card with overflow hidden, a horizontal strip) are drawn inside the box so they are never cut */
+.st-pc-main:focus-visible, .st-pc-open:focus-visible { outline-offset: -3px; }
 .st-sample .st-pc { background: var(--inset); }
 .st-sample .st-pc-meta { height: 52px; align-content: center; }
 .st-sample .st-pc-meta b { font: 500 var(--fs-small)/1.35 var(--mono); color: var(--text-2); white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

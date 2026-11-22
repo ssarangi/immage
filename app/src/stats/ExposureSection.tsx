@@ -71,6 +71,7 @@ export function ExposureSection() {
             {apIns && !loading && !empty && <Insight tone="cyan" tag={t("stats.insight")} onClick={() => update((s) => toggleValue(s, "apertureGroups", apIns.best ?? apIns.most))}>
               <Bold parts={richParts(apIns.best && apIns.best !== apIns.most
                 ? t("stats.aperture.insight", { most: `**${label(apIns.most)}**`, share: pct0(apIns.mostShare), best: `**${label(apIns.best)}**`, rate: pct(apIns.bestRate) })
+                : apIns.bestRate <= 0 ? t("stats.aperture.insightMost", { most: `**${label(apIns.most)}**`, share: pct0(apIns.mostShare) })
                 : t("stats.aperture.insightSame", { most: `**${label(apIns.most)}**`, share: pct0(apIns.mostShare), rate: pct(apIns.bestRate) }))} />
             </Insight>}
           </div>

@@ -4,8 +4,11 @@ Statistics turns the metadata of your library into a picture of how you shoot:
 which cameras and lenses you use, which focal lengths you keep, and how many
 of your frames you rate as keepers. Open it from the chart button on the rail,
 or View > Statistics. Esc or **Done** closes it, and the editor is as you left
-it. Everything is read from Immage's local search index, so nothing leaves your
-computer.
+it; while it is open, menu commands other than Preferences, Keyboard
+Shortcuts, User Guide, About and Quit wait until you close it. Everything is
+read from Immage's local search index, so nothing leaves your computer (the
+[catalog command line](catalog-cli.md) keeps a separate database that
+Statistics does not read).
 
 ## Reading the page
 

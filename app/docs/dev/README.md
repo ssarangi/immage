@@ -33,6 +33,8 @@ the headless darktable engine. The photographer's guide is
   conventions, their encodings, and the darktable compatibility contract.
 - [Print and soft proofing](print.md): the Print panel on darktable's
   soft proof and print code, run by the engine without darktable's GUI.
+- [Dev-only harness pages](harness.md): the critique, Statistics and AI models
+  views on fixture data in a browser, and their no-layout-shift tests.
 - [GUI performance tracing](performance-tracing.md): diagnostic events, scheduling flow and slow-frame analysis.
 - [GUI verification architecture](gui-verification.md): observation hooks, expanded
   control inventory, commit-linked coverage and non-GUI checks.

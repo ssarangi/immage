@@ -54,7 +54,7 @@ export function chipText(chip: Chip, defs?: StatsResponse["defs"]): ChipText {
     }
     case "shutterRegimes": return { kind: t("stats.dim.shutter"), text: t(`stats.shutter.${v}`) };
     case "isoBins": return { kind: t("stats.dim.iso"), text: `ISO ${v}` };
-    case "bodies": return { kind: t("stats.dim.body"), text: String(v).replace("|", " ") };
+    case "bodies": return { kind: t("stats.dim.body"), text: bodyName(String(v)) };
     case "makers": return { kind: t("stats.dim.maker"), text: String(v) };
     case "lenses": return { kind: t("stats.dim.lens"), text: String(v) };
     case "labels": return { kind: t("stats.dim.label"), text: t(`stats.label.${LABEL_NAMES[v as ColorLabel] ?? "red"}`) };

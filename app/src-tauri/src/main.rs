@@ -56,6 +56,9 @@ mod catalog_meta_tiff;
 mod catalog_meta_xmp;
 mod catalog_meta_job;
 mod catalog_relink;
+mod catalog_thumb_src;
+mod catalog_thumbs;
+mod catalog_thumb_job;
 #[cfg(test)]
 mod catalog_meta_fixtures;
 mod typed_catalog;

@@ -14,6 +14,7 @@ import { harnessTile } from "./mapTiles";
 import { normalizePlace } from "../src/statsNormalize";
 import type { Coverage, PhotoRef, PlaceDetail, StatsFilter, StatsRequest, StatsResponse, StatsScope } from "../src/statsTypes";
 import type * as B from "../src/bindings";
+import { degenerate, DEGENERATE, type Degenerate } from "./statsDegenerate";
 
 // a recorded stats_query (`request`) or stats_place (`place`) call and its reply
 // (a `page` entry is a stats_top_page call: the scope, filter and offset its cursor holds)
@@ -49,7 +50,8 @@ export function canonical(v: unknown): string {
 
 export interface MockOptions { lib: string; state: string; cov: string; delayMs: number; /** none: no photo has a position */ gps?: string;
   /** the Top images section: error (its first page fails), loading (it never answers), pagefail (a later page fails, once), changed (a cursor is refused, once), slow (pages take 600 ms) */ top?: string;
-  /** none: no photo has a thumbnail (an offline cache) */ thumbs?: string }
+  /** none: no photo has a thumbnail (an offline cache) */ thumbs?: string
+  /** a degenerate library, see statsDegenerate.ts: one, onecam, nolens, nogps, unrated, all5, oneyear */ deg?: string }
 
 /** a filter as canonical text with its place selection left out (the map and the panel ignore it, see the contract) */
 const filterKey = (filter: unknown) => { const { place: _place, ...rest } = (filter ?? {}) as Record<string, unknown>; void _place; return canonical({ filter: rest, sections: [] }); };
@@ -103,6 +105,7 @@ export function createMockApi(o: MockOptions): StatsApi & { lastGrid: { ids: str
     // a copy: the page's normaliser edits what it is given, as it does a command's fresh reply
     const reply = normalizeReply(JSON.parse(JSON.stringify(raw)) as B.StatsReply) as StatsResponse;
     if (o.gps === "none" && reply.places) reply.places = { ...reply.places, known: 0, total: 0, bbox: null, cells: [], top: [], heat: undefined };
+    if (o.deg && (DEGENERATE as readonly string[]).includes(o.deg)) degenerate(reply, o.deg as Degenerate);
     return { ...reply, coverage: coverage(reply.coverage) };
   };
   const api = {

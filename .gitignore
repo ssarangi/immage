@@ -34,3 +34,6 @@ verify/gui/local.json
 *.code-workspace
 .idea/
 .vscode/
+
+# the Statistics ground-truth library written by benchmarking/stats-library/generate.py
+benchmarking/stats-library/out/

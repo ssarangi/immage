@@ -84,7 +84,10 @@ are read again. An unavailable drive is not treated as an empty folder.
 
 Cached photos enter the editing library when an action needs them: opening,
 rendering a missing thumbnail, changing metadata, exporting or managing files.
-Existing disk thumbnails can appear without that import. The editing engine
+Existing disk thumbnails can appear without that import, including ones
+the [catalog command line](catalog-cli.md#making-thumbnails) made from a photo's
+embedded preview (these show the camera's own picture until you edit the
+photo). The editing engine
 still starts normally; edits and sidecars are read before the action runs.
 Verified moves keep cached identities and reusable analysis when source and
 sidecar fingerprints still match. Copies receive separate identities, including
@@ -347,11 +350,16 @@ carries it, so its lighttable shows the same photos as altered. Photos
 opened in Immage before version 0.23.2 count their New Photos settings as
 an edit until you reset them.
 
-Press G, or click **Library** on the rail at the right edge, below
-**Import**, for **Grid** view: the whole folder at once.
-Double-click a photo to open it and go back to the filmstrip. G, Esc or the
-**Library** button also goes back. The **Library** button is highlighted while
-the grid shows.
+Press G, click **Library** on the rail at the right edge, below
+**Import**, or click the labelled **Grid** button at the left of the toolbar
+under the filmstrip, for **Grid** view: the whole folder at once.
+Double-click a photo to open it and go back to the filmstrip. G, Esc or either
+button also goes back. Both are highlighted while the grid shows. In the grid
+the toolbar also has **Cull**, which starts [Auto cull](#auto-cull).
+
+Each thumbnail card has a thin ring around it, brighter under the pointer and
+for the open photo, and its picture a faint edge, so a dark photo does not
+merge into its card.
 
 In the grid the right-hand panel is **Find** (see below), locked in place: it
 has the same width, resize handle, show and hide button, pin and auto-hide
@@ -830,6 +838,8 @@ Right-click a photo, or a selection, for:
 - **Reject** (X), which reads **Unreject** when every selected photo is already
   rejected.
 - **Keywords…** (K), in the grid.
+- **Critique with Gemini…** (⇧⌘G), in the grid: see
+  [AI critique](#ai-critique-and-natural-language-search).
 
   The first four items rate the photos the menu acts on: the one you
   right-clicked, or the whole selection when it includes that photo. They are

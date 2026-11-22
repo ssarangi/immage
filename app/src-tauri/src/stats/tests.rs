@@ -944,7 +944,14 @@ fn grid_entries_turn_handles_into_library_rows_in_order() {
 
 // ---------------------------------------------------------------- ground truth
 
-const GROUND_TRUTH: &str = "/tmp/claude-1000/-home-ssarangi-dev-immage/edf2a6bc-7fec-4393-8f7c-9e37ed2ca1cb/scratchpad/stats-library";
+// the library benchmarking/stats-library/generate.py writes: IMMAGE_STATS_LIBRARY,
+// else benchmarking/stats-library/out in the repository
+fn ground_truth() -> std::path::PathBuf {
+    match std::env::var_os("IMMAGE_STATS_LIBRARY").filter(|v| !v.is_empty()) {
+        Some(p) => p.into(),
+        None => std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../benchmarking/stats-library/out"),
+    }
+}
 
 fn csv_line(line: &str) -> Vec<String> {
     let (mut out, mut cur, mut quoted) = (vec![], String::new(), false);
@@ -1002,9 +1009,12 @@ fn gt_rows(manifest: &[Vec<String>], head: &[String], root: &str) -> Vec<GtRow> 
 #[test]
 fn aggregates_equal_the_generated_libraries_ground_truth() {
     use std::collections::BTreeMap;
-    let dir = std::path::Path::new(GROUND_TRUTH);
+    let dir = &ground_truth();
     if !dir.join("manifest.csv").exists() || !dir.join("expected.json").exists() {
-        eprintln!("SKIPPED: ground-truth library not found at {GROUND_TRUTH}");
+        eprintln!(
+            "SKIPPED: ground-truth library not found at {}; run benchmarking/stats-library/generate.py or set IMMAGE_STATS_LIBRARY",
+            dir.display()
+        );
         return;
     }
     let text = std::fs::read_to_string(dir.join("manifest.csv")).unwrap();
@@ -1384,8 +1394,9 @@ fn place_fixtures(idx: &Index, library: &Library, handle: &dyn Fn(&str) -> Strin
 #[test]
 #[ignore]
 fn dump_harness_fixtures() {
-    let dir = std::path::Path::new(GROUND_TRUTH);
-    let text = std::fs::read_to_string(dir.join("manifest.csv")).expect("ground-truth manifest");
+    let dir = &ground_truth();
+    let text = std::fs::read_to_string(dir.join("manifest.csv"))
+        .expect("ground-truth manifest: run benchmarking/stats-library/generate.py or set IMMAGE_STATS_LIBRARY");
     let mut lines = text.lines();
     let head = csv_line(lines.next().unwrap());
     let manifest: Vec<Vec<String>> = lines.filter(|l| !l.is_empty()).map(csv_line).collect();

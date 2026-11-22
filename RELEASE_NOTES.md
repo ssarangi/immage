@@ -17,49 +17,18 @@ Improvements
   Performance. Smart search (CLIP) is the first pack, with its own switch for
   analysing photos: on for those who already had the model, off for new
   installs, and never turned on by a download. The Find analysis icon is dim
-  until an analysis is switched on, and Culling points to these settings.
-- **Catalog command line:** `immage catalog` adds folders as sources, finds
-  their photos and keeps a durable local catalog of names, sizes and modified
-  times, from a terminal or over SSH, without opening a window. It tells a
-  network share by the server and share, not by where it is mounted, so a share
-  remounted at another path is the same source; works with an idle automount;
-  lists folders two at a time with a deadline each; and resumes a scan that was
-  stopped. A folder that does not answer is reported and never counts as empty,
-  and photos are marked missing only after a scan that finished cleanly with the
-  volume online throughout. See the Catalog command line guide.
-- **Catalog metadata:** `immage catalog metadata` (or `scan --metadata`) reads
-  the first 64 KB of each new or changed photo, and its small XMP sidecar, and
-  keeps the camera, lens, exposure, time, size, GPS, rating, labels, keywords and
-  the place of the embedded preview in the catalog. It reads JPEG, TIFF, ARW,
-  NEF, DNG, CR2, CR3, ORF, RW2, PEF, SRW, RAF, HEIC, HEIF, AVIF and MP4/MOV, two
-  files at a time on a network share, backs off when the share slows down, and
-  never reads an unchanged photo again. A read error is recorded for that photo
-  and retried next time; it never takes a source offline or marks a photo
-  missing. Photos renamed or moved inside a source are matched to their old
-  entries, so their tags and analyses carry over. `status` shows how many photos
-  are read, waiting, failed or not understood.
+  until an analysis is switched on.
 - **Statistics:** a new view, from the chart button on the rail or View >
   Statistics, shows your library as numbers: a coverage line, six summary
-  cards, camera makers and bodies with their keeper rates, and lenses with a
-  focal-length field-of-view fan, aperture rings, shutter regimes and an ISO
-  ladder, a 24-hour clock of when you shoot and a month-by-month season chart. Click any bar, slice or wedge to filter
-  every chart, then open the matching photos (up to 20,000) in the grid. Scope it to the
-  library, a folder or a date range, and choose which rating counts as a top
-  image.
-  Top images lists the frames at or above that rating, best first and then
-  newest, in a grid that loads more as you scroll, with the best frame of each
-  lens, camera or place above it, a colour-label strip with counts, arrow-key
-  navigation, and a one-click way to lower the threshold when nothing
-  qualifies.
-  Places maps where photos were taken: bubbles by area, merged as you zoom,
-  with a side panel for the selected area (its numbers, best frames and Open in
-  grid) and a Heat mode; clicking an area filters every chart. The map uses
-  cached OpenStreetMap tiles only for the part in view, and still shows the
-  areas on a labelled grid when offline.
-- **Grid button:** the toolbar under the filmstrip starts with a labelled Grid
-  button that switches between the grid and the filmstrip, as the Library
-  button on the rail and G do, so an open photo no longer needs its folder
-  clicked again to get back to the grid.
+  cards, camera makers and bodies with their keeper rates, lenses with a
+  field-of-view fan, exposure (aperture rings, shutter regimes and an ISO
+  ladder), a 24-hour clock and month-by-month seasonality, and a map of where
+  you shoot (bubbles or a heat map, from cached OpenStreetMap tiles for the
+  part in view, with a labelled grid when offline). Top images lists the frames
+  at or above a rating you choose, best first, with the best frame of each
+  lens, camera or place. Click any bar, slice, wedge or bubble to filter every
+  chart, scope it to the library, a folder or a date range, and open the
+  matching photos (up to 20,000) in the grid.
 - **Auto Cull:** click Cull in the grid toolbar, or choose Photo > Auto Cull,
   to find blurry and duplicate photos in the selection or the listed photos.
   Choose the shoot type, how many duplicates to reject, the highlight share
@@ -67,39 +36,68 @@ Improvements
   stopped. The Cull panel, in Find's place, filters the grid by Highlights,
   Blurry, Duplicates and Rejected, counts why photos are rejected, groups a
   set of look-alikes with its best frame first, and keeps past sessions. The
-  preview's fixed-width report panel gives each decision's reasons in plain
-  words, outlines the softest region, and lets you Keep, Reject or Make best
-  (P, R, B). Apply
-  flags the rejects in place (nothing is moved or deleted) and can give
-  highlights a rating and a color label; Undo puts everything back.
-- **AI grading with Google Gemini:** Preferences > Culling saves a Gemini API
-  key in the system keychain, tests it, and holds the
-  Auto cull defaults and the analysis cache button. Photo > Critique with
-  Gemini (Shift+Cmd+G, or Ctrl+Shift+G on Windows and Linux, and in a
-  thumbnail's right-click menu) opens the preview on a photo and critiques it:
-  a headline, a short summary, and What works and What to improve rows, with
-  matching numbered badges on the photo (circles for strengths, rounded squares
-  for improvements) that outline the region you hover or pin. Answers are
-  cached per photo and need only the key. In Find, a sentence typed under Describe the
-  photos in words becomes Find filters, without sending any catalog contents.
-  Support bundles remove API keys.
-- **Culling preview redesign:** the preview is a larger rounded window (94% by
-  92% of the window) with the photo matted on a neutral stage, a fixed photo
-  area, and a report panel with underlined Critique and Cull tabs. Hovering,
-  focusing or pinning a row or badge no longer moves any text; notes are shown
-  in full. Waiting for a critique shows the elapsed time, a skeleton of the
-  answer, honest wording after 25 and 60 seconds, and a Cancel button, and
-  respects reduced motion. No-key, error and empty states, and the Cull tab's
-  verdict, factors, switch and Keep, Reject and Make best buttons, are
-  redrawn. The camera previews toggle moved to the bottom bar, Critique left
-  the top bar, and Escape releases a pinned region before closing the preview.
+  preview gives each decision's reasons in plain words, outlines the softest
+  region, and lets you Keep, Reject or Make best (P, R, B). Apply flags the
+  rejects in place (nothing is moved or deleted) and can give highlights a
+  rating and a color label; Undo puts everything back. Preferences > Culling
+  holds the starting values and the analysis cache button.
+- **Critique with Gemini:** save a Google Gemini API key in Preferences >
+  Culling (it is kept in the system keychain, tested on request, and removed
+  from support bundles), then choose Photo > Critique with Gemini (Shift+Cmd+G,
+  or Ctrl+Shift+G on Windows and Linux, and in a thumbnail's right-click menu).
+  The culling preview opens on the photo with a headline, a short summary, and
+  What works and What to improve rows, with matching numbered badges on the
+  photo (circles for strengths, rounded squares for improvements) that outline
+  the region you hover or pin. One downscaled JPEG of the photo is sent to
+  Google, and the answer is kept on this computer. In Find, a sentence typed
+  under Describe the photos in words becomes Find filters; only the sentence
+  and today's date are sent.
+- **Culling preview redesign:** the preview is a larger rounded window with the
+  photo matted on a neutral stage, a fixed photo area and a fixed-width report
+  panel with Critique and Cull tabs, so hovering, focusing or pinning a row or
+  badge no longer moves anything. Waiting for a critique shows the elapsed time,
+  a skeleton of the answer, honest wording after 25 and 60 seconds and a Cancel
+  button, and respects reduced motion. The camera previews toggle moved to the
+  bottom bar, and Escape releases a pinned region before closing the preview.
+- **Grid button:** the toolbar under the filmstrip starts with a labelled Grid
+  button that switches between the grid and the filmstrip, as the Library
+  button on the rail and G do, so an open photo no longer needs its folder
+  clicked again to get back to the grid.
+- Thumbnail cards have a thin ring, brighter under the pointer and for the open
+  photo, and their pictures a faint edge, so dark photos no longer blend into
+  the card.
+- **Catalog command line:** `immage catalog` adds folders as sources, finds
+  their photos and keeps a durable local catalog of names, sizes and modified
+  times, from a terminal or over SSH, without opening a window. `metadata` (or
+  `scan --metadata`) also reads the first 64 KB of each new or changed photo and
+  its XMP sidecar for camera, lens, exposure, time, size, GPS, rating, labels,
+  keywords and the place of the embedded preview, from JPEG, TIFF, most RAW
+  formats, HEIC, HEIF, AVIF and MP4/MOV, and matches photos renamed or moved
+  inside a source to their old entries. A network share is told by its server
+  and share, not by where it is mounted, and an idle automount works. Scans and
+  reads are gentle on a slow share, resume where they stopped, and never read an
+  unchanged photo again. A folder that does not answer is reported and never
+  counts as empty, photos are marked missing only after a scan that finished
+  cleanly with the volume online throughout, and a read error never marks a
+  source offline. The catalog database itself must be on a local disk: a path on
+  a network share is refused (exit 2). Your photos and sidecars are never changed. `thumbnails` (or
+  `scan --thumbnails`) then makes a small thumbnail of every photo with the
+  fewest reads: a RAW's embedded preview in one read of just that part of the
+  file (about 400 KB of a 43 MB Sony ARW), a JPEG's Exif thumbnail when it is
+  big enough, otherwise the JPEG itself if a setting allows (whole JPEGs are
+  the costly case over a network). The thumbnails are kept per photo, so a
+  renamed or moved photo keeps its own, and kept for photos that are offline;
+  they are also placed in the library thumbnail cache, so the grid shows them
+  without any work. They are made on separate threads at low priority, newest
+  folders first, resume where they stopped, retry failures later, and stop
+  cleanly when the share goes away or the disk is nearly full. See the Catalog
+  command line guide.
 
 Performance
 
 - **Indexing large folders:** storing photo metadata in the search index no
   longer slows down as the index grows. A batch of 20,000 photos took 9 seconds
-  (30 seconds when many photos shared a fingerprint) and now takes 1.6 seconds,
-  at a steady 80 microseconds per photo.
+  (30 seconds when many photos shared a fingerprint) and now takes 1.6 seconds.
 
 ## 0.47.1
 

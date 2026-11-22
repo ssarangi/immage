@@ -113,16 +113,18 @@ export default function Statistics({ onClose, onOpenInGrid, onOpenPhoto, onAddFo
 
   // scroll position is kept while the app is open; the tab follows the scroll
   useLayoutEffect(() => { if (scroller.current) scroller.current.scrollTop = viewMemory.scrollTop; root.current?.focus({ preventScroll: true }); }, []);
-  const onScroll = () => {
+  const spy = useCallback(() => {
     const sc = scroller.current;
     if (!sc) return;
-    viewMemory.scrollTop = sc.scrollTop;
     const navH = nav.current?.offsetHeight ?? 0;
     const top = sc.getBoundingClientRect().top + navH + 40;
     let cur = "overview";
     for (const id of SECTION_IDS) { const el = document.getElementById(id); if (el && el.getBoundingClientRect().top <= top) cur = id; }
     setActive(cur);
-  };
+  }, []);
+  const onScroll = () => { if (scroller.current) viewMemory.scrollTop = scroller.current.scrollTop; spy(); };
+  // sections change height as their answers arrive: the tab is worked out again then, not only on the next scroll
+  useEffect(() => { const id = requestAnimationFrame(spy); return () => cancelAnimationFrame(id); }, [response, spy]);
 
   const overview = response?.overview;
   const tabs: Tab[] = [

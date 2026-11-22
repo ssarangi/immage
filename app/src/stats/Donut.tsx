@@ -19,7 +19,7 @@ export function Donut({ marks, center, size = 236, selected, onToggle, title, de
   const arcs = donutArcs(marks, R, 3);
   const any = selected.size > 0;
   return (
-    <svg className={`st-donut${loading ? " is-loading" : ""}`} viewBox="0 0 236 236" width={size} height={size} role="img" aria-label={title}
+    <svg className={`st-donut${loading ? " is-loading" : ""}`} viewBox="0 0 236 236" width={size} height={size} role="group" aria-label={title}
          onKeyDown={arrowNav}>
       <title>{title}</title><desc>{desc}</desc>
       {loading && <circle cx={C} cy={C} r={R} fill="none" stroke="var(--inset)" strokeWidth={STROKE} className="st-sk-ring" />}

@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 pub const FILE: &str = "catalog.sqlite";
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 /// Rows (photos, plus one per directory) per write transaction. The NAS
 /// baseline recommends 500-2000.
 pub const BATCH_ROWS: usize = 1000;
@@ -37,6 +37,8 @@ pub enum CatalogError {
     /// Written by a newer Immage; this one must not touch it.
     Newer { found: i64, known: i64 },
     Corrupt(String),
+    /// The file would live on a network file system, where WAL does not work.
+    Network(String),
     Other(String),
 }
 
@@ -49,6 +51,10 @@ impl fmt::Display for CatalogError {
                 "The catalog was made by a newer Immage (schema {found}, this one knows {known})."
             ),
             Self::Corrupt(e) => write!(f, "The catalog database is damaged: {e}"),
+            Self::Network(why) => write!(
+                f,
+                "The catalog database must be on a local disk: {why}. Use --db or --catalog with a local folder."
+            ),
             Self::Other(e) => write!(f, "{e}"),
         }
     }
@@ -76,7 +82,7 @@ pub type Step = fn(&Transaction) -> rusqlite::Result<()>;
 
 /// Step N takes the database from user_version N-1 to N. Append only: a step
 /// that has shipped is never edited.
-pub const LADDER: &[Step] = &[v1, v2_metadata];
+pub const LADDER: &[Step] = &[v1, v2_metadata, v3_thumbs];
 
 fn v1(tx: &Transaction) -> rusqlite::Result<()> {
     tx.execute_batch(
@@ -241,6 +247,33 @@ fn v2_metadata(tx: &Transaction) -> rusqlite::Result<()> {
 
         CREATE INDEX photos_content_key ON photos(source_id, content_key) WHERE content_key IS NOT NULL;
         CREATE INDEX photos_meta_state ON photos(source_id, meta_state) WHERE status='present';
+        ",
+    )
+}
+
+/// The thumbnail phase (catalog_thumb_job.rs): one row per photo that has been
+/// looked at, keyed by `photos.id` (so a rename or move that keeps the row keeps
+/// the thumbnail). `state` is 1 made, 2 failed (retried after `retry_at`), 3
+/// deferred (`error` says why: `policy` for a whole-JPEG read the policy did not
+/// allow, `engine` for a format only the engine can decode). `stamp_*` are the
+/// photo's size and mtime when it was made, so a changed file is made again.
+/// `published` is the name of the grid's disk-cache entry last linked to it.
+fn v3_thumbs(tx: &Transaction) -> rusqlite::Result<()> {
+    tx.execute_batch(
+        "
+        CREATE TABLE thumbs(
+          photo_id INTEGER PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
+          state INTEGER NOT NULL,
+          src TEXT,
+          w INTEGER, h INTEGER, bytes INTEGER,
+          stamp_size INTEGER, stamp_mtime_ns INTEGER,
+          made_at INTEGER NOT NULL, used_at INTEGER NOT NULL,
+          tries INTEGER NOT NULL DEFAULT 0,
+          error TEXT,
+          retry_at INTEGER,
+          published TEXT
+        );
+        CREATE INDEX thumbs_state ON thumbs(state);
         ",
     )
 }
@@ -418,6 +451,15 @@ pub struct CatalogDb {
     _lock: Option<std::fs::File>,
 }
 
+/// The catalog database is on local disk only: SQLite's WAL does not work on
+/// network file systems. Always refused, with no override.
+pub fn refuse_network(path: &Path) -> Result<(), CatalogError> {
+    match crate::volumes::network_refusal(path) {
+        Some(why) => Err(CatalogError::Network(why)),
+        None => Ok(()),
+    }
+}
+
 impl CatalogDb {
     /// Opens (creating and migrating if needed) for reading and writing.
     pub fn open(path: &Path) -> Result<Self, CatalogError> {
@@ -425,6 +467,7 @@ impl CatalogDb {
     }
 
     pub fn open_with(path: &Path, ladder: &[Step]) -> Result<Self, CatalogError> {
+        refuse_network(path)?;
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| CatalogError::Other(format!("{}: {e}", dir.display())))?;
         }
@@ -452,6 +495,7 @@ impl CatalogDb {
     /// A read-only connection: no lock, no migration, no writer. Works beside
     /// a running app. A database that needs migrating is refused.
     pub fn reader(path: &Path) -> Result<Connection, CatalogError> {
+        refuse_network(path)?;
         if !path.exists() {
             return Err(CatalogError::Other(format!("No catalog at {}", path.display())));
         }

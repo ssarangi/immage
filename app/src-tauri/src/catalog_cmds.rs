@@ -12,6 +12,8 @@
 
 use crate::catalog_db::{CatalogDb, FILE, SCHEMA_VERSION};
 use crate::catalog_meta_job::{coverage, run_metadata, MetaConfig, MetaProgress};
+use crate::catalog_thumb_job::{run_thumbnails, ThumbProgress};
+use crate::catalog_thumbs::{self as thumbs, GcReport, Signals, Store, ThumbConfig};
 use crate::catalog_scan::{run_scan, Progress, RealFs, ScanConfig, ScanControl, ScanOptions};
 use crate::catalog_sources::{
     self as sources, availability, list_sources, system_uuid_of, AddError, AddOptions, Availability, MountTable, RelinkCheck,
@@ -29,6 +31,9 @@ pub const EVENT_FINISHED: &str = "catalog://scan-finished";
 /// A `MetaProgress` (at most about 4 a second per source) and, at the end, a `MetaSummary`.
 pub const EVENT_META_PROGRESS: &str = "catalog://metadata-progress";
 pub const EVENT_META_FINISHED: &str = "catalog://metadata-finished";
+/// A `ThumbProgress` (at most about 4 a second per source) and, at the end, a `ThumbSummary`.
+pub const EVENT_THUMB_PROGRESS: &str = "catalog://thumbnails-progress";
+pub const EVENT_THUMB_FINISHED: &str = "catalog://thumbnails-finished";
 
 struct Active {
     source_id: i64,
@@ -42,10 +47,19 @@ struct ActiveMeta {
     progress: Arc<Mutex<Option<MetaProgress>>>,
 }
 
+struct ActiveThumbs {
+    source_id: i64,
+    ctl: Arc<ScanControl>,
+    progress: Arc<Mutex<Option<ThumbProgress>>>,
+}
+
 struct Catalog {
     db: Arc<CatalogDb>,
     scans: Mutex<Vec<Active>>,
     metas: Mutex<Vec<ActiveMeta>>,
+    thumbs: Mutex<Vec<ActiveThumbs>>,
+    /// What the page tells a running thumbnail job: browsing (yield) and the photos on screen.
+    signals: Arc<Signals>,
 }
 
 static CATALOG: OnceLock<Result<Arc<Catalog>, String>> = OnceLock::new();
@@ -55,7 +69,13 @@ fn catalog(app: &AppHandle) -> Result<Arc<Catalog>, String> {
         .get_or_init(|| {
             let runtime = app.state::<AppState>().runtime.clone();
             CatalogDb::open(&runtime.join(FILE))
-                .map(|db| Arc::new(Catalog { db: Arc::new(db), scans: Mutex::new(Vec::new()), metas: Mutex::new(Vec::new()) }))
+                .map(|db| Arc::new(Catalog {
+                    db: Arc::new(db),
+                    scans: Mutex::new(Vec::new()),
+                    metas: Mutex::new(Vec::new()),
+                    thumbs: Mutex::new(Vec::new()),
+                    signals: Arc::new(Signals::default()),
+                }))
                 .map_err(|e| e.to_string())
         })
         .clone()
@@ -342,6 +362,137 @@ fn for_jobs(cat: &Catalog, job_id: Option<i64>, f: impl Fn(&ScanControl)) {
             f(&a.ctl);
         }
     }
+    for a in cat.thumbs.lock().unwrap().iter() {
+        let this = a.progress.lock().unwrap().as_ref().map(|p| p.job_id);
+        if job_id.is_none() || this == job_id {
+            f(&a.ctl);
+        }
+    }
+}
+
+/// The catalog's thumbnail store: beside the catalog file.
+fn thumb_store(app: &AppHandle) -> Store {
+    Store::new(app.state::<AppState>().runtime.join("catalog-thumbs"))
+}
+
+/// Makes small thumbnails of the photos of the given sources whose metadata is read
+/// (see `catalog_thumb_job`), one source after another, at low priority; each is also
+/// linked into the library thumbnail cache so the grid finds it. Progress comes as
+/// `catalog://thumbnails-progress`, the end as `catalog://thumbnails-finished`; pause,
+/// resume and cancel are `job_pause`, `job_resume` and `job_cancel`.
+#[tauri::command]
+#[specta::specta]
+pub async fn thumbnails_start(app: AppHandle, source_ids: Vec<i64>) -> Result<(), String> {
+    let cat = catalog(&app)?;
+    std::thread::Builder::new()
+        .name("catalog-thumbnails".into())
+        .spawn(move || {
+            for id in source_ids {
+                thumb_one(&app, &cat, id);
+            }
+        })
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+fn thumb_one(app: &AppHandle, cat: &Arc<Catalog>, id: i64) {
+    let summary = |state: &str, error: Option<String>| ThumbSummary {
+        source_id: id, job_id: 0, state: state.into(), resumed: false, elapsed_s: 0.0, total: 0, done: 0, failed: 0, deferred: 0, skipped: 0,
+        from_preview: 0, from_exif: 0, from_jpeg: 0, from_engine: 0, linked: 0, reads: 0, bytes_read: 0, thumbnail_bytes: 0, per_s: 0.0,
+        p50_ms: 0.0, p95_ms: 0.0, error,
+    };
+    let fail = |m: String| {
+        let _ = app.emit(EVENT_THUMB_FINISHED, summary("failed", Some(m)));
+    };
+    if cat.thumbs.lock().unwrap().iter().any(|a| a.source_id == id) {
+        return fail("The thumbnails of this source are already being made.".into());
+    }
+    let statuses = match sources::reconcile(&cat.db, &MountTable::current(), &system_uuid_of) {
+        Ok(s) => s,
+        Err(e) => return fail(e),
+    };
+    let Some(st) = statuses.into_iter().find(|s| s.source.id == id) else { return fail("No such source.".into()) };
+    let (src, avail) = (st.source, st.availability);
+    let abs_root = match avail {
+        Availability::Online { abs_root, .. } if Path::new(&abs_root).is_dir() => abs_root,
+        _ => {
+            let _ = app.emit(EVENT_THUMB_FINISHED, summary("offline", Some("The source is not reachable.".into())));
+            return;
+        }
+    };
+    let network = sources::treats_as_network(&src, crate::volumes::is_network_fs(&src.fs_type));
+    let mut cfg = ThumbConfig::for_network(network);
+    cfg.lower_priority = true;
+    // the app's engine can render what Rust cannot decode: a hook for it goes in `cfg.engine`
+    let ctl = Arc::new(ScanControl::default());
+    let progress = Arc::new(Mutex::new(None));
+    cat.thumbs.lock().unwrap().push(ActiveThumbs { source_id: id, ctl: ctl.clone(), progress: progress.clone() });
+    let fs = RealFs::new(PathBuf::from(&abs_root));
+    let store = thumb_store(app);
+    let cache = app.state::<crate::cache::Caches>().thumbs.clone();
+    let result = run_thumbnails(&cat.db, &fs, &src, Path::new(&abs_root), &store, Some(&cache), &cfg, &ctl, &cat.signals, &mut |p| {
+        *progress.lock().unwrap() = Some(p.clone());
+        let _ = app.emit(EVENT_THUMB_PROGRESS, p);
+    });
+    cat.thumbs.lock().unwrap().retain(|a| a.source_id != id);
+    let _ = match result {
+        Ok(r) => app.emit(EVENT_THUMB_FINISHED, ThumbSummary::from(&r)),
+        Err(e) => app.emit(EVENT_THUMB_FINISHED, summary("failed", Some(e))),
+    };
+}
+
+/// The last progress of every running thumbnail job.
+#[tauri::command]
+#[specta::specta]
+pub async fn thumbnails_jobs_active(app: AppHandle) -> Result<Vec<ThumbProgress>, String> {
+    let cat = catalog(&app)?;
+    let v = cat.thumbs.lock().unwrap().iter().filter_map(|a| a.progress.lock().unwrap().clone()).collect();
+    Ok(v)
+}
+
+/// The page says whether the user is browsing: while true a thumbnail job waits.
+#[tauri::command]
+#[specta::specta]
+pub async fn thumbnails_busy(app: AppHandle, busy: bool) -> Result<(), String> {
+    let cat = catalog(&app)?;
+    cat.signals.set_busy(busy);
+    Ok(())
+}
+
+/// The photos on screen (absolute paths, the first most wanted): a running thumbnail
+/// job makes them next.
+#[tauri::command]
+#[specta::specta]
+pub async fn thumbnails_hint(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
+    let cat = catalog(&app)?;
+    cat.signals.hint(paths);
+    Ok(())
+}
+
+/// Removes thumbnail files nothing points to, trims the store to its limit (the
+/// photos still present first, the missing ones last) and returns what it did.
+#[tauri::command]
+#[specta::specta]
+pub async fn thumbnails_gc(app: AppHandle) -> Result<GcReport, String> {
+    blocking(move || {
+        let cat = catalog(&app)?;
+        thumbs::gc(&cat.db, &thumb_store(&app))
+    })
+    .await
+}
+
+/// The grid's cache miss: the catalog's thumbnail of the photo at `path`, if it made one
+/// for the file as it is (`size`, `mtime_ns`, sidecar stamp `side`). Never opens the
+/// catalog: before the page has used it, it answers nothing.
+pub fn thumb_fallback(app: &AppHandle, path: &Path, size: u64, mtime_ns: i64, side: &str) -> Option<Vec<u8>> {
+    let cat = CATALOG.get()?.as_ref().ok()?.clone();
+    let conn = cat.db.read().ok()?;
+    let roots: Vec<(i64, PathBuf)> = list_sources(&conn)
+        .ok()?
+        .into_iter()
+        .filter_map(|s| Some((s.id, Path::new(s.mount_path.as_deref()?).join(s.rel_root.trim_start_matches('/')))))
+        .collect();
+    thumbs::lookup_by_path(&conn, &thumb_store(app), &roots, path, size, mtime_ns, side)
 }
 
 /// Reads the headers and sidecars of every photo of the sources that a scan found new or
@@ -457,7 +608,7 @@ pub async fn catalog_status(app: AppHandle) -> Result<CatalogStatus, String> {
         let table = MountTable::current();
         let list = list_sources(&conn)?;
         let online = list.iter().filter(|s| matches!(availability(&table, s, &system_uuid_of), Availability::Online { .. })).count() as i64;
-        let running = (cat.scans.lock().unwrap().len() + cat.metas.lock().unwrap().len()) as i64;
+        let running = (cat.scans.lock().unwrap().len() + cat.metas.lock().unwrap().len() + cat.thumbs.lock().unwrap().len()) as i64;
         Ok(CatalogStatus {
             path: cat.db.path.to_string_lossy().into_owned(),
             schema: SCHEMA_VERSION,
@@ -469,6 +620,7 @@ pub async fn catalog_status(app: AppHandle) -> Result<CatalogStatus, String> {
             offline: list.len() as i64 - online,
             jobs_running: running,
             metadata: coverage(&conn, None).map_err(|e| e.to_string())?,
+            thumbnails: thumbs::coverage(&conn, None).map_err(|e| e.to_string())?,
         })
     })
     .await

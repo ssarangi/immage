@@ -133,6 +133,32 @@ impl DiskCache {
         true
     }
 
+    // whether the entry is in the folder
+    pub fn contains(&self, name: &str) -> bool {
+        self.path(name).is_some_and(|p| p.is_file())
+    }
+
+    // A file made elsewhere (the Catalog's thumbnail store) becomes the entry
+    // `name`: hard linked when both are on one filesystem, else copied. Subject
+    // to the same free-space guard as write(). False when it was not taken.
+    pub fn adopt_file(&self, name: &str, source: &Path) -> bool {
+        let Some(path) = self.path(name) else { return false };
+        if self.guard_space && !self.space_free() { return false; }
+        if std::fs::create_dir_all(&self.dir).is_err() { return false; }
+        let part = self.dir.join(format!(".{name}.link"));
+        let _ = std::fs::remove_file(&part);
+        if std::fs::hard_link(source, &part).is_err() && std::fs::copy(source, &part).is_err() {
+            let _ = std::fs::remove_file(&part);
+            return false;
+        }
+        if std::fs::rename(&part, &path).is_err() {
+            let _ = std::fs::remove_file(&part);
+            return false;
+        }
+        self.added(name);
+        true
+    }
+
     // an entry just put in the folder (by write(), or a download made into
     // it directly): counted, and the limit kept
     pub fn added(&self, name: &str) {
@@ -308,7 +334,7 @@ fn stamps_now(photo: &Path, version: i64) -> Option<(String, String)> {
     Some((stamp(&meta), side))
 }
 
-fn named(photo: &Path, version: i64, size: u32, (file, side): (String, String)) -> String {
+pub(crate) fn named(photo: &Path, version: i64, size: u32, (file, side): (String, String)) -> String {
     let mut h = Sha256::new();
     h.update(photo.to_string_lossy().as_bytes());
     h.update(format!("\0{version}\0{file}\0{side}\0{size}"));

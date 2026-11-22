@@ -73,7 +73,7 @@ fn add_list_scan_rescan_status_verify_remove() {
     let (code, out, _) = c.run(&["status"]);
     assert_eq!(code, EXIT_OK, "{out}");
     assert!(out.starts_with("Catalog  "), "{out}");
-    assert!(out.contains("schema 2") && out.contains("3 photos"), "{out}");
+    assert!(out.contains("schema 3") && out.contains("3 photos"), "{out}");
     let (_, out, _) = c.run(&["status", "--json"]);
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!((v["photos"].as_u64(), v["missing"].as_u64(), v["sources"]["online"].as_u64()), (Some(3), Some(1), Some(1)));
@@ -142,7 +142,8 @@ fn offline_overlap_and_usage_exit_codes() {
     assert_eq!(code, EXIT_OK);
     assert!(out.contains("Example:"), "{out}");
     // commands that come later say so
-    assert_eq!(c.run(&["thumbnails", "--all"]).0, EXIT_FAIL);
+    assert_eq!(c.run(&["rebuild"]).0, EXIT_FAIL);
+    assert_eq!(c.run(&["backup"]).0, EXIT_FAIL);
 }
 
 #[test]
@@ -332,4 +333,58 @@ fn metadata_command_scan_chain_status_and_exit_codes() {
             assert!(out.contains("read 1 photos"), "{out}");
         }
     }
+}
+
+#[test]
+fn thumbnails_command_scan_chain_status_gc_and_exit_codes() {
+    let c = cli();
+    let root = c.dir.path().join("photos");
+    std::fs::create_dir_all(root.join("trip")).unwrap();
+    let img = image::RgbImage::from_fn(800, 600, |x, y| image::Rgb([(x % 256) as u8, (y % 256) as u8, 120]));
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 85).encode(img.as_raw(), 800, 600, image::ExtendedColorType::Rgb8).unwrap();
+    for f in ["a.jpg", "trip/b.jpg", "trip/c.jpg"] {
+        std::fs::write(root.join(f), &jpeg).unwrap();
+    }
+    // a file the Rust reader cannot decode: left for the app
+    std::fs::write(root.join("trip/d.png"), b"\x89PNG not really").unwrap();
+    let store = c.dir.path().join("store");
+    let cache = c.dir.path().join("cache");
+    let (s, k) = (store.to_string_lossy().into_owned(), cache.to_string_lossy().into_owned());
+    let (code, out, err) = c.run(&["add-source", &root.to_string_lossy(), "--name", "Trip", "--skip-test"]);
+    assert_eq!(code, EXIT_OK, "{out}{err}");
+    // usage
+    assert_eq!(c.run(&["thumbnails"]).0, EXIT_USAGE);
+    assert_eq!(c.run(&["thumbnails", "1", "--whole-jpegs", "sometimes"]).0, EXIT_USAGE);
+    assert_eq!(c.run(&["thumbnails", "1", "--size", "9"]).0, EXIT_USAGE);
+    assert_eq!(c.run(&["thumbnails", "9"]).0, EXIT_USAGE);
+    // scan, metadata and thumbnails in one command
+    let (code, out, err) = c.run(&["scan", "1", "--thumbnails", "--store", &s, "--cache", &k]);
+    assert_eq!(code, EXIT_OK, "{out}{err}");
+    assert!(out.contains("Trip: made 3 thumbnails"), "{out}");
+    assert!(store.exists() && cache.join("thumbs").exists());
+    // the same again: up to date, nothing read
+    let (code, out, _) = c.run(&["thumbnails", "Trip", "--store", &s, "--cache", &k, "--json"]);
+    assert_eq!(code, EXIT_OK, "{out}");
+    let v: Value = serde_json::from_str(out.lines().next().unwrap()).unwrap();
+    assert_eq!((v["state"].as_str(), v["thumbnails"]["total"].as_u64(), v["thumbnails"]["reads"].as_u64()), (Some("complete"), Some(0), Some(0)));
+    // status shows coverage, human and json
+    let (_, out, _) = c.run(&["status", "--json"]);
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!((v["thumbnails"]["done"].as_u64(), v["thumbnails"]["deferred"].as_u64()), (Some(3), Some(1)));
+    assert_eq!(v["sources_list"][0]["thumbnails"]["done"], 3);
+    let (_, out, _) = c.run(&["status"]);
+    assert!(out.contains("Thumbs   3 made, 0 waiting, 0 failed, 1 for the app"), "{out}");
+    // an emptied cache is linked again without reading a photo
+    std::fs::remove_dir_all(cache.join("thumbs")).unwrap();
+    let (code, out, err) = c.run(&["thumbnails", "--gc", "--store", &s, "--cache", &k]);
+    assert_eq!(code, EXIT_OK, "{out}{err}");
+    assert!(out.contains("Trip: 3 thumbnails linked into the cache"), "{out}");
+    assert!(out.contains("Store: "), "{out}");
+    let linked = std::fs::read_dir(cache.join("thumbs")).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().ends_with(".jpg")).count();
+    assert_eq!(linked, 3);
+    // an offline source: exit 4, nothing touched
+    std::fs::rename(&root, c.dir.path().join("moved")).unwrap();
+    let (code, out, _) = c.run(&["thumbnails", "1", "--store", &s, "--cache", &k]);
+    assert_eq!(code, EXIT_OFFLINE, "{out}");
 }

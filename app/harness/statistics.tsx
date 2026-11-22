@@ -20,6 +20,7 @@
 //           thumbs=none: no thumbnails (the offline placeholder)
 //   gps     none: no photo has a position (Places' empty state);  tiles=offline: every map tile fails (the grid fallback)
 //           filter=place:<quadkey> selects a map area (the biggest at the first zooms were recorded)
+//   deg     a degenerate library: one | onecam | nolens | nogps | unrated | all5 | oneyear (statsDegenerate.ts)
 //   shift=1 runs the no-layout-shift test and writes JSON into #report (see shiftTest.ts)
 import "./tauriShim";
 import { createRoot } from "react-dom/client";
@@ -30,16 +31,12 @@ import "@fontsource/poppins/600.css";
 import "@fontsource/poppins/700.css";
 import "../src/styles.css";
 import { BUILTIN_THEMES, THEME_TOKENS } from "../src/themes";
-import { LOCALES } from "../src/i18n";
 import { initialState, setScope, setValues, setOnlyTop } from "../src/statsModel";
 import { resetStatsState } from "../src/statsStore";
 import { createMockApi } from "./statsMock";
 import { runStatsShiftTest } from "./statsShift";
 
-// the catalog keys are merged into en.json at integration; until then they are read from here
-const staged = import.meta.glob("./stats-en.json", { eager: true, import: "default" });
-for (const dict of Object.values(staged)) Object.assign(LOCALES.en.dict, dict as Record<string, string>);
-
+// the stats.* strings are in src/locales/en.json like every other catalog key
 const q = new URLSearchParams(location.search);
 const theme = BUILTIN_THEMES.find((t) => t.id === q.get("theme")) ?? BUILTIN_THEMES[0];
 for (const token of THEME_TOKENS) document.documentElement.style.setProperty(`--${token}`, theme.colors[token]);
@@ -85,7 +82,7 @@ for (const [k, v] of Object.entries(picked)) state = setValues(state, DIM[k], ["
 if (q.get("state") === "empty") state = setValues(state, "makers", ["Nobody"]);
 resetStatsState(state);
 
-const api = createMockApi({ lib: q.get("lib") ?? "big", state: q.get("state") ?? "ready", cov: q.get("cov") ?? "indexing", delayMs: Number(q.get("delay") ?? 0), gps: q.get("gps") ?? "", top: q.get("top") ?? "", thumbs: q.get("thumbs") ?? "" });
+const api = createMockApi({ lib: q.get("lib") ?? "big", state: q.get("state") ?? "ready", cov: q.get("cov") ?? "indexing", delayMs: Number(q.get("delay") ?? 0), gps: q.get("gps") ?? "", top: q.get("top") ?? "", thumbs: q.get("thumbs") ?? "", deg: q.get("deg") ?? "" });
 const Statistics = lazy(() => import("../src/Statistics"));
 
 function Harness() {

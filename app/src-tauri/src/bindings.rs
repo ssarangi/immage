@@ -42,6 +42,11 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::catalog_cmds::catalog_status,
         crate::catalog_cmds::metadata_start,
         crate::catalog_cmds::metadata_jobs_active,
+        crate::catalog_cmds::thumbnails_start,
+        crate::catalog_cmds::thumbnails_jobs_active,
+        crate::catalog_cmds::thumbnails_busy,
+        crate::catalog_cmds::thumbnails_hint,
+        crate::catalog_cmds::thumbnails_gc,
         // Statistics
         crate::stats_cmds::stats_query,
         crate::stats_cmds::stats_place,

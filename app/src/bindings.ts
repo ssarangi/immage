@@ -53,6 +53,28 @@ export const commands = {
 	/**  The last progress of every running metadata job. */
 	metadataJobsActive: () => __TAURI_INVOKE<MetaProgress[]>("metadata_jobs_active"),
 	/**
+	 *  Makes small thumbnails of the photos of the given sources whose metadata is read
+	 *  (see `catalog_thumb_job`), one source after another, at low priority; each is also
+	 *  linked into the library thumbnail cache so the grid finds it. Progress comes as
+	 *  `catalog://thumbnails-progress`, the end as `catalog://thumbnails-finished`; pause,
+	 *  resume and cancel are `job_pause`, `job_resume` and `job_cancel`.
+	 */
+	thumbnailsStart: (sourceIds: number[]) => __TAURI_INVOKE<null>("thumbnails_start", { sourceIds }),
+	/**  The last progress of every running thumbnail job. */
+	thumbnailsJobsActive: () => __TAURI_INVOKE<ThumbProgress[]>("thumbnails_jobs_active"),
+	/**  The page says whether the user is browsing: while true a thumbnail job waits. */
+	thumbnailsBusy: (busy: boolean) => __TAURI_INVOKE<null>("thumbnails_busy", { busy }),
+	/**
+	 *  The photos on screen (absolute paths, the first most wanted): a running thumbnail
+	 *  job makes them next.
+	 */
+	thumbnailsHint: (paths: string[]) => __TAURI_INVOKE<null>("thumbnails_hint", { paths }),
+	/**
+	 *  Removes thumbnail files nothing points to, trims the store to its limit (the
+	 *  photos still present first, the missing ones last) and returns what it did.
+	 */
+	thumbnailsGc: () => __TAURI_INVOKE<GcReport>("thumbnails_gc"),
+	/**
 	 *  The statistics of a scope under a filter. `sections` picks the blocks; an
 	 *  etag still current answers `{ notModified: true }`.
 	 */
@@ -602,6 +624,8 @@ export type CatalogStatus = {
 	 *  unparsed (a format the Rust extractor cannot read).
 	 */
 	metadata: MetaCoverage,
+	/**  Photos by thumbnail state (catalog_thumbs.rs). */
+	thumbnails: ThumbCoverage,
 };
 
 export type ChannelStats = {
@@ -1111,6 +1135,23 @@ export type FontFamily = {
 export type FoundPreset = {
 	name: string,
 	params: { [key in string]: number },
+};
+
+export type GcReport = {
+	/**  Part files of writes that never finished. */
+	partials: number,
+	/**  Files whose photo is gone from the catalog (source removed, relink merged). */
+	orphans: number,
+	/**  Rows whose file is not there: made again by the next run. */
+	rows_without_file: number,
+	/**
+	 *  Thumbnails dropped to stay under the size limit, of photos that are present
+	 *  (made again later) and of photos that are missing (not recoverable).
+	 */
+	evicted_present: number,
+	evicted_missing: number,
+	bytes_freed: number,
+	bytes_after: number,
 };
 
 export type Gear = {
@@ -2377,6 +2418,45 @@ export type SubFolder = {
 	name: string,
 	path: string,
 	has_children: boolean,
+};
+
+/**  How many photos have a thumbnail. */
+export type ThumbCoverage = {
+	/**  Present photos with a current thumbnail. */
+	done: number,
+	/**  Present photos still to do (metadata read, no current thumbnail). */
+	pending: number,
+	failed: number,
+	/**  Waiting for the engine, or for a policy that allows reading a whole JPEG. */
+	deferred: number,
+	/**  Thumbnails kept for photos that are missing (offline or deleted). */
+	kept_missing: number,
+	/**  What the thumbnails take on disk. */
+	bytes: number,
+};
+
+export type ThumbProgress = {
+	source_id: number,
+	job_id: number,
+	/**  `publishing` (linking what is already made), `making`, then `done`. */
+	phase: string,
+	total: number,
+	done: number,
+	failed: number,
+	deferred: number,
+	/**  Photos with a current thumbnail already (not touched). */
+	skipped: number,
+	bytes_read: number,
+	elapsed_s: number | null,
+	rate_per_s: number | null,
+	eta_s: [number, number] | null,
+	/**  Readers allowed right now (the adaptive limit). */
+	workers: number,
+	decoders: number,
+	p95_ms: number | null,
+	paused: boolean,
+	/**  The job is waiting because the app is busy browsing. */
+	yielding: boolean,
 };
 
 export type ThumbRef = { kind: "cache"; id: string } | { kind: "none" };
