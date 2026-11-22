@@ -50,6 +50,14 @@ mod catalog_sources;
 mod catalog_scan;
 mod catalog_cli;
 mod catalog_cmds;
+mod catalog_meta;
+mod catalog_meta_iso;
+mod catalog_meta_tiff;
+mod catalog_meta_xmp;
+mod catalog_meta_job;
+mod catalog_relink;
+#[cfg(test)]
+mod catalog_meta_fixtures;
 mod typed_catalog;
 #[cfg(test)]
 mod catalog_fakefs;

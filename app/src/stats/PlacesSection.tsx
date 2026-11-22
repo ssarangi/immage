@@ -23,7 +23,7 @@ import "./places.css";
 const WORLD: View = { zoom: MIN_ZOOM, bbox: null };
 
 /** true once the element has been within 400 px of the scroller's view; never goes back, so the map stays */
-function useNear(ref: React.RefObject<HTMLElement | null>): boolean {
+export function useNear(ref: React.RefObject<HTMLElement | null>): boolean {
   const [near, setNear] = useState(false);
   useEffect(() => {
     const el = ref.current;

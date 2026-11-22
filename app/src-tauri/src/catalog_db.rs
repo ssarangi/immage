@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 pub const FILE: &str = "catalog.sqlite";
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 /// Rows (photos, plus one per directory) per write transaction. The NAS
 /// baseline recommends 500-2000.
 pub const BATCH_ROWS: usize = 1000;
@@ -76,7 +76,7 @@ pub type Step = fn(&Transaction) -> rusqlite::Result<()>;
 
 /// Step N takes the database from user_version N-1 to N. Append only: a step
 /// that has shipped is never edited.
-pub const LADDER: &[Step] = &[v1];
+pub const LADDER: &[Step] = &[v1, v2_metadata];
 
 fn v1(tx: &Transaction) -> rusqlite::Result<()> {
     tx.execute_batch(
@@ -198,6 +198,51 @@ fn v1(tx: &Transaction) -> rusqlite::Result<()> {
     )?;
     tx.execute("INSERT INTO meta(key,value) VALUES('created_by', ?1)", [env!("CARGO_PKG_VERSION")])?;
     Ok(())
+}
+
+/// The metadata phase (catalog_meta_job.rs): the typed columns the extractor
+/// fills, what was read of a sidecar (so a sidecar-only change is re-read
+/// alone), the keywords, and the indexes the metadata job and the relink step
+/// query. `meta_state` is now 0 pending, 1 done, 2 failed (retried by the next
+/// run), 3 unparsed (the extractor cannot read the file; a later engine fallback
+/// picks these up). `taken_at` is the written wall-clock time read as UTC, with
+/// `tz_offset` (seconds east of UTC) when the file said it.
+fn v2_metadata(tx: &Transaction) -> rusqlite::Result<()> {
+    tx.execute_batch(
+        "
+        ALTER TABLE photos ADD COLUMN meta_error TEXT;
+        ALTER TABLE photos ADD COLUMN meta_at INTEGER;
+        ALTER TABLE photos ADD COLUMN subsec_ms INTEGER;
+        ALTER TABLE photos ADD COLUMN orientation INTEGER;
+        ALTER TABLE photos ADD COLUMN focal35 REAL;
+        ALTER TABLE photos ADD COLUMN exposure_bias REAL;
+        ALTER TABLE photos ADD COLUMN raw_width INTEGER;
+        ALTER TABLE photos ADD COLUMN raw_height INTEGER;
+        ALTER TABLE photos ADD COLUMN preview_offset INTEGER;
+        ALTER TABLE photos ADD COLUMN preview_len INTEGER;
+        ALTER TABLE photos ADD COLUMN preview_w INTEGER;
+        ALTER TABLE photos ADD COLUMN preview_h INTEGER;
+        ALTER TABLE photos ADD COLUMN gps_alt REAL;
+        ALTER TABLE photos ADD COLUMN software TEXT;
+        ALTER TABLE photos ADD COLUMN container TEXT;
+        ALTER TABLE photos ADD COLUMN is_raw INTEGER;
+        ALTER TABLE photos ADD COLUMN edited INTEGER;
+        ALTER TABLE photos ADD COLUMN head_bytes INTEGER;
+        ALTER TABLE photos ADD COLUMN xmp_seen_size INTEGER;
+        ALTER TABLE photos ADD COLUMN xmp_seen_mtime_ns INTEGER;
+
+        CREATE TABLE keywords(
+          photo_id INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+          keyword TEXT NOT NULL,
+          src TEXT NOT NULL DEFAULT 'xmp',
+          PRIMARY KEY(photo_id, keyword, src)
+        ) WITHOUT ROWID;
+        CREATE INDEX keywords_word ON keywords(keyword, photo_id);
+
+        CREATE INDEX photos_content_key ON photos(source_id, content_key) WHERE content_key IS NOT NULL;
+        CREATE INDEX photos_meta_state ON photos(source_id, meta_state) WHERE status='present';
+        ",
+    )
 }
 
 #[allow(dead_code)]

@@ -15,7 +15,9 @@
 //   lib     big (default: about 47,000 photos) | gt (the 400 photos of the ground-truth library); both are the
 //           real backend's replies, recorded into stats-fixtures/ (statsMock.ts)
 //   delay   milliseconds each query takes (default 0)
-//   scrollTo  cameras | lenses | exposure | time | places | overview;  y=<px>
+//   scrollTo  cameras | lenses | exposure | time | places | top | overview;  y=<px>
+//   top     the Top images section: error | loading | pagefail (a later page fails once) | changed (a cursor is refused once) | slow (pages take 600 ms);
+//           thumbs=none: no thumbnails (the offline placeholder)
 //   gps     none: no photo has a position (Places' empty state);  tiles=offline: every map tile fails (the grid fallback)
 //           filter=place:<quadkey> selects a map area (the biggest at the first zooms were recorded)
 //   shift=1 runs the no-layout-shift test and writes JSON into #report (see shiftTest.ts)
@@ -60,6 +62,13 @@ if (q.get("bad") === "2") {
   document.head.appendChild(st);
 }
 
+// the Top images section (bad=3): a card that moves on hover, a label chip that grows when picked, a strip card that grows on focus
+if (q.get("bad") === "3") {
+  const st = document.createElement("style");
+  st.textContent = ".st-tc:hover { margin-top: 4px !important; } .st-lbl[aria-pressed=true] { border-width: 4px !important; } .st-tcs-im:focus-visible { padding-top: 9px !important; }";
+  document.head.appendChild(st);
+}
+
 const DIM: Record<string, Parameters<typeof setValues>[1]> = { maker: "makers", body: "bodies", lens: "lenses", year: "years", month: "months", hour: "hours",
   focal: "focalBuckets", aperture: "apertureGroups", shutter: "shutterRegimes", iso: "isoBins", label: "labels", place: "place" };
 let state = initialState(Number(q.get("min") ?? 4));
@@ -76,7 +85,7 @@ for (const [k, v] of Object.entries(picked)) state = setValues(state, DIM[k], ["
 if (q.get("state") === "empty") state = setValues(state, "makers", ["Nobody"]);
 resetStatsState(state);
 
-const api = createMockApi({ lib: q.get("lib") ?? "big", state: q.get("state") ?? "ready", cov: q.get("cov") ?? "indexing", delayMs: Number(q.get("delay") ?? 0), gps: q.get("gps") ?? "" });
+const api = createMockApi({ lib: q.get("lib") ?? "big", state: q.get("state") ?? "ready", cov: q.get("cov") ?? "indexing", delayMs: Number(q.get("delay") ?? 0), gps: q.get("gps") ?? "", top: q.get("top") ?? "", thumbs: q.get("thumbs") ?? "" });
 const Statistics = lazy(() => import("../src/Statistics"));
 
 function Harness() {

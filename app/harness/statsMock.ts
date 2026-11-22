@@ -16,7 +16,8 @@ import type { Coverage, PhotoRef, PlaceDetail, StatsFilter, StatsRequest, StatsR
 import type * as B from "../src/bindings";
 
 // a recorded stats_query (`request`) or stats_place (`place`) call and its reply
-type Fixture = { request?: unknown; place?: { key: string; filter: unknown; scope: unknown }; reply: B.StatsReply | B.PlaceDetail };
+// (a `page` entry is a stats_top_page call: the scope, filter and offset its cursor holds)
+type Fixture = { request?: unknown; place?: { key: string; filter: unknown; scope: unknown }; page?: { scope: unknown; filter: unknown; offset: number }; reply: B.StatsReply | B.PlaceDetail | B.TopPageReply };
 
 const files = import.meta.glob("./stats-fixtures/*.json", { import: "default" }) as Record<string, () => Promise<Fixture[]>>;
 const thumbs = import.meta.glob("./stats-photos/*.jpg", { eager: true, query: "?url", import: "default" }) as Record<string, string>;
@@ -46,18 +47,21 @@ export function canonical(v: unknown): string {
   return JSON.stringify(r);
 }
 
-export interface MockOptions { lib: string; state: string; cov: string; delayMs: number; /** none: no photo has a position */ gps?: string }
+export interface MockOptions { lib: string; state: string; cov: string; delayMs: number; /** none: no photo has a position */ gps?: string;
+  /** the Top images section: error (its first page fails), loading (it never answers), pagefail (a later page fails, once), changed (a cursor is refused, once), slow (pages take 600 ms) */ top?: string;
+  /** none: no photo has a thumbnail (an offline cache) */ thumbs?: string }
 
 /** a filter as canonical text with its place selection left out (the map and the panel ignore it, see the contract) */
 const filterKey = (filter: unknown) => { const { place: _place, ...rest } = (filter ?? {}) as Record<string, unknown>; void _place; return canonical({ filter: rest, sections: [] }); };
 const detailKey = (key: string, filter: unknown) => `${key}|${filterKey(filter)}`;
+const pageKey = (scope: unknown, filter: unknown, offset: number) => `page|${offset}|${canonical({ scope, filter, sections: [] })}`;
 
-const cache = new Map<string, Promise<Map<string, B.StatsReply | B.PlaceDetail>>>();
+const cache = new Map<string, Promise<Map<string, B.StatsReply | B.PlaceDetail | B.TopPageReply>>>();
 function load(lib: string) {
   let p = cache.get(lib);
   if (!p) {
     const f = files[`./stats-fixtures/${lib}.json`];
-    p = f ? f().then((list) => new Map(list.map((e) => [e.place ? detailKey(e.place.key, e.place.filter) : canonical(e.request), e.reply]))) : Promise.reject(new Error(`no fixtures for library "${lib}"`));
+    p = f ? f().then((list) => new Map(list.map((e) => [e.place ? detailKey(e.place.key, e.place.filter) : e.page ? pageKey(e.page.scope, e.page.filter, e.page.offset) : canonical(e.request), e.reply]))) : Promise.reject(new Error(`no fixtures for library "${lib}"`));
     cache.set(lib, p);
   }
   return p;
@@ -66,6 +70,7 @@ function load(lib: string) {
 export function createMockApi(o: MockOptions): StatsApi & { lastGrid: { ids: string[] } | null } {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const missing: string[] = [];
+  const failedOnce = { pagefail: false, changed: false };
   (window as unknown as { __missingFixtures: string[] }).__missingFixtures = missing;
   const coverage = (c: Coverage): Coverage => {
     const total = c.total ?? c.indexed;
@@ -104,6 +109,10 @@ export function createMockApi(o: MockOptions): StatsApi & { lastGrid: { ids: str
     lastGrid: null as { ids: string[] } | null,
     async query(req: StatsRequest): Promise<StatsResponse> {
       if (o.state === "loading") return new Promise(() => {});
+      if (req.sections.length === 1 && req.sections[0] === "top") {
+        if (o.top === "loading") return new Promise(() => {});
+        if (o.top === "error") throw new Error("database is locked: could not read search-cache.sqlite");
+      }
       if (o.delayMs) await sleep(o.delayMs);
       if (o.state === "error") throw new Error("database is locked: could not read search-cache.sqlite");
       return answer(req);
@@ -125,9 +134,19 @@ export function createMockApi(o: MockOptions): StatsApi & { lastGrid: { ids: str
       if (!hit) { missing.push(`place ${key}`); throw new Error(`no recorded stats_place reply for ${key}`); }
       return normalizePlace(JSON.parse(JSON.stringify(hit)) as B.PlaceDetail);
     },
+    async topPage(cursor: string) {
+      if (o.top === "slow") await sleep(600);
+      else if (o.delayMs) await sleep(o.delayMs);
+      if (o.top === "pagefail" && !failedOnce.pagefail) { failedOnce.pagefail = true; throw new Error("database is locked: could not read search-cache.sqlite"); }
+      if (o.top === "changed" && !failedOnce.changed) { failedOnce.changed = true; throw new Error("stats-changed: the statistics changed; reload them"); }
+      const c = JSON.parse(cursor) as { scope: unknown; filter: unknown; offset: number };
+      const hit = (await load(o.lib)).get(pageKey(c.scope, c.filter, c.offset)) as B.TopPageReply | undefined;
+      if (!hit) { missing.push(`page ${c.offset}`); throw new Error(`no recorded stats_top_page reply for offset ${c.offset}`); }
+      return JSON.parse(JSON.stringify(hit)) as { items: PhotoRef[]; next: string | null };
+    },
     mapTile: (z: number, x: number, y: number) => harnessTile(z, x, y, new URLSearchParams(location.search).get("tiles")),
     onDirty: () => () => {},
-    async thumb(photo: PhotoRef) { return thumbOf(photo.path) ?? null; },
+    async thumb(photo: PhotoRef) { return o.thumbs === "none" ? null : thumbOf(photo.path) ?? null; },
     async setPaused() {},
   };
   return api as StatsApi & { lastGrid: { ids: string[] } | null };

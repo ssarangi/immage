@@ -109,7 +109,7 @@ fn nanos(t: std::io::Result<std::time::SystemTime>) -> i64 {
     t.ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos() as i64)
 }
 
-fn classify_error(e: &std::io::Error) -> FsError {
+pub(crate) fn classify_error(e: &std::io::Error) -> FsError {
     match e.kind() {
         std::io::ErrorKind::PermissionDenied => FsError::Denied,
         std::io::ErrorKind::NotFound => FsError::NotFound,
@@ -132,7 +132,7 @@ impl RealFs {
     /// Runs `f` on a helper thread with a deadline. The helper of a call that
     /// times out goes on until the kernel returns it; at most
     /// [`STUCK_LISTINGS_CAP`] such helpers are ever allowed to pile up.
-    fn within<T: Send + 'static>(&self, wait: Duration, f: impl FnOnce() -> T + Send + 'static) -> Result<T, FsError> {
+    pub(crate) fn within<T: Send + 'static>(&self, wait: Duration, f: impl FnOnce() -> T + Send + 'static) -> Result<T, FsError> {
         if self.stuck.load(Ordering::Relaxed) >= STUCK_LISTINGS_CAP {
             return Err(FsError::Timeout);
         }
@@ -283,9 +283,9 @@ pub struct ScanOptions {
     pub fresh: bool,
 }
 
-const RUN: u8 = 0;
-const CANCEL: u8 = 1;
-const INTERRUPT: u8 = 2;
+pub(crate) const RUN: u8 = 0;
+pub(crate) const CANCEL: u8 = 1;
+pub(crate) const INTERRUPT: u8 = 2;
 
 /// Pause, resume and cancel from another thread.
 #[derive(Default)]
@@ -318,11 +318,11 @@ impl ScanControl {
     pub fn is_paused(&self) -> bool {
         self.paused.load(Ordering::SeqCst)
     }
-    fn stopped(&self) -> u8 {
+    pub(crate) fn stopped(&self) -> u8 {
         self.stop.load(Ordering::SeqCst)
     }
     /// Blocks while paused; false once the scan was stopped.
-    fn proceed(&self) -> bool {
+    pub(crate) fn proceed(&self) -> bool {
         let mut g = self.gate.lock().unwrap();
         while self.is_paused() && self.stopped() == RUN {
             g = self.cv.wait_timeout(g, Duration::from_millis(200)).unwrap().0;

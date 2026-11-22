@@ -27,6 +27,17 @@ Improvements
   stopped. A folder that does not answer is reported and never counts as empty,
   and photos are marked missing only after a scan that finished cleanly with the
   volume online throughout. See the Catalog command line guide.
+- **Catalog metadata:** `immage catalog metadata` (or `scan --metadata`) reads
+  the first 64 KB of each new or changed photo, and its small XMP sidecar, and
+  keeps the camera, lens, exposure, time, size, GPS, rating, labels, keywords and
+  the place of the embedded preview in the catalog. It reads JPEG, TIFF, ARW,
+  NEF, DNG, CR2, CR3, ORF, RW2, PEF, SRW, RAF, HEIC, HEIF, AVIF and MP4/MOV, two
+  files at a time on a network share, backs off when the share slows down, and
+  never reads an unchanged photo again. A read error is recorded for that photo
+  and retried next time; it never takes a source offline or marks a photo
+  missing. Photos renamed or moved inside a source are matched to their old
+  entries, so their tags and analyses carry over. `status` shows how many photos
+  are read, waiting, failed or not understood.
 - **Statistics:** a new view, from the chart button on the rail or View >
   Statistics, shows your library as numbers: a coverage line, six summary
   cards, camera makers and bodies with their keeper rates, and lenses with a
@@ -35,6 +46,11 @@ Improvements
   every chart, then open the matching photos (up to 20,000) in the grid. Scope it to the
   library, a folder or a date range, and choose which rating counts as a top
   image.
+  Top images lists the frames at or above that rating, best first and then
+  newest, in a grid that loads more as you scroll, with the best frame of each
+  lens, camera or place above it, a colour-label strip with counts, arrow-key
+  navigation, and a one-click way to lower the threshold when nothing
+  qualifies.
   Places maps where photos were taken: bubbles by area, merged as you zoom,
   with a side panel for the selected area (its numbers, best frames and Open in
   grid) and a Heat mode; clicking an area filters every chart. The map uses

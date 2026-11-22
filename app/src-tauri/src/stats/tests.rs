@@ -1230,6 +1230,59 @@ fn fixture_requests(idx: &Index, library: &Library) -> Vec<StatsRequest> {
     out
 }
 
+/// The Top images section's recorded replies: for every request the page can make (`fixture_requests`), the
+/// `top` block alone, with its cursor, and the pages that cursor leads to (`page` entries: the cursor's scope,
+/// filter and offset, as `stats_top_page` decodes them, and its reply). The base request goes six pages deep, the others three.
+fn top_fixtures(idx: &Index, library: &Library, handle: &dyn Fn(&str) -> String) -> Vec<serde_json::Value> {
+    let photos = Photos { index: idx, id: handle };
+    let cursor = |scope: &StatsScope, filter: &StatsFilter, offset: usize| serde_json::json!({ "scope": scope, "filter": filter, "offset": offset, "gen": 1 }).to_string();
+    let mut out = vec![];
+    let mut seen: Vec<String> = vec![];
+    for (n, base) in fixture_requests(idx, library).into_iter().enumerate() {
+        let request = StatsRequest { sections: vec![StatsSection::Top], ..base };
+        let key = serde_json::to_string(&(&request.scope, &request.filter)).unwrap();
+        if seen.contains(&key) {
+            continue;
+        }
+        seen.push(key);
+        let scoped = resolve_scope(idx, &request.scope, library).unwrap();
+        let q = Query::new(idx, &scoped, &request.filter);
+        let s = snapshot(&q, &photos, &Wanted { sections: &request.sections, places: None });
+        let (indexed, total, _) = scope_counts(idx, &scoped);
+        let mut top = s.top.unwrap();
+        if (top.items.len() as u32) < top.total {
+            top.page.next = Some(cursor(&request.scope, &request.filter, top.items.len()));
+        }
+        let reply = StatsResponse {
+            etag: format!("fixture-top-{n}"),
+            generated_at: "2026-11-21T00:00:00+00:00".into(),
+            coverage: Coverage { indexed, total: Some(total), pending: 0, roots: 1, pending_roots: vec![], paused: false, max_age_sec: 0, state: CoverageState::Ready },
+            defs: defs(),
+            overview: None,
+            cameras: None,
+            lenses: None,
+            exposure: None,
+            time: None,
+            places: None,
+            top: Some(top),
+        };
+        out.push(serde_json::json!({ "request": request, "reply": StatsReply::Full(Box::new(reply)) }));
+        let depth = if n == 0 { 6 } else { 3 };
+        let mut offset = TOP_PAGE;
+        for _ in 1..depth {
+            let (total, rows) = top_rows(&q, offset, TOP_PAGE);
+            if rows.is_empty() {
+                break;
+            }
+            let next = (((offset + rows.len()) as u32) < total).then(|| cursor(&request.scope, &request.filter, offset + rows.len()));
+            let page = TopPageReply { items: rows.iter().map(|i| photos.get(*i)).collect(), next };
+            out.push(serde_json::json!({ "page": { "scope": request.scope, "filter": request.filter, "offset": offset }, "reply": page }));
+            offset += rows.len();
+        }
+    }
+    out
+}
+
 /// The Places section's recorded replies: the map's cells at the zooms the harness shows (the whole world,
 /// `bbox` absent: the harness cannot know what the viewer pans to, so the page draws what is in view), with and
 /// without the filters the page applies, one `stats_place` reply for every big cell, and the three main
@@ -1379,6 +1432,7 @@ fn dump_harness_fixtures() {
             replies.push(serde_json::json!({ "request": request, "reply": StatsReply::Full(Box::new(reply)) }));
         }
         replies.extend(place_fixtures(&idx, &library, &handle));
+        replies.extend(top_fixtures(&idx, &library, &handle));
         let path = out_dir.join(format!("{name}.json"));
         std::fs::write(&path, serde_json::to_string(&replies).unwrap()).unwrap();
         println!("{name}: {} replies, {} photos, {} KB", replies.len(), idx.rows.len(), std::fs::metadata(&path).unwrap().len() / 1024);

@@ -7,7 +7,7 @@
 //! after a number of listings.
 
 use crate::catalog_scan::{EntryKind, FsEntry, FsError, ScanFs};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -39,6 +39,19 @@ pub struct FakeFs {
     triggers: Mutex<Vec<(u64, Trigger)>>,
     running: AtomicUsize,
     pub max_running: AtomicUsize,
+    /// File contents for the metadata job's reads (see `add_blob`).
+    blobs: Mutex<HashMap<String, Vec<u8>>>,
+    /// Per-read delay, and reads that fail (always) with a given error.
+    pub read_latency: Mutex<Duration>,
+    read_fail: Mutex<HashMap<String, FsError>>,
+    /// Fails every read (a mount that went away) while set; the listing side is unaffected.
+    pub reads_fail_all: Mutex<Option<FsError>>,
+    pub reads: AtomicU64,
+    pub bytes_read: AtomicU64,
+    pub read_log: Mutex<Vec<(String, u64, usize)>>,
+    reads_running: AtomicUsize,
+    pub max_reads_running: AtomicUsize,
+    read_triggers: Mutex<Vec<(u64, Trigger)>>,
 }
 
 fn mix(mut x: u64) -> u64 {
@@ -72,6 +85,16 @@ impl FakeFs {
             triggers: Default::default(),
             running: AtomicUsize::new(0),
             max_running: AtomicUsize::new(0),
+            blobs: Default::default(),
+            read_latency: Mutex::new(Duration::ZERO),
+            read_fail: Default::default(),
+            reads_fail_all: Mutex::new(None),
+            reads: AtomicU64::new(0),
+            bytes_read: AtomicU64::new(0),
+            read_log: Default::default(),
+            reads_running: AtomicUsize::new(0),
+            max_reads_running: AtomicUsize::new(0),
+            read_triggers: Default::default(),
         }
     }
 
@@ -119,6 +142,42 @@ impl FakeFs {
         self.tree.lock().unwrap().get_mut(dir).unwrap().push(e);
     }
 
+    /// A file with these bytes (its size is their length).
+    pub fn add_blob(&self, rel: &str, bytes: Vec<u8>, mtime: i64) {
+        self.add_file(rel, bytes.len() as u64, mtime);
+        self.blobs.lock().unwrap().insert(rel.to_string(), bytes);
+    }
+
+    pub fn fail_reads_of(&self, rel: &str, e: FsError) {
+        self.read_fail.lock().unwrap().insert(rel.into(), e);
+    }
+
+    pub fn heal_reads_of(&self, rel: &str) {
+        self.read_fail.lock().unwrap().remove(rel);
+    }
+
+    /// Runs `f` when the n-th read from now is asked for.
+    pub fn at_read(&self, n: u64, f: impl Fn(&FakeFs) + Send + Sync + 'static) {
+        let at = self.reads.load(Ordering::SeqCst) + n;
+        self.read_triggers.lock().unwrap().push((at, Box::new(f)));
+    }
+
+    /// Moves a file: the same bytes under another name (a rename or a move).
+    pub fn rename_file(&self, from: &str, to: &str) {
+        let (size, mtime) = {
+            let t = self.tree.lock().unwrap();
+            let (dir, name) = from.rsplit_once('/').unwrap_or(("", from));
+            let e = t.get(dir).and_then(|l| l.iter().find(|e| e.name == name)).expect("file to rename");
+            (e.size, e.mtime_ns)
+        };
+        let bytes = self.blobs.lock().unwrap().remove(from);
+        self.remove_file(from);
+        match bytes {
+            Some(b) => self.add_blob(to, b, mtime),
+            None => self.add_file(to, size, mtime),
+        }
+    }
+
     pub fn remove_file(&self, rel: &str) {
         let (dir, name) = rel.rsplit_once('/').unwrap_or(("", rel));
         if let Some(l) = self.tree.lock().unwrap().get_mut(dir) {
@@ -152,6 +211,9 @@ impl FakeFs {
     }
     pub fn vanish(&self, rel: &str) {
         self.vanished.lock().unwrap().insert(rel.into());
+    }
+    pub fn set_read_latency(&self, d: Duration) {
+        *self.read_latency.lock().unwrap() = d;
     }
     pub fn set_latency(&self, d: Duration) {
         *self.latency.lock().unwrap() = d;
@@ -260,5 +322,47 @@ impl ScanFs for FakeFs {
 
     fn identity(&self) -> Option<String> {
         Some(self.ident.lock().unwrap().clone())
+    }
+}
+
+impl crate::catalog_meta_job::MetaFs for FakeFs {
+    fn read_at(&self, rel: &str, offset: u64, len: usize, _deadline: Duration) -> Result<Vec<u8>, FsError> {
+        let n = self.reads.fetch_add(1, Ordering::SeqCst) + 1;
+        let fire: Vec<usize> = {
+            let t = self.read_triggers.lock().unwrap();
+            t.iter().enumerate().filter(|(_, (at, _))| *at == n).map(|(i, _)| i).collect()
+        };
+        for i in fire {
+            let triggers = self.read_triggers.lock().unwrap();
+            (triggers[i].1)(self);
+        }
+        let now = self.reads_running.fetch_add(1, Ordering::SeqCst) + 1;
+        self.max_reads_running.fetch_max(now, Ordering::SeqCst);
+        let lat = *self.read_latency.lock().unwrap();
+        if !lat.is_zero() {
+            std::thread::sleep(lat);
+        }
+        self.read_log.lock().unwrap().push((rel.to_string(), offset, len));
+        let r = (|| {
+            if !self.online.load(Ordering::SeqCst) {
+                return Err(FsError::Io("Transport endpoint is not connected".into()));
+            }
+            if let Some(e) = self.reads_fail_all.lock().unwrap().clone() {
+                return Err(e);
+            }
+            if let Some(e) = self.read_fail.lock().unwrap().get(rel) {
+                return Err(e.clone());
+            }
+            let blobs = self.blobs.lock().unwrap();
+            let b = blobs.get(rel).ok_or(FsError::NotFound)?;
+            let from = (offset as usize).min(b.len());
+            let to = (from + len).min(b.len());
+            Ok(b[from..to].to_vec())
+        })();
+        if let Ok(b) = &r {
+            self.bytes_read.fetch_add(b.len() as u64, Ordering::SeqCst);
+        }
+        self.reads_running.fetch_sub(1, Ordering::SeqCst);
+        r
     }
 }

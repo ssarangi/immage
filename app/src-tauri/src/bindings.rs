@@ -40,6 +40,8 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::catalog_cmds::job_cancel,
         crate::catalog_cmds::jobs_active,
         crate::catalog_cmds::catalog_status,
+        crate::catalog_cmds::metadata_start,
+        crate::catalog_cmds::metadata_jobs_active,
         // Statistics
         crate::stats_cmds::stats_query,
         crate::stats_cmds::stats_place,

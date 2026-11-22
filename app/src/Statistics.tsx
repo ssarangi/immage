@@ -31,12 +31,13 @@ import { StatsHero } from "./stats/StatsHero";
 import { StatsNav, type Tab } from "./stats/StatsNav";
 import { PlacesSection } from "./stats/PlacesSection";
 import { TimeSection } from "./stats/TimeSection";
+import { TopImagesSection } from "./stats/TopImagesSection";
 import { TipLayer } from "./stats/Tip";
 import { ViewContext, type ViewCtx } from "./stats/ctx";
 
 /** The sections on the page; the later phases add Exposure, Time, Places and Top images here. */
-const SECTION_IDS = ["cameras", "lenses", "exposure", "time", "places"] as const;
-const ANCHOR: Record<string, string> = { overview: "st-top", cameras: "cameras", lenses: "lenses", exposure: "exposure", time: "time", places: "places" };
+const SECTION_IDS = ["cameras", "lenses", "exposure", "time", "places", "top"] as const;
+const ANCHOR: Record<string, string> = { overview: "st-top", cameras: "cameras", lenses: "lenses", exposure: "exposure", time: "time", places: "places", top: "top" };
 
 export interface StatisticsProps {
   onClose(): void;
@@ -78,13 +79,13 @@ export default function Statistics({ onClose, onOpenInGrid, onOpenPhoto, onAddFo
     sc.scrollTop += el.getBoundingClientRect().top - sc.getBoundingClientRect().top - navH;
   }, []);
 
-  const openGrid = useCallback(async (override?: Partial<StatsFilter>) => {
+  const openGrid = useCallback(async (override?: Partial<StatsFilter>, named?: string) => {
     setGridBusy(true);
     setGridError(null);
     try {
       const filter: StatsFilter = override ? { minRating: state.filter.minRating, onlyTop: false, ...override } : state.filter;
       const { ids } = await api.openInGrid(state.scope, filter);
-      const title = override ? "" : list.map((c) => { const x = chipText(c, defs); return `${x.kind}: ${x.text}`; }).join(", ");
+      const title = named ?? (override ? "" : list.map((c) => { const x = chipText(c, defs); return `${x.kind}: ${x.text}`; }).join(", "));
       onOpenInGrid(ids, title);
     } catch (e) {
       setGridError(String(e instanceof Error ? e.message : e));
@@ -93,7 +94,7 @@ export default function Statistics({ onClose, onOpenInGrid, onOpenPhoto, onAddFo
 
   const ctx: ViewCtx = {
     state, update, response, loading, stale, error: data.phase === "error" ? data.error : null, retry: data.reload,
-    openPhoto: onOpenPhoto, openGrid: (o) => { void openGrid(o); }, scrollTo, has,
+    openPhoto: onOpenPhoto, openGrid: (o, title) => { void openGrid(o, title); }, scrollTo, has,
   };
 
   // Esc: an open popover closes itself first (it listens in the capture phase and stops the event), then the
@@ -131,6 +132,7 @@ export default function Statistics({ onClose, onOpenInGrid, onOpenPhoto, onAddFo
     { id: "exposure", label: t("stats.nav.exposure") },
     { id: "time", label: t("stats.nav.time") },
     { id: "places", label: t("stats.nav.places") },
+    { id: "top", label: t("stats.nav.top"), count: overview?.matches.top },
   ];
   const matches = overview?.matches ?? null;
 
@@ -160,6 +162,7 @@ export default function Statistics({ onClose, onOpenInGrid, onOpenPhoto, onAddFo
                   <ExposureSection />
                   <TimeSection />
                   <PlacesSection />
+                  <TopImagesSection />
                   {gridError && <p className="st-grid-error" role="alert">{gridError}</p>}
                   <div className="st-foot"><span>{overview ? t("stats.foot.computed", { n: nf(overview.photos) }) : " "}</span><span>{t("stats.foot.private")}</span></div>
                 </div>

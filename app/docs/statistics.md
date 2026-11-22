@@ -11,7 +11,7 @@ computer.
 
 - **Overview**: a headline, a coverage line and six cards: photos, top images,
   gear, favourite focal length, median setup and peak hour. Click a card to
-  clear the filters (Photos), keep only top images (Top images), jump to
+  clear the filters (Photos), jump to Top images, jump to
   Cameras (Gear), filter to your favourite focal range, or filter to your peak
   hour and month.
 - **Cameras**: the year chips show how many photos you shot in each year
@@ -67,9 +67,29 @@ computer.
   With the keyboard, Tab enters the bubbles and the arrow keys move to the
   nearest one; Enter selects.
 
-The Top images section is added in a later release. With the keyboard,
-Tab enters a chart and the arrow keys move between its marks; Enter or Space
-filters.
+- **Top images**: the frames rated at or above the Top images threshold
+  (never rejected ones) under the current filters, best rating first, then
+  newest, each with a rank badge, its stars, its lens, body and date, and its
+  label and place. Click a card to open the photo in the editor with the
+  loaded top images as its neighbours. The grid loads 24 at a time as you
+  scroll (or with **Load more**); if you change a filter meanwhile, the old
+  photos stay dimmed until the new first page arrives, and pages still on their
+  way from the old filter are discarded. **Open N in grid** opens all the top
+  images of the view (up to 20,000). Above the grid, the **Label** strip shows
+  how many top images carry each colour label and toggles that label filter
+  (Shift- or Cmd/Ctrl-click adds); **Only top images** restricts every chart on
+  the page to top images, as the chip does. **Top of each** shows the best frame
+  of each lens, camera or place (the places strip asks for the biggest areas
+  only while it is shown): click a frame to open it, or **See all** to filter
+  to that lens, camera or place. If nothing qualifies, the section says "No
+  photos rated N stars or more in this view" and offers **Lower the threshold
+  to N-1** (and Clear filters). A photo whose thumbnail is not in the cache
+  yet or cannot be read shows "No preview" in the same frame. The arrow keys
+  move across the cards (Home, End, Page Up and Page Down too), Enter opens
+  the card, and moving past the last loaded card loads the next page.
+
+With the keyboard, Tab enters a chart and the arrow keys move between its
+marks; Enter or Space filters.
 
 ## Filtering by clicking
 
@@ -95,8 +115,9 @@ photos.
   or a Date range, with presets for this year, last year and the last 12
   months. Filters that cannot exist in the new scope are dropped.
 - **Top images**: the stepper sets the rating that counts as "top" (1 to 5
-  stars, default 4). It defines the amber parts of the bars, the top counts and
-  the keeper rate everywhere, and is remembered. It does not filter by itself.
+  stars, default 4). It defines the amber parts of the bars, the top counts, the
+  keeper rate and the Top images section everywhere, and is remembered. It does
+  not filter by itself.
 - **Label**: the five colour dots filter by colour label; select several to
   match any of them.
 

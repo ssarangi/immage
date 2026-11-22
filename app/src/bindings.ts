@@ -44,6 +44,15 @@ export const commands = {
 	jobsActive: () => __TAURI_INVOKE<Progress[]>("jobs_active"),
 	catalogStatus: () => __TAURI_INVOKE<CatalogStatus>("catalog_status"),
 	/**
+	 *  Reads the headers and sidecars of every photo of the sources that a scan found new or
+	 *  changed (and retries earlier failures), then relinks renamed and moved photos. Progress comes as
+	 *  `catalog://metadata-progress`, the end as `catalog://metadata-finished`. Pause, resume and
+	 *  cancel are `job_pause`, `job_resume` and `job_cancel`, like a scan's.
+	 */
+	metadataStart: (sourceIds: number[]) => __TAURI_INVOKE<null>("metadata_start", { sourceIds }),
+	/**  The last progress of every running metadata job. */
+	metadataJobsActive: () => __TAURI_INVOKE<MetaProgress[]>("metadata_jobs_active"),
+	/**
 	 *  The statistics of a scope under a filter. `sections` picks the blocks; an
 	 *  etag still current answers `{ notModified: true }`.
 	 */
@@ -588,6 +597,11 @@ export type CatalogStatus = {
 	online: number,
 	offline: number,
 	jobs_running: number,
+	/**
+	 *  Photos by metadata state: read, waiting, failed (retried by the next run) and
+	 *  unparsed (a format the Rust extractor cannot read).
+	 */
+	metadata: MetaCoverage,
 };
 
 export type ChannelStats = {
@@ -1422,6 +1436,14 @@ export type MemoryBudget = {
 	thumbMemoryMb: number,
 };
 
+/**  How many photos of each state a catalog (or one source) holds. */
+export type MetaCoverage = {
+	done: number,
+	pending: number,
+	failed: number,
+	unparsed: number,
+};
+
 export type MetaExif = {
 	maker: string,
 	model: string,
@@ -1464,6 +1486,28 @@ export type MetaImage = {
 	version: number,
 	copy: boolean,
 	metadata: MetaText,
+};
+
+export type MetaProgress = {
+	source_id: number,
+	job_id: number,
+	/**  `reading` while it runs, `linking` while renames are relinked, then `done`. */
+	phase: string,
+	/**  Photos to read in this job (including those already done, on a resume). */
+	total: number,
+	done: number,
+	failed: number,
+	unparsed: number,
+	/**  Photos left alone because they are unchanged and already read. */
+	skipped: number,
+	bytes_read: number,
+	elapsed_s: number | null,
+	rate_per_s: number | null,
+	eta_s: [number, number] | null,
+	/**  Readers allowed right now (the adaptive limit). */
+	workers: number,
+	p95_ms: number | null,
+	paused: boolean,
 };
 
 export type MetaReply = {

@@ -73,7 +73,7 @@ fn add_list_scan_rescan_status_verify_remove() {
     let (code, out, _) = c.run(&["status"]);
     assert_eq!(code, EXIT_OK, "{out}");
     assert!(out.starts_with("Catalog  "), "{out}");
-    assert!(out.contains("schema 1") && out.contains("3 photos"), "{out}");
+    assert!(out.contains("schema 2") && out.contains("3 photos"), "{out}");
     let (_, out, _) = c.run(&["status", "--json"]);
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!((v["photos"].as_u64(), v["missing"].as_u64(), v["sources"]["online"].as_u64()), (Some(3), Some(1), Some(1)));
@@ -245,4 +245,91 @@ fn argument_parsing() {
     assert_eq!(a.db_path(), PathBuf::from("/d/catalog.sqlite"));
     assert!(parse_args(&["--db".into()]).is_err());
     assert!(parse_args(&["--nonsense".into()]).is_err());
+}
+
+#[test]
+fn metadata_command_scan_chain_status_and_exit_codes() {
+    use crate::catalog_meta_fixtures::*;
+    let c = cli();
+    let root = c.dir.path().join("photos");
+    std::fs::create_dir_all(root.join("sub")).unwrap();
+    std::fs::write(root.join("a.jpg"), make_jpeg(Some(&Spec::default()), None, 800, 600, 0)).unwrap();
+    std::fs::write(root.join("sub/b.ARW"), arw_like(true, &Spec::default(), 5000, 3000, 30_000)).unwrap();
+    std::fs::write(root.join("sub/b.ARW.xmp"), DARKTABLE_XMP).unwrap();
+    std::fs::write(root.join("sub/c.jpg"), b"not a photo at all, but long enough to be read").unwrap();
+    let p = root.to_string_lossy().into_owned();
+    let (code, out, err) = c.run(&["add-source", &p, "--name", "Shoot", "--skip-test"]);
+    assert_eq!(code, EXIT_OK, "{out}{err}");
+    // status before anything is read
+    let (_, out, _) = c.run(&["status", "--json"]);
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["metadata"]["done"], 0);
+    // the metadata command needs a scan first: nothing to do yet
+    let (code, out, _) = c.run(&["metadata", "1"]);
+    assert_eq!(code, EXIT_OK, "{out}");
+    assert!(out.contains("metadata is up to date"), "{out}");
+    // scan --metadata chains the two
+    let (code, out, err) = c.run(&["scan", "1", "--metadata"]);
+    assert_eq!(code, EXIT_OK, "{out}{err}");
+    assert!(out.contains("checked 3 photos"), "{out}");
+    assert!(out.contains("Shoot: read 2 photos in "), "{out}");
+    assert!(out.contains("0 failed, 1 not understood."), "{out}");
+    // status shows coverage, overall and per source
+    let (_, out, _) = c.run(&["status"]);
+    assert!(out.contains("Metadata 2 read, 0 waiting, 0 failed, 1 not understood"), "{out}");
+    let (_, out, _) = c.run(&["status", "--json"]);
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!((v["metadata"]["done"].as_i64(), v["metadata"]["unparsed"].as_i64(), v["metadata"]["pending"].as_i64()), (Some(2), Some(1), Some(0)));
+    assert_eq!(v["sources_list"][0]["metadata"]["done"], 2);
+    // a second run reads nothing; the json report says so
+    let (code, out, _) = c.run(&["metadata", "Shoot", "--json"]);
+    assert_eq!(code, EXIT_OK);
+    let v: Value = serde_json::from_str(out.lines().next().unwrap()).unwrap();
+    assert_eq!((v["state"].as_str(), v["metadata"]["total"].as_u64(), v["metadata"]["skipped"].as_u64(), v["metadata"]["reads"].as_u64()), (Some("complete"), Some(0), Some(3), Some(0)));
+    // a renamed photo is matched to its old entry
+    std::fs::rename(root.join("a.jpg"), root.join("sub/moved.jpg")).unwrap();
+    let (code, out, _) = c.run(&["scan", "1", "--metadata", "--json"]);
+    assert_eq!(code, EXIT_OK, "{out}");
+    let lines: Vec<Value> = out.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    assert_eq!(lines[1]["metadata"]["relinked"], 1, "{out}");
+    let (_, out, _) = c.run(&["status", "--json"]);
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!((v["photos"].as_u64(), v["missing"].as_u64()), (Some(3), Some(0)));
+    // usage and offline
+    let (code, _, err) = c.run(&["metadata"]);
+    assert_eq!(code, EXIT_USAGE);
+    assert!(err.contains("Give a source"), "{err}");
+    let (code, _, err) = c.run(&["metadata", "99"]);
+    assert_eq!((code, err.contains("No source")), (EXIT_USAGE, true));
+    let (code, out, _) = c.run(&["metadata", "--help"]);
+    assert_eq!(code, EXIT_OK);
+    assert!(out.contains("never marks a source offline"), "{out}");
+    std::fs::remove_dir_all(&root).unwrap();
+    let (code, out, _) = c.run(&["metadata", "1"]);
+    assert_eq!(code, EXIT_OFFLINE, "{out}");
+    assert!(out.contains("Nothing was read or changed"), "{out}");
+    // a failure to read (permissions) is a partial result with exit 5 and is recorded per photo
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let root = c.dir.path().join("photos2");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("ok.jpg"), make_jpeg(Some(&Spec::default()), None, 8, 8, 0)).unwrap();
+        std::fs::write(root.join("locked.jpg"), make_jpeg(Some(&Spec::default()), None, 8, 8, 1)).unwrap();
+        let (code, _, err) = c.run(&["add-source", &root.to_string_lossy(), "--name", "Two", "--skip-test"]);
+        assert_eq!(code, EXIT_OK, "{err}");
+        assert_eq!(c.run(&["scan", "2"]).0, EXIT_OK);
+        std::fs::set_permissions(root.join("locked.jpg"), std::fs::Permissions::from_mode(0o000)).unwrap();
+        let running_as_root = std::fs::File::open(root.join("locked.jpg")).is_ok();
+        let (code, out, _) = c.run(&["metadata", "2"]);
+        std::fs::set_permissions(root.join("locked.jpg"), std::fs::Permissions::from_mode(0o644)).unwrap();
+        if !running_as_root {
+            assert_eq!(code, EXIT_PARTIAL, "{out}");
+            assert!(out.contains("1 failed"), "{out}");
+            // the next run retries it, now readable
+            let (code, out, _) = c.run(&["metadata", "2"]);
+            assert_eq!(code, EXIT_OK, "{out}");
+            assert!(out.contains("read 1 photos"), "{out}");
+        }
+    }
 }

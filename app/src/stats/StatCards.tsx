@@ -2,7 +2,7 @@
 // Copyright (C) 2026 the Immage authors
 
 import { t } from "../i18n";
-import { clearAll, setOnlyTop, setValues } from "../statsModel";
+import { clearAll, setValues } from "../statsModel";
 import { foldBins, share } from "../statsMath";
 import { monthName, nf, pct, pct0, hourText, shutterText, starsAtLeast } from "../statsFormat";
 import { FOCAL_BUCKETS, type FocalDef } from "../statsTypes";
@@ -37,7 +37,7 @@ export function StatCards() {
       <StatCard k={t("stats.card.top.k")} accent="amber" loading={ld} value={o ? nf(o.matches.top) : ""}
                 sub={o ? t("stats.card.top.sub", { rate: pct(share(o.matches.top, o.matches.n)), threshold, five: nf(rd?.[5] ?? 0) }) : ""}
                 mini={rd ? <MiniBars values={rd.slice(1)} accent="amber" ramp /> : null}
-                title={t("stats.card.top.tip", { threshold })} onClick={() => update((s) => setOnlyTop(s, !s.filter.onlyTop))} />
+                title={t("stats.card.top.tip", { threshold })} disabled={!v.has("top")} onClick={() => v.scrollTo("top")} />
       <StatCard k={t("stats.card.gear.k")} accent="green" loading={ld} value={o ? nf(o.gear.bodies) : ""} unit={o ? ` ${t("stats.card.gear.unit", { n: o.gear.bodies })}` : ""}
                 sub={o ? t("stats.card.gear.sub", { lenses: nf(o.gear.lenses), makers: nf(o.gear.makers) }) : ""}
                 mini={bodies.length ? <MiniBars values={bodies.slice(0, 7).map((b) => b.n)} accent="green" /> : null}

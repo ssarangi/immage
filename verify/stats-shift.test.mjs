@@ -33,6 +33,12 @@ for (const [name, query, w, h] of [
   ['ready, tiles offline', 'state=ready&tiles=offline', 1440, 900],
   ['ready, a map area selected', 'state=ready&filter=place:021230', 1440, 900],
   ['ready, light, no GPS', 'state=ready&theme=light&gps=none', 1440, 900],
+  ['top images, a label picked', 'state=ready&filter=label:red', 1440, 900],
+  ['top images, light', 'state=ready&theme=light&top=slow', 1440, 900],
+  ['top images, wide', 'state=ready&filter=label:blue', 2560, 1528],
+  ['top images, no thumbnails', 'state=ready&thumbs=none', 1440, 900],
+  ['top images, a failing first page', 'state=ready&top=error', 1440, 900],
+  ['top images, a later page fails', 'state=ready&top=pagefail', 1440, 900],
   ['loading', 'state=loading', 1440, 900],
   ['empty result', 'state=empty', 1440, 900],
   ['error', 'state=error', 1440, 900],
@@ -56,4 +62,9 @@ test('negative control: a style that moves layout on hover fails the measurement
 test('negative control: a hover that moves the Exposure and Time charts fails the measurement', { skip }, () => {
   const r = run('state=ready&bad=2');
   assert.ok(r.maxDelta > 0, 'the measurement did not notice a ring, bar or month that grows on hover');
+});
+
+test('negative control: a Top images card, label chip or strip frame that moves fails the measurement', { skip }, () => {
+  const r = run('state=ready&bad=3');
+  assert.ok(r.maxDelta > 0, 'the measurement did not notice a Top images card that moves on hover');
 });

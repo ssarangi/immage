@@ -4,6 +4,7 @@
 //! Reply and argument types of the Catalog commands (catalog_cmds.rs). The page
 //! gets them as generated bindings; see notes/catalog-ux-spec.md section 10.
 
+use crate::catalog_meta_job::{MetaCoverage, MetaReport};
 use crate::catalog_scan::ScanReport;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -112,4 +113,61 @@ pub struct CatalogStatus {
     pub online: i64,
     pub offline: i64,
     pub jobs_running: i64,
+    /// Photos by metadata state: read, waiting, failed (retried by the next run) and
+    /// unparsed (a format the Rust extractor cannot read).
+    pub metadata: MetaCoverage,
+}
+
+/// What a finished metadata run reports (the `catalog://metadata-finished` event).
+#[derive(Debug, Clone, Serialize, Type)]
+pub struct MetaSummary {
+    pub source_id: i64,
+    pub job_id: i64,
+    /// complete | cancelled | interrupted | offline | failed
+    pub state: String,
+    pub resumed: bool,
+    pub elapsed_s: f64,
+    pub total: u64,
+    pub done: u64,
+    pub sidecar_only: u64,
+    pub failed: u64,
+    pub unparsed: u64,
+    pub skipped: u64,
+    pub reads: u64,
+    pub escalations: u64,
+    pub bytes_read: u64,
+    pub per_s: f64,
+    pub p50_ms: f64,
+    pub p95_ms: f64,
+    /// Renamed or moved photos matched to their old rows.
+    pub relinked: u64,
+    pub ambiguous: u64,
+    pub error: Option<String>,
+}
+
+impl From<&MetaReport> for MetaSummary {
+    fn from(r: &MetaReport) -> Self {
+        Self {
+            source_id: r.source_id,
+            job_id: r.job_id,
+            state: r.state.to_string(),
+            resumed: r.resumed,
+            elapsed_s: r.elapsed.as_secs_f64(),
+            total: r.total,
+            done: r.done,
+            sidecar_only: r.sidecar_only,
+            failed: r.failed,
+            unparsed: r.unparsed,
+            skipped: r.skipped,
+            reads: r.reads,
+            escalations: r.escalations,
+            bytes_read: r.bytes_read,
+            per_s: r.per_s,
+            p50_ms: r.p50_ms,
+            p95_ms: r.p95_ms,
+            relinked: r.relink.relinked,
+            ambiguous: r.relink.ambiguous,
+            error: r.error.clone(),
+        }
+    }
 }

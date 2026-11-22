@@ -10,6 +10,7 @@
 //! unreadable files, problems found), 130 interrupted (checkpoint saved).
 
 use crate::catalog_db::{CatalogDb, CatalogError, FILE, SCHEMA_VERSION};
+use crate::catalog_meta_job::{coverage, run_metadata, MetaConfig, MetaProgress, MetaReport};
 use crate::catalog_scan::{run_scan, Progress, RealFs, ScanConfig, ScanControl, ScanOptions, ScanReport};
 use crate::catalog_sources::{
     self as sources, add_source, availability, find_source, host_hash, list_sources, reconcile, system_uuid_of, AddError,
@@ -84,12 +85,12 @@ struct Args {
     positional: Vec<String>,
 }
 
-const WITH_VALUE: &[&str] = &["--db", "--catalog", "--concurrency", "--name", "--policy", "--source", "--size"];
+const WITH_VALUE: &[&str] = &["--db", "--catalog", "--concurrency", "--name", "--policy", "--source", "--size", "--first-read"];
 const BOOLEAN: &[&str] = &[
     "--json", "--quiet", "--no-color", "--verbose", "--yes", "--progress", "--all", "--light", "--no-thumbnails",
     "--metadata-only", "--no-subfolders", "--index", "--skip-test", "--allow-offline", "--keep-annotations", "--watch",
     "--deep", "--fix", "--help", "--read-only", "--treat-as-network", "--no-treat-as-network", "--dir-skip", "--no-dir-skip",
-    "--regenerate", "--missing-only",
+    "--regenerate", "--missing-only", "--metadata", "--skip-failed", "--no-sidecars", "--no-relink", "--no-adaptive",
 ];
 
 fn parse_args(raw: &[String]) -> Result<Args, String> {
@@ -351,7 +352,9 @@ Commands:
   add-source <path>             Add a folder as a source (--name, --policy launch|every=6h|manual,
                                 --no-subfolders, --index, --skip-test, --allow-offline)
   remove-source <id|name>       Forget a source and what the catalog knows of it (--yes)
-  scan [<source>...|--all]      Find photos (first index or full check); --light skips unchanged folders
+  scan [<source>...|--all]      Find photos (first index or full check); --light skips unchanged folders;
+                                --metadata then reads their metadata
+  metadata [<source>...|--all]  Read the headers and sidecars of new and changed photos, then relink renames
   rescan <source>               Same as scan, for a source that is already indexed
   status [<source>] [--watch]   What the catalog holds and what is running
   verify [--deep] [--fix]       Check the catalog's integrity (read only; --fix repairs the catalog only)
@@ -376,8 +379,21 @@ Adds a folder as a source and prints how it was detected. Offline folders exit 4
 Example: immage catalog add-source /mnt/synology/Photos_Backup/2023 --name Japan --index
 ";
 
+const HELP_METADATA: &str = "\
+Usage: immage catalog metadata [<source>...|--all] [--concurrency N] [--first-read KB] [--skip-failed]
+                               [--no-sidecars] [--no-relink] [--no-adaptive]
+Reads the first 64 KB of each photo the scan found new or changed (more only when the format needs it),
+and the small XMP sidecar, and records camera, lens, exposure, time, size, GPS, rating, labels and keywords
+in the catalog. Photos already read and unchanged are not opened. Read errors are recorded per photo
+(failed, retried by the next run); files the reader does not understand are marked unparsed. Nothing is
+written to the volume, and a read error never marks a source offline or a photo missing. Afterwards photos
+that were renamed or moved inside the source are matched to their old entries (keeping tags and analyses).
+Readers: 2 on a network share, 4 on a local drive. Ctrl-C keeps the progress; run it again to continue.
+Example: immage catalog metadata 2 --json
+";
+
 const HELP_SCAN: &str = "\
-Usage: immage catalog scan [<source>...|--all] [--light] [--concurrency N]
+Usage: immage catalog scan [<source>...|--all] [--light] [--concurrency N] [--metadata]
 Lists the source's folders and records every photo's name, size and modified time. Nothing is read
 from the files and nothing is changed on the volume. Photos that are gone are marked missing only
 when the whole walk finished without a problem and the volume was online throughout.
@@ -409,6 +425,7 @@ pub fn run(raw: Vec<String>, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
         o.say(match cmd.as_str() {
             "add-source" => HELP_ADD,
             "scan" | "rescan" => HELP_SCAN,
+            "metadata" => HELP_METADATA,
             _ => HELP,
         });
         return EXIT_OK;
@@ -419,6 +436,7 @@ pub fn run(raw: Vec<String>, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
         "remove-source" => cmd_remove(&args, &mut o),
         "scan" => cmd_scan(&args, &mut o, false),
         "rescan" => cmd_scan(&args, &mut o, true),
+        "metadata" => cmd_metadata(&args, &mut o),
         "status" => cmd_status(&args, &mut o),
         "verify" => cmd_verify(&args, &mut o),
         "thumbnails" | "rebuild" | "backup" | "restore" => {
@@ -780,11 +798,10 @@ fn cmd_scan(args: &Args, o: &mut Out, alias: bool) -> i32 {
         o.warn("There are no sources to scan.");
         return EXIT_OK;
     }
-    for f in ["--no-thumbnails", "--metadata-only"] {
-        if args.flag(f) {
-            o.warn(format!("{f}: thumbnails and metadata are not part of this version; only photos are found."));
-        }
+    if args.flag("--no-thumbnails") {
+        o.warn("--no-thumbnails: thumbnails are not part of this version yet.");
     }
+    let chain_metadata = args.flag("--metadata") || args.flag("--metadata-only");
     install_sigint();
     let (mut offline, mut partial, mut interrupted) = (0usize, false, false);
     for src in &chosen {
@@ -864,6 +881,16 @@ fn cmd_scan(args: &Args, o: &mut Out, alias: bool) -> i32 {
         } else {
             print_summary(o, src, &report);
         }
+        // the metadata of what this scan found, while the volume is known to answer
+        if chain_metadata && matches!(report.state, "complete" | "incomplete") && !INTERRUPTED.load(Ordering::SeqCst) {
+            match meta_source(&db, args, o, src, abs_root) {
+                MetaEnd::Ok => {}
+                MetaEnd::Partial => partial = true,
+                MetaEnd::Interrupted => interrupted = true,
+                MetaEnd::Offline => offline += 1,
+                MetaEnd::Failed => return EXIT_FAIL,
+            }
+        }
     }
     let n = chosen.len();
     if interrupted {
@@ -921,6 +948,240 @@ fn print_summary(o: &mut Out, src: &Source, r: &ScanReport) {
     }
 }
 
+// ---- metadata ---------------------------------------------------------------------------
+
+enum MetaEnd {
+    Ok,
+    /// Some photos failed to read.
+    Partial,
+    Interrupted,
+    Offline,
+    Failed,
+}
+
+pub fn meta_progress_line(name: &str, p: &MetaProgress) -> String {
+    let read = p.done + p.failed + p.unparsed;
+    let mut s = format!("{name:<20} reading metadata {} of {}", fmt_n(read), fmt_n(p.total));
+    if p.phase == "linking" {
+        return format!("{name:<20} matching renamed photos");
+    }
+    if p.rate_per_s >= 1.0 {
+        s += &format!(", {}/s", fmt_n(p.rate_per_s as u64));
+    }
+    if p.paused {
+        s += " (paused)";
+    } else if let Some((lo, hi)) = p.eta_s {
+        s += &format!(", about {} left ({}-{})", fmt_short((lo + hi) / 2), fmt_short(lo), fmt_short(hi));
+    }
+    if p.failed > 0 {
+        s += &format!(", {} failed", p.failed);
+    }
+    s
+}
+
+fn meta_json(src: &Source, r: &MetaReport) -> Value {
+    json!({
+        "source": src.id, "name": src.name, "state": r.state, "resumed": r.resumed,
+        "metadata": {
+            "total": r.total, "done": r.done, "sidecar_only": r.sidecar_only, "failed": r.failed, "unparsed": r.unparsed,
+            "skipped": r.skipped, "raced": r.raced, "reads": r.reads, "escalations": r.escalations, "bytes_read": r.bytes_read,
+            "elapsed_s": (r.elapsed.as_secs_f64() * 100.0).round() / 100.0, "per_s": r.per_s.round(),
+            "p50_ms": (r.p50_ms * 10.0).round() / 10.0, "p95_ms": (r.p95_ms * 10.0).round() / 10.0,
+            "relinked": r.relink.relinked, "ambiguous": r.relink.ambiguous,
+        },
+        "error": r.error,
+    })
+}
+
+fn print_meta_summary(o: &mut Out, src: &Source, r: &MetaReport) {
+    let secs = r.elapsed.as_secs_f64();
+    match r.state {
+        "complete" => {
+            if r.total == 0 {
+                o.say(format!("{}: metadata is up to date ({} photos already read).", src.name, fmt_n(r.skipped)));
+            } else {
+                o.say(format!(
+                    "{}: read {} photos in {} ({}/s), {} failed, {} not understood.",
+                    src.name, fmt_n(r.done + r.sidecar_only), fmt_dur(secs), fmt_n(r.per_s as u64), fmt_n(r.failed), fmt_n(r.unparsed)
+                ));
+            }
+            if r.relink.relinked > 0 {
+                o.say(format!("{}: {} renamed or moved photos were matched to their old entries.", src.name, fmt_n(r.relink.relinked)));
+            }
+            if r.relink.ambiguous > 0 {
+                o.say(format!("{}: {} renamed photos could not be matched (identical copies); left as they are.", src.name, fmt_n(r.relink.ambiguous)));
+            }
+            if r.failed > 0 {
+                o.say(format!("{}: {} photos could not be read; they are tried again next time.", src.name, fmt_n(r.failed)));
+            }
+        }
+        "offline" => o.say(format!("{}: the volume stopped answering after {} photos. Nothing was marked failed or missing; run it again to continue.", src.name, fmt_n(r.done))),
+        "interrupted" | "cancelled" => o.say(format!("{}: stopped after {} photos.", src.name, fmt_n(r.done))),
+        _ => o.say(format!("{}: failed: {}", src.name, r.error.clone().unwrap_or_default())),
+    }
+    if o.verbose {
+        o.warn(format!(
+            "{}: {} reads ({} escalated), {} read, p50 {:.1} ms, p95 {:.1} ms",
+            src.name, fmt_n(r.reads), fmt_n(r.escalations), fmt_mb(r.bytes_read), r.p50_ms, r.p95_ms
+        ));
+    }
+}
+
+/// Runs the metadata job for one online source and prints its result.
+fn meta_source(db: &CatalogDb, args: &Args, o: &mut Out, src: &Source, abs_root: &str) -> MetaEnd {
+    let network = sources::treats_as_network(src, crate::volumes::is_network_fs(&src.fs_type));
+    let mut cfg = MetaConfig::for_network(network);
+    if let Some(n) = args.concurrency {
+        cfg.workers = n;
+    }
+    if let Some(kb) = args.value("--first-read").and_then(|v| v.parse::<usize>().ok()) {
+        cfg.first_read = (kb * 1024).clamp(64 * 1024, 1024 * 1024);
+        cfg.max_read = cfg.max_read.max(cfg.first_read);
+    }
+    cfg.retry_failed = !args.flag("--skip-failed");
+    cfg.sidecars = !args.flag("--no-sidecars");
+    cfg.relink = !args.flag("--no-relink");
+    cfg.adaptive = !args.flag("--no-adaptive");
+    let fs = RealFs::new(PathBuf::from(abs_root));
+    let ctl = ScanControl::default();
+    install_sigint();
+    let name: String = src.name.chars().take(20).collect();
+    let (mut last, mut printed) = (None::<Instant>, false);
+    let done = AtomicBool::new(false);
+    let result = std::thread::scope(|sc| {
+        sc.spawn(|| {
+            while !done.load(Ordering::SeqCst) {
+                if INTERRUPTED.load(Ordering::SeqCst) {
+                    ctl.interrupt();
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        });
+        let r = run_metadata(db, &fs, src, &cfg, &ctl, &mut |p: &MetaProgress| {
+            if o.quiet && !o.progress_events {
+                return;
+            }
+            if o.json {
+                if o.progress_events && p.phase != "done" {
+                    let ev = json!({"event":"progress","source":p.source_id,"phase":p.phase,"done":p.done + p.failed + p.unparsed,"total":p.total,
+                        "rate":p.rate_per_s.round(),"eta_s":p.eta_s.map(|(a,b)|json!([a,b])),"failed":p.failed,"workers":p.workers});
+                    let _ = writeln!(o.err, "{ev}");
+                }
+                return;
+            }
+            let line = meta_progress_line(&name, p);
+            if o.tty {
+                let _ = write!(o.err, "\r\x1b[2K{line}");
+                let _ = o.err.flush();
+                printed = true;
+                if p.phase == "done" {
+                    let _ = write!(o.err, "\r\x1b[2K");
+                    printed = false;
+                }
+            } else if p.phase != "done" && last.is_none_or(|t| t.elapsed() >= PLAIN_PROGRESS_EVERY) {
+                last = Some(Instant::now());
+                let _ = writeln!(o.err, "{line}");
+            }
+        });
+        done.store(true, Ordering::SeqCst);
+        r
+    });
+    if printed && o.tty {
+        let _ = write!(o.err, "\r\x1b[2K");
+    }
+    let report = match result {
+        Ok(r) => r,
+        Err(e) => {
+            o.warn(format!("{}: {e}", src.name));
+            return MetaEnd::Failed;
+        }
+    };
+    if o.json {
+        o.data(&meta_json(src, &report));
+    } else {
+        print_meta_summary(o, src, &report);
+    }
+    match report.state {
+        "complete" if report.failed > 0 => MetaEnd::Partial,
+        "complete" => MetaEnd::Ok,
+        "interrupted" | "cancelled" => MetaEnd::Interrupted,
+        "offline" => MetaEnd::Offline,
+        _ => MetaEnd::Failed,
+    }
+}
+
+fn cmd_metadata(args: &Args, o: &mut Out) -> i32 {
+    let db = match open_rw(args, o) {
+        Ok(d) => d,
+        Err(c) => return c,
+    };
+    let all = match db.read().and_then(|c| list_sources(&c).map_err(CatalogError::Other)) {
+        Ok(l) => l,
+        Err(e) => return catalog_error(o, &e),
+    };
+    let keys: Vec<&String> = args.positional.iter().skip(1).collect();
+    let chosen: Vec<Source> = if args.flag("--all") {
+        all.iter().filter(|s| s.enabled).cloned().collect()
+    } else if keys.is_empty() {
+        o.warn("Give a source (id or name) or --all.");
+        return EXIT_USAGE;
+    } else {
+        let mut v = Vec::new();
+        for k in keys {
+            match all.iter().find(|s| s.id.to_string() == *k).or_else(|| all.iter().find(|s| s.name.eq_ignore_ascii_case(k))) {
+                Some(s) => v.push(s.clone()),
+                None => {
+                    o.warn(format!("No source \"{k}\"."));
+                    return EXIT_USAGE;
+                }
+            }
+        }
+        v
+    };
+    if chosen.is_empty() {
+        o.warn("There are no sources.");
+        return EXIT_OK;
+    }
+    let (mut offline, mut partial, mut interrupted) = (0usize, false, false);
+    for src in &chosen {
+        if INTERRUPTED.load(Ordering::SeqCst) {
+            interrupted = true;
+            break;
+        }
+        let a = match wake_and_resolve(&db, src) {
+            Availability::Online { abs_root, .. } if !Path::new(&abs_root).is_dir() => Availability::Offline { reason: "folder not found".into() },
+            other => other,
+        };
+        let Availability::Online { abs_root, .. } = &a else {
+            offline += 1;
+            if o.json {
+                o.data(&json!({"source": src.id, "name": src.name, "state": "offline", "metadata": null}));
+            } else {
+                o.say(format!("{}: not reachable ({}). Nothing was read or changed.", src.name, a.word()));
+            }
+            continue;
+        };
+        match meta_source(&db, args, o, src, abs_root) {
+            MetaEnd::Ok => {}
+            MetaEnd::Partial => partial = true,
+            MetaEnd::Interrupted => interrupted = true,
+            MetaEnd::Offline => offline += 1,
+            MetaEnd::Failed => return EXIT_FAIL,
+        }
+    }
+    if interrupted {
+        o.warn("Interrupted. Progress is saved; run the same command again to continue.");
+        EXIT_INTERRUPTED
+    } else if offline == chosen.len() {
+        EXIT_OFFLINE
+    } else if partial || offline > 0 {
+        EXIT_PARTIAL
+    } else {
+        EXIT_OK
+    }
+}
+
 fn cmd_status(args: &Args, o: &mut Out) -> i32 {
     let watch = args.flag("--watch");
     loop {
@@ -935,6 +1196,10 @@ fn cmd_status(args: &Args, o: &mut Out) -> i32 {
             o.say("");
         }
     }
+}
+
+fn cov_json(c: &crate::catalog_meta_job::MetaCoverage) -> Value {
+    json!({"done": c.done, "pending": c.pending, "failed": c.failed, "unparsed": c.unparsed})
 }
 
 fn status_once(args: &Args, o: &mut Out) -> i32 {
@@ -980,6 +1245,7 @@ fn status_once(args: &Args, o: &mut Out) -> i32 {
             }
         }
     }
+    let cov = coverage(&conn, focus.as_ref().map(|f| f.id)).unwrap_or_default();
     let mut attention: Vec<String> = Vec::new();
     for (s, a) in &avail {
         if focus.as_ref().is_some_and(|f| f.id != s.id) {
@@ -1008,7 +1274,12 @@ fn status_once(args: &Args, o: &mut Out) -> i32 {
             "catalog": path.to_string_lossy(), "schema": schema, "bytes": size, "photos": photos, "missing": missing,
             "sources": { "total": avail.len(), "online": online, "offline": offline },
             "jobs": { "running": running, "queued": queued },
-            "sources_list": avail.iter().filter(|(s, _)| focus.as_ref().is_none_or(|f| f.id == s.id)).map(|(s, a)| source_json(s, a)).collect::<Vec<_>>(),
+            "metadata": cov_json(&cov),
+            "sources_list": avail.iter().filter(|(s, _)| focus.as_ref().is_none_or(|f| f.id == s.id)).map(|(s, a)| {
+                let mut v = source_json(s, a);
+                v["metadata"] = cov_json(&coverage(&conn, Some(s.id)).unwrap_or_default());
+                v
+            }).collect::<Vec<_>>(),
             "running": running_lines, "attention": attention,
         });
         o.data(&v);
@@ -1018,6 +1289,10 @@ fn status_once(args: &Args, o: &mut Out) -> i32 {
         if missing > 0 {
             o.say(format!("Missing  {} photos are marked missing (kept in the catalog)", fmt_n(missing as u64)));
         }
+        o.say(format!(
+            "Metadata {} read, {} waiting, {} failed, {} not understood",
+            fmt_n(cov.done as u64), fmt_n(cov.pending as u64), fmt_n(cov.failed as u64), fmt_n(cov.unparsed as u64)
+        ));
         for l in &running_lines {
             o.say(format!("Running  {l}"));
         }

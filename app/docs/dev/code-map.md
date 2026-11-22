@@ -81,7 +81,7 @@ Front end ([`app/src`](../../src)):
 - [BackupDialog.tsx](../../src/BackupDialog.tsx): the Back Up and Restore dialog under Preferences > General, over backup.rs.
 - [SelectMenu.tsx](../../src/SelectMenu.tsx): the app-drawn list every `<select>` opens (see architecture.md)
 - [menu.ts](../../src/menu.ts): the File/Edit/Photo/View/Help menus, once for both platforms; [MenuBar.tsx](../../src/MenuBar.tsx) draws them in the title strip on Windows and Linux; `menu_set` in app_cmds.rs builds the macOS menu bar, its clicks come back as the `menu` event to `runMenuAction` in App.tsx; [actions.ts](../../src/actions.ts) is the table of key chords that run those same actions
-- [Preferences.tsx](../../src/Preferences.tsx), [PrefsUI.tsx](../../src/PrefsUI.tsx); [histogram.ts](../../src/histogram.ts), [probe.ts](../../src/probe.ts); [perf.ts](../../src/perf.ts), [PerfHud.tsx](../../src/PerfHud.tsx); [aiModel.ts](../../src/aiModel.ts); [ImportView.tsx](../../src/ImportView.tsx) (the importer); Statistics: [Statistics.tsx](../../src/Statistics.tsx) (lazy overlay, its fonts and [statistics.css](../../src/statistics.css) load with it), [statsModel.ts](../../src/statsModel.ts) and [statsMath.ts](../../src/statsMath.ts) (pure state, request and chart arithmetic, tested by verify/stats-model.test.mjs), [statsStore.ts](../../src/statsStore.ts) (state and the data hook), [statsApi.ts](../../src/statsApi.ts) (what the view asks of Rust; `statsCommands` in commands.ts), sections and charts in [stats/](../../src/stats); dev harness `app/harness/statistics.html` on fixtures, and verify/stats-shift.test.mjs (no layout shift); [styles.css](../../src/styles.css)
+- [Preferences.tsx](../../src/Preferences.tsx), [PrefsUI.tsx](../../src/PrefsUI.tsx); [histogram.ts](../../src/histogram.ts), [probe.ts](../../src/probe.ts); [perf.ts](../../src/perf.ts), [PerfHud.tsx](../../src/PerfHud.tsx); [aiModel.ts](../../src/aiModel.ts); [ImportView.tsx](../../src/ImportView.tsx) (the importer); Statistics: [Statistics.tsx](../../src/Statistics.tsx) (lazy overlay, its fonts and [statistics.css](../../src/statistics.css) load with it), [statsModel.ts](../../src/statsModel.ts) and [statsMath.ts](../../src/statsMath.ts) (pure state, request and chart arithmetic, tested by verify/stats-model.test.mjs), [statsStore.ts](../../src/statsStore.ts) (state and the data hook), [statsApi.ts](../../src/statsApi.ts) (what the view asks of Rust; `statsCommands` in commands.ts), sections and charts in [stats/](../../src/stats); Top images: [TopImagesSection.tsx](../../src/stats/TopImagesSection.tsx), [TopCard.tsx](../../src/stats/TopCard.tsx), [TopStrip.tsx](../../src/stats/TopStrip.tsx), [LabelStrip.tsx](../../src/stats/LabelStrip.tsx) and the React-free [statsTop.ts](../../src/statsTop.ts) (the paged `TopFeed` over `stats_top_page`, strips, keyboard map; verify/stats-top.test.mjs); dev harness `app/harness/statistics.html` on fixtures, and verify/stats-shift.test.mjs (no layout shift); [styles.css](../../src/styles.css)
 
 Rust ([`app/src-tauri/src`](../../src-tauri/src)):
 
@@ -134,6 +134,21 @@ tests in `catalog_scan_tests.rs` with the fault-injecting `catalog_fakefs.rs`; b
 [typed_catalog.rs](../../src-tauri/src/typed_catalog.rs) (typed commands and the `catalog://scan-progress` /
 `catalog://scan-finished` events). volumes.rs: `answering()` runs on a bounded pool, `is_network_fs` knows
 autofs-behind, gvfs, mergerfs, ceph, gluster, lustre and rclone.
+
+Catalog metadata (C3; notes in notes/catalog-meta-notes.md): the extractor is a pure function over a head
+window, [catalog_meta.rs](../../src-tauri/src/catalog_meta.rs) (`extract` -> `Extract::{Done, NeedMore,
+Unsupported, Corrupt}`, the 64 KB / 256 KB / 1 MB `HEAD_LADDER`, JPEG and RAF) with
+[catalog_meta_tiff.rs](../../src-tauri/src/catalog_meta_tiff.rs) (IFD0, Exif, GPS, SubIFDs of every TIFF-based RAW),
+[catalog_meta_iso.rs](../../src-tauri/src/catalog_meta_iso.rs) (HEIC/HEIF/AVIF, CR3, MP4/MOV) and
+[catalog_meta_xmp.rs](../../src-tauri/src/catalog_meta_xmp.rs) (sidecars). The job is
+[catalog_meta_job.rs](../../src-tauri/src/catalog_meta_job.rs) (`run_metadata`, the `MetaFs` read trait, `Adaptive`
+back-off, `content_key`, `coverage`); renames are [catalog_relink.rs](../../src-tauri/src/catalog_relink.rs). Schema v2
+(`v2_metadata` in catalog_db.rs) added the typed columns and `keywords`; `meta_state` is 0 pending, 1 done, 2 failed,
+3 unparsed. Tests: `catalog_meta_tests.rs` and `catalog_meta_job_tests.rs` over the byte-exact builders in
+`catalog_meta_fixtures.rs` and the fault-injecting `catalog_fakefs.rs` (now also serves file contents).
+Commands `metadata_start`, `metadata_jobs_active`; events `catalog://metadata-progress` / `catalog://metadata-finished`;
+CLI `immage catalog metadata` and `scan --metadata`. Benchmarks (ignored): `bench_50k`, `raw_samples_header_sizes`
+(`IMMAGE_RAW_SAMPLES`).
 
 Support bundle: [scrub.rs](../../src-tauri/src/scrub.rs) (the scrubber),
 [support_bundle.rs](../../src-tauri/src/support_bundle.rs) (`support_bundle_*` commands, zip),

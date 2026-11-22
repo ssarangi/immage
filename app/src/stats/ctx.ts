@@ -19,7 +19,7 @@ export interface ViewCtx {
   /** a photo card: open the photo (and its neighbours in the list) */
   openPhoto(photo: PhotoRef, list: PhotoRef[]): void;
   /** the grid, with the page's filter, or with this part of it replaced (the legend's Grid button) */
-  openGrid(override?: Partial<StatsFilter>): void;
+  openGrid(override?: Partial<StatsFilter>, title?: string): void;
   scrollTo(section: string): void;
   /** whether a section is on the page yet (the later phases add theirs) */
   has(section: string): boolean;

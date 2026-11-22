@@ -23,6 +23,8 @@ export interface StatsApi {
   setPaused(paused: boolean): Promise<void>;
   /** the Places side panel: one map cell under the filter (its own place selection ignored) */
   place(key: string, filter: StatsFilter, scope: StatsScope): Promise<PlaceDetail>;
+  /** the next page of top images from a cursor `query` or this gave; rejects with "stats-changed" when the index was rebuilt since */
+  topPage(cursor: string): Promise<{ items: PhotoRef[]; next: string | null }>;
   /** a map tile (PNG bytes) through the app's cached OpenStreetMap command; rejects when offline */
   mapTile(z: number, x: number, y: number): Promise<ArrayBuffer>;
 }
@@ -43,6 +45,7 @@ export const commandsApi: StatsApi = {
   },
   async setPaused(paused) { await commands.searchPause(paused); },
   async place(key, filter, scope) { return normalizePlace(await commands.statsPlace(key, filter, scope)); },
+  topPage: (cursor) => commands.statsTopPage(cursor),
   mapTile: (z, x, y) => commands.mapTile(z, x, y),
 };
 

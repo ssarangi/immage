@@ -69,7 +69,7 @@ function mirrorPseudoClasses() {
   st.textContent = css.join("\n") + `
 .stats-view *, .stats-view *::before, .stats-view *::after { transition: none !important; animation: none !important; }
 /* layout is measured: a paint-only transform (a photo's hover scale) is not a shift */
-.stats-view .st-pc-im img, .stats-view .st-grid-btn { transform: none !important; }`;
+.stats-view .st-pc-im img, .stats-view .st-tc-im img, .stats-view .st-tcs-im img, .stats-view .st-grid-btn { transform: none !important; }`;
   document.head.append(st);
 }
 
