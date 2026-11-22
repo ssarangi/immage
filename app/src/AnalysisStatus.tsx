@@ -39,7 +39,9 @@ export function AnalysisStatus() {
     return () => { alive.current = false; clearInterval(timer); document.removeEventListener("visibilitychange", tick); };
   }, []);
 
-  const installed = status?.installed ?? false;
+  const modelInstalled = status?.installed ?? false;
+  // dimmed unless the model is installed and its analysis is switched on (Preferences > AI models)
+  const installed = modelInstalled && (status?.enabled ?? true);
   const paused = status?.paused ?? false;
   const pending = status?.pending ?? null;
   const running = status?.running ?? 0;
@@ -61,7 +63,7 @@ export function AnalysisStatus() {
     : pending < COMPACT_FROM ? exact : formatNumber(pending, { notation: "compact", maximumFractionDigits: 1 });
   let label: string;
   let kind: string;
-  if (!installed) { label = t("library.analysis.notInstalled"); kind = "off"; }
+  if (!installed) { label = t(modelInstalled ? "library.analysis.off" : "library.analysis.notInstalled"); kind = "off"; }
   else if (paused) {
     label = pending ? t("library.analysis.paused", { n: pending, count: exact }) : t("library.analysis.pausedEmpty");
     kind = "paused";

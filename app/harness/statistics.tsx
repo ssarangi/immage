@@ -15,7 +15,9 @@
 //   lib     big (default: about 47,000 photos) | gt (the 400 photos of the ground-truth library); both are the
 //           real backend's replies, recorded into stats-fixtures/ (statsMock.ts)
 //   delay   milliseconds each query takes (default 0)
-//   scrollTo  cameras | lenses | overview;  y=<px>
+//   scrollTo  cameras | lenses | exposure | time | places | overview;  y=<px>
+//   gps     none: no photo has a position (Places' empty state);  tiles=offline: every map tile fails (the grid fallback)
+//           filter=place:<quadkey> selects a map area (the biggest at the first zooms were recorded)
 //   shift=1 runs the no-layout-shift test and writes JSON into #report (see shiftTest.ts)
 import "./tauriShim";
 import { createRoot } from "react-dom/client";
@@ -51,8 +53,15 @@ if (q.get("bad") === "1") {
   document.head.appendChild(st);
 }
 
+// the same for the Exposure and Time charts (bad=2): a ring, a shutter bar, an ISO bin and a month that grow on hover
+if (q.get("bad") === "2") {
+  const st = document.createElement("style");
+  st.textContent = ".st-iris-cell:hover, .st-shutter-col:hover, .st-iso-col:hover, .st-month:hover { padding-top: 12px !important; } .st-month[aria-pressed=true] { border-width: 3px !important; }";
+  document.head.appendChild(st);
+}
+
 const DIM: Record<string, Parameters<typeof setValues>[1]> = { maker: "makers", body: "bodies", lens: "lenses", year: "years", month: "months", hour: "hours",
-  focal: "focalBuckets", aperture: "apertureGroups", shutter: "shutterRegimes", iso: "isoBins", label: "labels" };
+  focal: "focalBuckets", aperture: "apertureGroups", shutter: "shutterRegimes", iso: "isoBins", label: "labels", place: "place" };
 let state = initialState(Number(q.get("min") ?? 4));
 if (q.get("scope") === "range") state = setScope(state, { kind: "dateRange", from: "2024-01-01", to: "2024-12-31" });
 const picked: Record<string, string[]> = {};
@@ -62,12 +71,12 @@ for (const pair of (q.get("filter") ?? "").split(",").filter(Boolean)) {
   if (k === "top") state = setOnlyTop(state, true);
   else if (DIM[k]) (picked[k] ??= []).push(v);
 }
-for (const [k, v] of Object.entries(picked)) state = setValues(state, DIM[k], v);
+for (const [k, v] of Object.entries(picked)) state = setValues(state, DIM[k], ["year", "month", "hour"].includes(k) ? v.map(Number) : v);
 // a state that matches nothing
 if (q.get("state") === "empty") state = setValues(state, "makers", ["Nobody"]);
 resetStatsState(state);
 
-const api = createMockApi({ lib: q.get("lib") ?? "big", state: q.get("state") ?? "ready", cov: q.get("cov") ?? "indexing", delayMs: Number(q.get("delay") ?? 0) });
+const api = createMockApi({ lib: q.get("lib") ?? "big", state: q.get("state") ?? "ready", cov: q.get("cov") ?? "indexing", delayMs: Number(q.get("delay") ?? 0), gps: q.get("gps") ?? "" });
 const Statistics = lazy(() => import("../src/Statistics"));
 
 function Harness() {

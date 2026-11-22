@@ -7,6 +7,17 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- **AI models:** Preferences > General has an AI models group for optional
+  model packs that run on this computer. Each pack says what it does and what
+  happens to your photos, its license and size, and nothing downloads until you
+  press Download and agree in a dialog. A download can be cancelled and resumed
+  where it stopped, a pack can be checked, repaired (only the failing files
+  download again) or removed, and a summary strip shows packs installed, space
+  used and the one Pause / Resume for background work, which moved here from
+  Performance. Smart search (CLIP) is the first pack, with its own switch for
+  analysing photos: on for those who already had the model, off for new
+  installs, and never turned on by a download. The Find analysis icon is dim
+  until an analysis is switched on, and Culling points to these settings.
 - **Catalog command line:** `immage catalog` adds folders as sources, finds
   their photos and keeps a durable local catalog of names, sizes and modified
   times, from a terminal or over SSH, without opening a window. It tells a
@@ -19,10 +30,16 @@ Improvements
 - **Statistics:** a new view, from the chart button on the rail or View >
   Statistics, shows your library as numbers: a coverage line, six summary
   cards, camera makers and bodies with their keeper rates, and lenses with a
-  focal-length field-of-view fan. Click any bar, slice or wedge to filter
+  focal-length field-of-view fan, aperture rings, shutter regimes and an ISO
+  ladder, a 24-hour clock of when you shoot and a month-by-month season chart. Click any bar, slice or wedge to filter
   every chart, then open the matching photos (up to 20,000) in the grid. Scope it to the
   library, a folder or a date range, and choose which rating counts as a top
   image.
+  Places maps where photos were taken: bubbles by area, merged as you zoom,
+  with a side panel for the selected area (its numbers, best frames and Open in
+  grid) and a Heat mode; clicking an area filters every chart. The map uses
+  cached OpenStreetMap tiles only for the part in view, and still shows the
+  areas on a labelled grid when offline.
 - **Grid button:** the toolbar under the filmstrip starts with a labelled Grid
   button that switches between the grid and the filmstrip, as the Library
   button on the rail and G do, so an open photo no longer needs its folder

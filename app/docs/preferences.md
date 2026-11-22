@@ -165,26 +165,71 @@ starts with default settings. To start with defaults on purpose, see
   System .ORI of the same name show as one, and a rating, reject or delete
   takes them all.
 
-**Smart search (CLIP)** (below Library)
+**AI models** (below Library)
 
-The optional CLIP model that lets Find search by what is in a photo.
+Optional model packs that run on this computer. Nothing downloads until you
+press **Download**, and nothing looks at your photos until you turn an analysis
+on. None of them send your photos anywhere. The online Gemini critique is
+separate: the group's first paragraph links to Preferences > Culling.
 
-- **CLIP model (optional)** downloads about 608 MB of matched model and tokenizer
-  files from Hugging Face only when you press **Download or repair**. Valid local
-  files are checked and reused. **Cancel** stops further download work after the
-  current network read returns; a stalled read times out after a minute.
-  Until the model is downloaded (and without an Immich connection), Find searches
-  file names only and **Show more like this** is not offered; both appear when the
-  download finishes or Preferences is closed.
-- **Model check** tests both CPU inference towers using a test prompt and a
-  synthetic image, with the time including model loading. It requires verified
-  model files and resumed background work. It does not upload photos or test
-  the relevance of search results. Model downloads have their own Cancel button
-  and are independent of Pause.
+- **Summary strip.** *Installed* counts the packs on this computer ("1 of 1
+  pack"), *On disk* totals what they and any kept partial downloads use, with
+  **Show folder**, and *Background work* says what is running ("Analysing 1,204
+  of 1,820 photos", "Nothing running", "Paused · 616 photos waiting"), with a
+  progress bar and one **Pause / Resume** button. That button is the same pause
+  as the analysis icon at the end of Find's search box; it is remembered after
+  relaunch and moved here from Performance > Local photo cache.
+- **Pack card.** Each pack shows its name, license and size (the download size
+  before it is installed, the size on disk after), what it does, and **what
+  happens to your photos**, always both. A state line below says what is going
+  on, and the buttons below that act on it. Every state keeps the same card
+  size, so nothing moves while a download progresses or a state changes.
+  - *Not installed*: "Needs 608 MB of free space. Nothing is downloaded until
+    you press Download." **Download (608 MB)...** opens the consent dialog,
+    which says what is downloaded, how big it is and how much space you have,
+    where it comes from (a fixed version, every file checked against a known
+    checksum, and a file that does not match is never used), the license
+    (**Read the license**), and that it runs on this computer and that
+    downloading does not look at your photos. Cancel, Escape or clicking
+    outside starts nothing. Download is the only way to start a first download.
+  - *Downloading*: a percentage, the bytes done, speed and time left, a
+    progress bar, and **Cancel**. **Cancel** and a lost connection keep the
+    files already fetched; Immage never retries by itself.
+  - *Download stopped*: "No connection. 0.6 GB of 1.7 GB kept." **Resume (1.1
+    GB left)** continues each file where it stopped; **Remove partial files**
+    deletes what was kept. Resume and Repair do not ask for consent again.
+  - *Installed · verified*: the size on disk and the date every file last
+    matched its known checksum. **Check files** hashes every file again and
+    reports it in the state line for a few seconds. **Remove...** asks whether
+    to keep or remove the results the model produced (for Smart search, the
+    analysis of your photos in Immage's cache) and frees the space; the
+    analysis switch turns off. An install made by an earlier version of Immage
+    shows **Installed · checking** once while it is checked in the background.
+  - *Needs repair*: a file is missing or does not match its checksum, so
+    Immage does not use it; analysis is off until **Repair**, which downloads
+    only the files that fail. A file that fails its check right after a
+    download is deleted and never used. A full disk is reported before and
+    during a download ("Needs 608 MB free. This disk has 0.9 GB."), and the
+    partial files are removed so no space is left taken.
+- **Smart search (CLIP)** is the first pack: about 608 MB of CLIP model and
+  tokenizer files from Hugging Face (MIT), which let Find search by what is in
+  a photo. It reads each photo once and keeps a short list of numbers about it
+  in Immage's cache; your photos, sidecars and keywords are not changed. The
+  switch **Analyse photos for Smart search** controls the background analysis
+  of your library, and is disabled, with its reason, until the model is
+  installed and whole. Downloading does not turn it on; for a user who already
+  had the model when AI models arrived it starts on, so behaviour does not
+  change. The line below says how many photos are analysed and how many wait.
+  Turning it off stops queued photos, keeps the results, and Smart search keeps
+  finding the photos already analysed. **Test** (under the state line while the
+  model is installed) runs both CPU towers on a test prompt and a synthetic
+  image; it needs background work not paused and does not upload anything.
+  Until the model is downloaded (and without an Immich connection), Find
+  searches file names only and **Show more like this** is not offered.
 
 While CLIP analyses your photos in the background, Immage's performance is
-impacted because the analysis uses the CPU. Pause background work under
-Preferences > Performance > Local photo cache to stop it.
+impacted because the analysis uses the CPU. Pause background work from the
+summary strip to stop it.
 
 **Startup**
 
@@ -467,22 +512,22 @@ The thumbnail caches keep nothing while the disk has under 5 GB free.
 **Local photo cache** (below Cache)
 
 The cache of what Immage knows about your photos, and the background analysis
-that follows the optional CLIP model (see Smart search (CLIP) in General).
+that follows the optional CLIP model (see AI models in General).
 
 - **Metadata** shows cached photos, versions, metadata records and analyses.
   **Clear** removes these disposable records; browsing and later startup checks
   refill the cache. **Rebuild** clears these records together, then queues a
   fresh check of your saved folders. The counts refill as background work runs.
   Neither action changes your photos or sidecars. Model files are retained.
-- **Pause / Resume** controls new background file checks and analysis. Active
+- Background work's **Pause / Resume** moved to General > AI models (its
+  summary strip). It controls new background file checks and analysis: active
   work finishes, and browsing remains available. The pause setting is remembered
   after relaunch. A rebuild remains queued while paused. The analysis icon at
-  the end of Find's search box is the same pause: clicking it pauses or resumes
-  here too.
+  the end of Find's search box is the same pause.
 - Each saved drive shows its last check state, including offline or incomplete
   checks. An offline drive is never treated as evidence that photos were deleted.
 
-**CLIP analysis**, directly below **Background work**, shows the number of distinct
+**CLIP analysis**, directly below **Metadata**, shows the number of distinct
 photos analysed and the total analyses. A photo counts once however many
 analyses it has (older cache entries may include original analyses, which
 Find no longer uses). Directory
@@ -691,6 +736,11 @@ Gemini.
   would run without you asking, which sends photos to Google. No such grading
   exists yet, so the switch changes nothing today. Asking for a critique or a
   search yourself needs only a saved key.
+- **Local models** are not controlled here: a note under the Gemini settings says
+  that Smart search and other local models stay on this computer, with a link
+  to Preferences > General > AI models, where they are set up. "Stays on this
+  computer" always means AI models; "sends photos to Google" always means
+  Gemini, and the two never share a switch.
 - **Gemini API key**: paste a key from Google AI Studio and choose **Save**.
   The system keychain keeps it. It is never shown again (the field shows
   **saved**), never written to Immage's settings and removed from support

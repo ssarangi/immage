@@ -12,6 +12,9 @@ mod library_ids;
 mod analysis_queue;
 mod search_reconcile;
 mod clip_models;
+mod packs;
+mod analysis_settings;
+mod pack_cmds;
 mod clip_text;
 mod clip_image;
 mod clip_infer;
@@ -294,6 +297,20 @@ fn main() {
             let events = app.handle().clone();
             engine_link.set_events(move |event| { let _ = events.emit("engine-state", event); });
             let clip_models = Arc::new(clip_models::Models::new(runtime.join("clip-models")));
+            // model packs (Preferences > General > AI models): CLIP is the first; the Smart search
+            // analysis switch is on only for a user who already had the model (analysis_settings.rs)
+            let packs = Arc::new(packs::PackManager::new(vec![clip_models.store()]));
+            clip_models.analysis_flag().store(
+                analysis_settings::load_smart_search(&app.state::<settings::Settings>(), clip_models.installed()),
+                std::sync::atomic::Ordering::Release);
+            {
+                let events = app.handle().clone();
+                packs.set_events(Arc::new(move |event| match event {
+                    packs::PackEvent::State(info) => { let _ = events.emit("pack-state", info); }
+                    packs::PackEvent::Progress(progress) => { let _ = events.emit("pack-progress", progress); }
+                }));
+            }
+            app.manage(pack_cmds::AiState { packs, smart_search: clip_models.analysis_flag() });
             let search_analysis = search_analysis::start(search_cache.clone(), clip_models.clone(), analysis_queue.clone(), engine.tagged(), frame_output.clone(), runtime.clone());
             app.manage(AppState {
                 search_analysis,
@@ -369,6 +386,7 @@ fn main() {
             _app.state::<AppState>().analysis_queue.pause(true);
             _app.state::<AppState>().analysis_queue.cancel();
             _app.state::<AppState>().clip_models.cancel();
+            _app.state::<pack_cmds::AiState>().packs.cancel_all();
         }
         #[cfg(target_os = "macos")]
         if let tauri::RunEvent::Opened { urls } = &_event {

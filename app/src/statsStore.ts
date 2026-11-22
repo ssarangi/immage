@@ -53,7 +53,7 @@ export interface StatsData {
 }
 
 /** Sections S1 asks for; the next ones are added here as their charts arrive. */
-export const SECTIONS_NOW: StatsSection[] = ["overview", "cameras", "lenses"];
+export const SECTIONS_NOW: StatsSection[] = ["overview", "cameras", "lenses", "exposure", "time"];
 
 const DIRTY_DELAY = 1000;
 const POLL = 2000;

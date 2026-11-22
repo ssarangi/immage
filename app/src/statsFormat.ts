@@ -5,6 +5,7 @@
 // counts, months and percentages follow the language (Intl), everything else is a catalog key.
 import { formatDate, formatNumber, t } from "./i18n";
 import { yearRuns } from "./statsMath";
+import { placeText } from "./stats/placesGeometry";
 import type { Chip } from "./statsModel";
 import { FOCAL_BUCKETS, type ColorLabel, type StatsResponse } from "./statsTypes";
 
@@ -57,7 +58,7 @@ export function chipText(chip: Chip, defs?: StatsResponse["defs"]): ChipText {
     case "makers": return { kind: t("stats.dim.maker"), text: String(v) };
     case "lenses": return { kind: t("stats.dim.lens"), text: String(v) };
     case "labels": return { kind: t("stats.dim.label"), text: t(`stats.label.${LABEL_NAMES[v as ColorLabel] ?? "red"}`) };
-    case "place": return { kind: t("stats.dim.place"), text: String(v) };
+    case "place": return { kind: t("stats.dim.place"), text: placeText(String(v)) };
     case "fileTypes": return { kind: t("stats.dim.type"), text: String(v) };
     case "aspect": return { kind: t("stats.dim.aspect"), text: String(v) };
     default: return { kind: String(chip.dim), text: String(v) };

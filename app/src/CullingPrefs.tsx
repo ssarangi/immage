@@ -14,7 +14,7 @@ const LABEL_KEYS = ["library.culling.red", "library.culling.yellow", "library.cu
 
 // Preferences > Culling: AI grading with Google Gemini. The key field is
 // write-only; once saved the page only learns that a key exists.
-export function CullingPrefs() {
+export function CullingPrefs({ onGoTo }: { onGoTo?: (tab: "general", card?: string) => void } = {}) {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [keychainError, setKeychainError] = useState(false);
   const [enabled, setEnabled] = useState(loadAiGrading);
@@ -109,6 +109,8 @@ export function CullingPrefs() {
         </div>
       </PrefRow>
       {message && <div role="status" className={`prefs-status ${message.error ? "warn" : "ok"}`}>{message.text}</div>}
+      <p className="pref-hint culling-ai-note">{t("culling.aiNote")}{" "}
+        <button type="button" className="pack-link" onClick={() => onGoTo?.("general", "ai-models")}>{t("culling.aiNoteLink")}</button></p>
     </PrefCard>
     <PrefCard title={t("culling.card.defaults")}>
       <PrefRow label={t("culling.def.shoot")} hint={t("culling.def.hint")}>

@@ -22,7 +22,7 @@ registerHooks({
  },
  load(url,ctx,next){if(url!==source)return next(url,ctx);return {format:'module',source:transformSync(fileURLToPath(url),readFileSync(fileURLToPath(url),'utf8'),{jsx:{runtime:'automatic'}}).code,shortCircuit:true};}
 });
-const {SearchPrefs,ClipPrefs}=await import(source);
+const {SearchPrefs}=await import(source);
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(Comp=SearchPrefs){
  const calls=[],slots=[],effects=[];let index=0,mounted=false;
@@ -39,14 +39,10 @@ function fixture(Comp=SearchPrefs){
 }
 function nodes(tree){if(Array.isArray(tree))return tree.flatMap(nodes);if(!tree||typeof tree!=='object')return [];return [tree,...nodes(tree.props?.children)];}
 function button(f,label){const result=nodes(f.render()).find(n=>n.type==='button'&&JSON.stringify(n.props.children).includes(label));assert.ok(result,label);return result.props;}
-test('mount only polls status; model download requires the explicit button',async()=>{
- const f=fixture(ClipPrefs);try{await f.mount();assert.deepEqual(f.calls,[['status']]);button(f,'Download or repair').onClick();await tick();assert.ok(f.calls.some(c=>c[0]==='download'&&c[1]===true));assert.equal(f.calls.some(c=>c[0]==='probe'),false);}finally{f.cleanup();}
+test('mount only polls status and the cache card has no model download or pause (they moved to AI models)',async()=>{
+ const f=fixture();try{await f.mount();assert.deepEqual(f.calls,[['status']]);const labels=nodes(f.render()).filter(n=>n.type==='button').map(n=>JSON.stringify(n.props.children));
+  for(const gone of ['Download','Pause','Resume','Check'])assert.equal(labels.some(l=>l.includes(gone)),false,gone);}finally{f.cleanup();}
 });
-test('clear and rebuild remain distinct, and remembered pause gates the CPU check',async()=>{
- const f=fixture();try{await f.mount();button(f,'Clear').onClick();await tick();button(f,'Rebuild').onClick();await tick();assert.deepEqual(f.calls.filter(c=>c[0]==='clear'),[['clear',false],['clear',true]]);button(f,'Pause').onClick();await tick();assert.ok(f.calls.some(c=>c[0]==='pause'&&c[1]===true));button(f,'Resume').onClick();await tick();assert.ok(f.calls.some(c=>c[0]==='pause'&&c[1]===false));}finally{f.cleanup();}
- const paused=fixture(ClipPrefs);paused.status.queue.paused=true;try{await paused.mount();assert.equal(button(paused,'Check').disabled,true);}finally{paused.cleanup();}
- const c=fixture(ClipPrefs);try{await c.mount();button(c,'Check').onClick();await tick();assert.ok(c.calls.some(x=>x[0]==='probe'));assert.ok(nodes(c.render()).some(n=>n.type==='row'&&n.props.summary?.includes('512 values')));}finally{c.cleanup();}
-});
-test('download errors are visible and do not start inference',async()=>{
- const f=fixture(ClipPrefs);f.commands.searchModelDownload=async()=>{throw Error('download failed');};try{await f.mount();button(f,'Download or repair').onClick();await tick();assert.ok(nodes(f.render()).some(n=>n.props?.role==='alert'&&String(n.props.children).includes('download failed')));assert.equal(f.calls.some(c=>c[0]==='probe'),false);}finally{f.cleanup();}
+test('clear and rebuild remain distinct',async()=>{
+ const f=fixture();try{await f.mount();button(f,'Clear').onClick();await tick();button(f,'Rebuild').onClick();await tick();assert.deepEqual(f.calls.filter(c=>c[0]==='clear'),[['clear',false],['clear',true]]);}finally{f.cleanup();}
 });

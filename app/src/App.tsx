@@ -6567,7 +6567,7 @@ export default function App() {
     <FindPanel state={find} onChange={changeFind} images={images} immichAvailable={!!immichBase}
               smart={smartAvailable(clipReady, !!immichBase)}
               clipTip={clipTipVisible(clipKnown, clipReady, clipTipGone) ? {
-                onSetUp: () => { setPrefsCard("local-search"); setPrefsOpen("general"); },
+                onSetUp: () => { setPrefsCard("ai-models"); setPrefsOpen("general"); },
                 onDismiss: () => { setClipTipGone(true); try { settings.set("immage.findClipTipDismissed", "1"); } catch { /* kept for this session */ } },
               } : undefined}
               count={immich?.busy ? null : cells.length} busy={!!immich?.busy}

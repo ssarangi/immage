@@ -1180,7 +1180,7 @@ fn benchmark_300k_load() {
 // ---------------------------------------------------------------- harness fixtures
 
 fn fixture_requests(idx: &Index, library: &Library) -> Vec<StatsRequest> {
-    let sections = vec![StatsSection::Overview, StatsSection::Cameras, StatsSection::Lenses];
+    let sections = vec![StatsSection::Overview, StatsSection::Cameras, StatsSection::Lenses, StatsSection::Exposure, StatsSection::Time];
     let req = |scope: StatsScope, filter: StatsFilter| StatsRequest { scope, filter, sections: sections.clone(), year_mode: None, etag: None, places: None };
     let lib = StatsScope::Library;
     let base = f();
@@ -1230,6 +1230,100 @@ fn fixture_requests(idx: &Index, library: &Library) -> Vec<StatsRequest> {
     out
 }
 
+/// The Places section's recorded replies: the map's cells at the zooms the harness shows (the whole world,
+/// `bbox` absent: the harness cannot know what the viewer pans to, so the page draws what is in view), with and
+/// without the filters the page applies, one `stats_place` reply for every big cell, and the three main
+/// sections under a place filter. Entries with a `place` key are `stats_place` calls.
+fn place_fixtures(idx: &Index, library: &Library, handle: &dyn Fn(&str) -> String) -> Vec<serde_json::Value> {
+    let photos = Photos { index: idx, id: handle };
+    let lib = StatsScope::Library;
+    let base = f();
+    let scoped = resolve_scope(idx, &lib, library).unwrap();
+    let reply_of = |request: &StatsRequest, n: usize| {
+        let scoped = resolve_scope(idx, &request.scope, library).unwrap();
+        let q = Query::new(idx, &scoped, &request.filter);
+        let s = snapshot(&q, &photos, &Wanted { sections: &request.sections, places: request.places.clone() });
+        let (indexed, total, _) = scope_counts(idx, &scoped);
+        let reply = StatsResponse {
+            etag: format!("fixture-places-{n}"),
+            generated_at: "2026-11-21T00:00:00+00:00".into(),
+            coverage: Coverage { indexed, total: Some(total), pending: 0, roots: 1, pending_roots: vec![], paused: false, max_age_sec: 0, state: CoverageState::Ready },
+            defs: defs(),
+            overview: s.overview,
+            cameras: s.cameras,
+            lenses: s.lenses,
+            exposure: s.exposure,
+            time: s.time,
+            places: s.places,
+            top: s.top,
+        };
+        serde_json::json!({ "request": request, "reply": StatsReply::Full(Box::new(reply)) })
+    };
+    let map = |filter: StatsFilter, zoom: u8, heat: bool| StatsRequest {
+        scope: lib.clone(),
+        filter,
+        sections: vec![StatsSection::Places],
+        year_mode: None,
+        etag: None,
+        places: Some(PlacesView { zoom, bbox: None, heat: heat.then_some(true) }),
+    };
+    let mut out = vec![];
+    let (top_maker, _) = {
+        let q = Query::new(idx, &scoped, &base);
+        let s = snapshot(&q, &photos, &Wanted { sections: &[StatsSection::Cameras], places: None });
+        (s.cameras.unwrap().makers[0].maker.clone(), 0)
+    };
+    let filters = [
+        base.clone(),
+        StatsFilter { only_top: true, ..base.clone() },
+        StatsFilter { makers: Some(vec![top_maker]), ..base.clone() },
+        StatsFilter { focal_buckets: Some(vec![FocalBucketId::Normal]), ..base.clone() },
+        StatsFilter { months: Some(vec![10]), ..base.clone() },
+        StatsFilter { makers: Some(vec!["Nobody".into()]), ..base.clone() },
+    ];
+    for zoom in 1u8..=12 {
+        out.push(reply_of(&map(base.clone(), zoom, zoom == 4 || zoom == 6), out.len()));
+        out.push(reply_of(&map(base.clone(), zoom, true), out.len()));
+    }
+    for filter in &filters[1..] {
+        for zoom in [2u8, 4, 6] {
+            out.push(reply_of(&map(filter.clone(), zoom, false), out.len()));
+        }
+    }
+    // the selection: details of every cell at the low zooms and of the 12 biggest at the others
+    let mut keys: Vec<String> = vec![];
+    for zoom in 1u8..=12 {
+        let q = Query::new(idx, &scoped, &base);
+        let s = snapshot(&q, &photos, &Wanted { sections: &[StatsSection::Places], places: Some(PlacesView { zoom, bbox: None, heat: None }) });
+        let pl = s.places.unwrap();
+        let take = if zoom <= 3 { pl.cells.len() } else { 12 };
+        for c in pl.cells.iter().take(take).chain(pl.top.iter()) {
+            if !keys.contains(&c.key) {
+                keys.push(c.key.clone());
+            }
+        }
+    }
+    for filter in [&filters[0], &filters[1]] {
+        for key in &keys {
+            let q = Query::new(idx, &scoped, filter);
+            if let Ok(d) = place_detail(&q, &photos, key) {
+                out.push(serde_json::json!({ "place": { "key": key, "filter": filter, "scope": lib }, "reply": d }));
+            }
+        }
+    }
+    // the three main sections under a place filter, for the three biggest cells at zooms 3 to 5
+    for zoom in [3u8, 4, 5] {
+        let q = Query::new(idx, &scoped, &base);
+        let pl = snapshot(&q, &photos, &Wanted { sections: &[StatsSection::Places], places: Some(PlacesView { zoom, bbox: None, heat: None }) }).places.unwrap();
+        for c in pl.top.iter().take(3) {
+            let sections = vec![StatsSection::Overview, StatsSection::Cameras, StatsSection::Lenses, StatsSection::Exposure, StatsSection::Time];
+            let request = StatsRequest { scope: lib.clone(), filter: StatsFilter { place: Some(vec![c.key.clone()]), ..base.clone() }, sections, year_mode: None, etag: None, places: None };
+            out.push(reply_of(&request, out.len()));
+        }
+    }
+    out
+}
+
 /// Rewrites `app/harness/stats-fixtures/{gt,big}.json` with the real aggregation's replies over the
 /// ground-truth library (`gt`, 400 photos) and over 117 copies of it (`big`, about 47,000 photos): the
 /// Statistics harness serves these instead of a hand-written mock.
@@ -1267,7 +1361,7 @@ fn dump_harness_fixtures() {
         for request in fixture_requests(&idx, &library) {
             let scoped = resolve_scope(&idx, &request.scope, &library).unwrap();
             let q = Query::new(&idx, &scoped, &request.filter);
-            let s = snapshot(&q, &Photos { index: &idx, id: &handle }, &Wanted { sections: &request.sections, places: None });
+            let s = snapshot(&q, &Photos { index: &idx, id: &handle }, &Wanted { sections: &request.sections, places: request.places.clone() });
             let (indexed, total, _) = scope_counts(&idx, &scoped);
             let reply = StatsResponse {
                 etag: format!("fixture-{}", replies.len()),
@@ -1284,6 +1378,7 @@ fn dump_harness_fixtures() {
             };
             replies.push(serde_json::json!({ "request": request, "reply": StatsReply::Full(Box::new(reply)) }));
         }
+        replies.extend(place_fixtures(&idx, &library, &handle));
         let path = out_dir.join(format!("{name}.json"));
         std::fs::write(&path, serde_json::to_string(&replies).unwrap()).unwrap();
         println!("{name}: {} replies, {} photos, {} KB", replies.len(), idx.rows.len(), std::fs::metadata(&path).unwrap().len() / 1024);

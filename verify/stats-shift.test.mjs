@@ -18,7 +18,7 @@ const skip = !existsSync(CHROME) ? 'Google Chrome is not installed' : !(await up
 function run(query, w = 1440, h = 900) {
   const dir = mkdtempSync(join(tmpdir(), 'stats-shift-'));
   const dom = execFileSync(CHROME, ['--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', `--user-data-dir=${dir}`,
-    '--virtual-time-budget=30000', `--window-size=${w},${h}`, '--dump-dom', `${BASE}?${query}&shift=1`], { encoding: 'utf8', timeout: 90000, maxBuffer: 64 << 20 });
+    '--virtual-time-budget=60000', `--window-size=${w},${h}`, '--dump-dom', `${BASE}?${query}&shift=1`], { encoding: 'utf8', timeout: 90000, maxBuffer: 64 << 20 });
   const m = dom.match(/<pre id="report"[^>]*>([\s\S]*?)<\/pre>/);
   assert.ok(m && m[1].trim(), `no report for ${query}`);
   return JSON.parse(m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&').replaceAll('&lt;', '<').replaceAll('&gt;', '>'));
@@ -29,6 +29,10 @@ for (const [name, query, w, h] of [
   ['ready, light', 'state=ready&theme=light', 1440, 900],
   ['ready, filtered', 'state=ready&filter=focal:normal,month:10,maker:Canon', 1440, 900],
   ['ready, wide', 'state=ready', 2560, 1528],
+  ['ready, slow answers', 'state=ready&delay=250', 1440, 900],
+  ['ready, tiles offline', 'state=ready&tiles=offline', 1440, 900],
+  ['ready, a map area selected', 'state=ready&filter=place:021230', 1440, 900],
+  ['ready, light, no GPS', 'state=ready&theme=light&gps=none', 1440, 900],
   ['loading', 'state=loading', 1440, 900],
   ['empty result', 'state=empty', 1440, 900],
   ['error', 'state=error', 1440, 900],
@@ -39,6 +43,7 @@ for (const [name, query, w, h] of [
     assert.ok(r.interactions > (query.includes('firstrun') ? 1 : 5), `${r.interactions} interactions measured`);
     assert.equal(r.maxDelta, 0, `shift on ${JSON.stringify(r.failures?.[0])}`);
     assert.equal(r.click.max, 0, `a click moved ${r.click.worst}`);
+    assert.equal(r.map.max, 0, `a click on a map bubble moved ${r.map.worst}`);
   });
 }
 
@@ -46,4 +51,9 @@ for (const [name, query, w, h] of [
 test('negative control: a style that moves layout on hover fails the measurement', { skip }, () => {
   const r = run('state=ready&bad=1');
   assert.ok(r.maxDelta > 0, 'the measurement did not notice a hover that moves the card');
+});
+
+test('negative control: a hover that moves the Exposure and Time charts fails the measurement', { skip }, () => {
+  const r = run('state=ready&bad=2');
+  assert.ok(r.maxDelta > 0, 'the measurement did not notice a ring, bar or month that grows on hover');
 });

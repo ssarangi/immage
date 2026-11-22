@@ -1,0 +1,92 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+   Copyright (C) 2026 the Immage authors */
+
+/* The Exposure and Time sections: aperture rings, shutter bars, ISO ladder, the 24-hour clock, seasonality.
+   Imported by their components; the tokens (--stat-*, --card, --inset, ...) come from statistics.css.
+   Same rule as everywhere: a state changes colour, border colour, background, opacity or a glow; every mark has a
+   permanent 1 px border and a fixed box, so hover, focus and selection never move anything. */
+
+.st-grid-exposure { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
+.st-grid-time { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); }
+@media (max-width: 979px) { .st-grid-exposure, .st-grid-time { grid-template-columns: minmax(0, 1fr); } }
+.st-h3-gap { margin-top: 18px !important; }
+
+/* ---- aperture rings ---- */
+.st-iris { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+@media (max-width: 979px) { .st-iris { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.st-iris-cell { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px 8px; border-radius: 10px; border: 1px solid transparent;
+  height: 182px; overflow: hidden; background: transparent; min-width: 0; }
+button.st-iris-cell:hover { background: var(--inset); }
+.st-iris-cell[aria-pressed="true"] { border-color: color-mix(in srgb, var(--c) 60%, transparent); background: color-mix(in srgb, var(--c) 8%, transparent); }
+.st-iris-cell svg { flex: none; }
+.st-iris-arc { transition: filter .15s; }
+.st-iris-cell[aria-pressed="true"] .st-iris-arc { filter: drop-shadow(var(--stat-glow) color-mix(in srgb, var(--c) var(--stat-glow-a), transparent)); }
+.st-iris-l1 { font: 600 var(--fs-small)/16px var(--mono); color: var(--c); white-space: nowrap; }
+.st-iris-l2 { font: 500 var(--fs-micro)/14px var(--mono); color: var(--text-3); white-space: nowrap; }
+.st-iris-l3 { font-size: var(--fs-micro); line-height: 14px; color: var(--text-2); white-space: nowrap; }
+.st-iris-sk { align-items: center; }
+.st-sk-disc { width: 100px; height: 100px; border-radius: 50%; }
+.st-iris-sk .st-sk-line { width: 70%; height: 12px; margin: 2px 0; } .st-iris-sk .st-sk-line.short { width: 46%; }
+
+/* ---- shutter regimes ---- */
+.st-shutter { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; height: 300px; }
+.st-shutter-col { display: grid; grid-template-rows: minmax(0, 1fr) 17px 14px; height: 100%; gap: 4px; justify-items: center; text-align: center; border-radius: 8px;
+  padding: 0 2px 2px; border: 1px solid transparent; min-width: 0; overflow: hidden; }
+button.st-shutter-col:hover { background: var(--inset); }
+.st-shutter-col[aria-pressed="true"] { border-color: color-mix(in srgb, var(--c) 60%, transparent); background: color-mix(in srgb, var(--c) 8%, transparent); }
+.st-shutter-bar { width: 100%; max-width: 58px; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; padding-top: 22px; }
+.st-shutter-bar > i { display: block; width: 100%; position: relative; border-radius: 7px 7px 3px 3px; flex: none;
+  background: linear-gradient(180deg, var(--c), color-mix(in srgb, var(--c) 45%, var(--track))); }
+.st-shutter-bar > i.st-sk { border-radius: 7px 7px 3px 3px; background: linear-gradient(90deg, var(--inset) 0%, var(--hover) 50%, var(--inset) 100%); background-size: 200% 100%; }
+.st-shutter-bar b { position: absolute; top: -19px; left: 50%; transform: translateX(-50%); font: 600 var(--fs-small)/16px var(--mono); color: var(--text); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.st-shutter-nm { font-size: var(--fs-small); line-height: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.st-shutter-rg { font: 500 var(--fs-micro)/14px var(--mono); color: var(--text-3); white-space: nowrap; }
+.st-shutter-sk .st-sk-line { width: 60%; margin: 0; align-self: center; }
+
+/* ---- ISO ladder ---- */
+.st-iso { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; height: 96px; margin-top: 6px; }
+.st-iso-col { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 3px; height: 100%; border-radius: 6px; border: 1px solid transparent; padding: 0 1px 2px; min-width: 0; }
+button.st-iso-col:hover { background: var(--inset); }
+.st-iso-col[aria-pressed="true"] { border-color: color-mix(in srgb, var(--stat-violet) 60%, transparent); background: color-mix(in srgb, var(--stat-violet) 8%, transparent); }
+.st-iso-col > i { display: block; width: 100%; border-radius: 4px 4px 2px 2px; flex: none; background: linear-gradient(180deg, var(--stat-violet), color-mix(in srgb, var(--stat-violet) 40%, var(--track))); }
+.st-iso-col > i.st-sk { background: linear-gradient(90deg, var(--inset) 0%, var(--hover) 50%, var(--inset) 100%); background-size: 200% 100%; }
+.st-iso-col > span { font: 500 var(--fs-micro)/14px var(--mono); color: var(--text-3); }
+
+/* ---- 24-hour clock ---- */
+.st-clock-wrap { display: grid; place-items: center; }
+.st-clock { width: 100%; max-height: 440px; margin: 0 auto; }
+.st-clock-ring { fill: none; stroke: var(--border); stroke-dasharray: 2 4; opacity: .7; }
+.stats-view .st-clock text.st-clock-big { font: 600 22px var(--mono); fill: var(--text); }
+.st-hour .st-wedge-fill { fill-opacity: .8; stroke: transparent; stroke-width: 1.5; transition: fill-opacity .15s; }
+.st-hour:hover .st-wedge-fill { fill-opacity: 1; }
+.st-hour[aria-pressed="true"] .st-wedge-fill { fill-opacity: 1; stroke: var(--text); }
+.st-hour.dim:hover { opacity: .7; }
+.st-clock .st-fx { stroke-width: 2; }
+.st-clock-c { opacity: 0; pointer-events: none; }
+.st-hour:hover .st-clock-c, .st-hour:focus-visible .st-clock-c { opacity: 1; }
+.st-clock-peak { pointer-events: none; }
+.st-clock:has(.st-hour:hover, .st-hour:focus-visible) .st-clock-peak { opacity: 0; }
+.st-sk-wedge { fill: var(--inset); opacity: .8; }
+.st-clock-key { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; margin-top: 6px; font-size: var(--fs-small); color: var(--text-2); min-height: 22px; }
+.st-clock-key span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---- seasonality ---- */
+.st-months { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 7px; height: 236px; }
+.st-month { display: grid; grid-template-rows: minmax(0, 1fr) 17px; height: 100%; justify-items: center; gap: 6px; border-radius: 8px; border: 1px solid transparent; padding: 0 1px 2px; min-width: 0; }
+button.st-month:hover { background: var(--inset); }
+.st-month[aria-pressed="true"] { border-color: color-mix(in srgb, var(--stat-amber) 60%, transparent); background: color-mix(in srgb, var(--stat-amber) 7%, transparent); }
+.st-month-col { display: block; width: 100%; max-width: 34px; position: relative; align-self: end; }
+.st-month-col > i { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 6px 6px 2px 2px; display: block; }
+.st-month-col > i.all { background: color-mix(in srgb, var(--stat-cyan) 36%, var(--track)); }
+.st-month-col > i.top { background: linear-gradient(180deg, var(--stat-cyan), color-mix(in srgb, var(--stat-cyan) 55%, var(--track))); }
+.st-month[aria-pressed="true"] .st-month-col > i.top { background: linear-gradient(180deg, var(--stat-amber), color-mix(in srgb, var(--stat-amber) 55%, var(--track))); }
+.st-month-col .v { position: absolute; left: 50%; transform: translateX(-50%); top: -17px; font: 600 var(--fs-micro)/14px var(--mono); color: var(--text-2); white-space: nowrap; }
+.st-month .m { font: 500 var(--fs-small)/17px var(--mono); color: var(--text-2); }
+.st-month-sk .st-month-col > i.st-sk { border-radius: 6px 6px 2px 2px; }
+.st-month-sk .st-sk-line { width: 70%; margin: 2px 0; }
+.st-legend-note i.all { background: color-mix(in srgb, var(--stat-cyan) 36%, var(--track)); }
+.st-legend-note i.top { background: var(--stat-cyan); }
+
+@media (prefers-reduced-motion: reduce) {
+  .st-iris-arc, .st-hour .st-wedge-fill { transition: none !important; }
+}

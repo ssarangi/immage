@@ -28,6 +28,8 @@ use std::{
 /// held for memory work only, with no other lock taken inside it.
 struct Progress {
     installed: AtomicBool,
+    /// Preferences > AI models > Analyse photos for Smart search
+    enabled: AtomicBool,
     pending: AtomicI64,
     running: AtomicUsize,
     last_work_ms: AtomicU64,
@@ -38,6 +40,7 @@ impl Progress {
     fn new() -> Self {
         Progress {
             installed: AtomicBool::new(false),
+            enabled: AtomicBool::new(false),
             pending: AtomicI64::new(-1),
             running: AtomicUsize::new(0),
             last_work_ms: AtomicU64::new(0),
@@ -86,6 +89,8 @@ const AVAILABILITY_PAGE: u32 = 64;
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
 pub struct AnalysisProgress {
     pub installed: bool,
+    /// The analysis switch is on; nothing is analysed while it is off.
+    pub enabled: bool,
     pub pending: Option<u32>,
     pub running: u32,
     pub active: bool,
@@ -131,6 +136,7 @@ impl Control {
         let pending = p.pending.load(Ordering::Acquire);
         AnalysisProgress {
             installed: p.installed.load(Ordering::Acquire),
+            enabled: p.enabled.load(Ordering::Acquire),
             pending: u32::try_from(pending).ok(),
             running,
             active: running > 0 || (last != 0 && now.saturating_sub(last) < ACTIVE_FOR_MS),
@@ -187,7 +193,9 @@ pub fn start(
                 let installed = service.models.installed();
                 let p = &service.progress;
                 p.installed.store(installed, Ordering::Release);
-                if installed {
+                let enabled = service.models.analysis_enabled();
+                p.enabled.store(enabled, Ordering::Release);
+                if installed && enabled {
                     let availability_changed = availability.collect(p);
                     if last_scan.is_none_or(|t| t.elapsed() >= SCAN_EVERY) {
                         last_scan = Some(Instant::now());

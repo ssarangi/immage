@@ -1,0 +1,129 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+   Copyright (C) 2026 the Immage authors */
+
+/* The Statistics Places section: the map and the selected area's panel. Imported by the components, so it loads with
+   the Statistics chunk. Same rule as statistics.css: hover, focus and selection change colour, stroke, opacity or
+   shadow only; every box has its size from the start (the card, the stage, the panel's slots, the chip rows). */
+
+.st-places {
+  /* the dark treatment is a filter over the tile pane only, so bubbles and panel keep the app's colours; a light
+     scheme keeps the tiles light and only calms them */
+  --map-bg: #141517;
+  --map-filter: invert(1) hue-rotate(180deg) grayscale(.9) brightness(.62) contrast(.9);
+  --pl-lbl: #06201f;
+}
+:root[data-scheme="light"] .st-places { --map-bg: #d5d9db; --map-filter: grayscale(.7) contrast(.95); --pl-lbl: #fff; }
+
+.st-pl { display: grid; grid-template-columns: minmax(0, 1fr) 340px; height: clamp(520px, 40vw, 680px); background: var(--card);
+  border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; }
+@media (min-width: 1800px) { .st-pl { grid-template-columns: minmax(0, 1fr) 420px; } }
+.st-pl-stage { position: relative; min-width: 0; min-height: 0; }
+.st-pl-map { position: absolute; inset: 0; isolation: isolate; background: var(--map-bg); overflow: hidden; }
+.st-pl-leaflet.leaflet-container { position: absolute; inset: 0; background: var(--map-bg); font: inherit; outline: none; cursor: grab; }
+.st-pl-leaflet.leaflet-container:active { cursor: grabbing; }
+.st-pl-leaflet.leaflet-container:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: 0; }
+.st-pl-leaflet .leaflet-tile-pane { filter: var(--map-filter); }
+.st-pl-leaflet .leaflet-tile { max-width: none; }
+.st-pl-wait { display: grid; place-items: center; }
+.st-pl-sk { position: absolute; inset: 0; border-radius: 0; opacity: .5; }
+.st-pl-heat { position: absolute; pointer-events: none; }
+
+/* bubbles, the selected area's outline, the offline graticule: one SVG in a Leaflet pane */
+.stats-view .st-pl-svg { position: absolute; left: 0; top: 0; overflow: visible; max-width: none; pointer-events: none; } /* a width of 0 would switch rendering off */
+.st-pl-b { pointer-events: auto; cursor: pointer; outline: none; }
+.st-pl-b .dot { fill: color-mix(in srgb, var(--stat-cyan) 80%, transparent); stroke: var(--stat-cyan); stroke-width: 2; transition: fill .15s, stroke .15s;
+  filter: drop-shadow(var(--stat-glow) color-mix(in srgb, var(--stat-cyan) var(--stat-glow-a), transparent)); }
+.st-pl-b .ring { fill: none; stroke: transparent; stroke-width: 2; transition: stroke .15s; }
+.st-pl-b:hover .dot, .st-pl-b:focus-visible .dot { fill: color-mix(in srgb, var(--stat-cyan) 94%, transparent); }
+.st-pl-b:hover .ring { stroke: color-mix(in srgb, var(--stat-cyan) 55%, transparent); }
+.st-pl-b:focus-visible .ring { stroke: var(--focus); }
+.st-pl-b.merged .dot { stroke-dasharray: 5 3; }
+.st-pl-b.solo .dot { fill: color-mix(in srgb, var(--stat-green) 80%, transparent); stroke: var(--stat-green); stroke-width: 1.5; }
+.st-pl-b.heat .dot { fill: color-mix(in srgb, var(--stat-cyan) 55%, transparent); stroke-width: 1.5; filter: none; }
+.st-pl-b.on .dot { fill: color-mix(in srgb, var(--stat-amber) 88%, transparent); stroke: var(--stat-amber); stroke-dasharray: none;
+  filter: drop-shadow(var(--stat-glow) color-mix(in srgb, var(--stat-amber) var(--stat-glow-a), transparent)); }
+.st-pl-b.on .ring { stroke: var(--stat-amber); }
+.st-pl-b.holds .ring { stroke: color-mix(in srgb, var(--stat-amber) 80%, transparent); stroke-dasharray: 3 3; }
+.stats-view .st-pl-b .lbl { font: 600 12px var(--mono); fill: var(--pl-lbl); text-anchor: middle; pointer-events: none; letter-spacing: -.02em; }
+.st-pl-outline { fill: color-mix(in srgb, var(--stat-amber) 9%, transparent); stroke: var(--stat-amber); stroke-width: 1.5; stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke; pointer-events: none; }
+.st-pl-grid line { stroke: var(--text-3); stroke-opacity: .28; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.stats-view .st-pl-grid text { font: 500 10px var(--mono); fill: var(--text-3); }
+
+/* controls over the map */
+.st-pl-modes { position: absolute; left: 12px; top: 12px; z-index: 1000; }
+.st-pl-modes .st-seg { background: color-mix(in srgb, var(--card) 90%, transparent); border: 1px solid var(--border); backdrop-filter: blur(6px); }
+.st-pl-zoom { position: absolute; right: 12px; top: 12px; z-index: 1000; display: grid; background: color-mix(in srgb, var(--card) 90%, transparent);
+  border: 1px solid var(--border); border-radius: var(--radius-ctl); overflow: hidden; backdrop-filter: blur(6px); }
+.st-pl-zoom button { width: 32px; height: 32px; display: grid; place-items: center; font-size: 18px; line-height: 1; color: var(--text-2); }
+.st-pl-zoom button + button { border-top: 1px solid var(--border); }
+.st-pl-zoom button:hover:not(:disabled) { color: var(--text); background: var(--hover); }
+.st-pl-zoom button:disabled { opacity: .4; }
+.st-pl-zoom svg { width: 14px; height: 14px; }
+.stats-view .st-pl-zoom :focus-visible { outline-offset: -2px; border-radius: 0; }
+.st-pl-notes { position: absolute; left: 12px; right: 12px; bottom: 10px; z-index: 1000; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; pointer-events: none; }
+.st-pl-notes > * { pointer-events: auto; }
+.st-pl-offline { margin: 0; max-width: 360px; padding: 6px 9px; border-radius: 8px; font: 500 11px/1.45 var(--mono); color: var(--text-2);
+  background: color-mix(in srgb, var(--card) 88%, transparent); border: 1px solid var(--border); }
+.st-pl-offline .st-link { margin-left: 6px; font-size: 11px; }
+.st-pl-attr { margin: 0 0 0 auto; padding: 2px 6px; border-radius: 5px; font-size: 10px; line-height: 1.5; white-space: nowrap; color: var(--text-2);
+  background: color-mix(in srgb, var(--card) 82%, transparent); }
+.st-pl-attr button { text-decoration: underline; font-size: 10px; }
+.st-pl-attr button:hover { color: var(--text); }
+.st-pl-none { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 1000; display: flex; gap: 10px; align-items: center;
+  padding: 10px 14px; border-radius: 10px; background: var(--card); border: 1px solid var(--border); font-size: var(--fs-small); color: var(--text-2); white-space: nowrap; }
+
+/* the panel: boxes of fixed size, so a selection (or its numbers arriving) moves nothing */
+.st-pl-panel { display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 16px 16px 12px; border-left: 1px solid var(--border); background: var(--card); }
+.st-pl-main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+.st-pl-head { display: flex; justify-content: space-between; align-items: center; height: 24px; flex: none; }
+.st-eyebrow.amber { color: var(--stat-amber); }
+.st-pl-x { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; color: var(--text-2); }
+.st-pl-x svg { width: 12px; height: 12px; }
+.st-pl-x:hover:not(:disabled) { color: var(--text); background: var(--hover); }
+.st-pl-x:disabled { opacity: 0; pointer-events: none; }
+.st-pl-name { margin: 0; font: 400 30px/33px var(--serif); height: 33px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; letter-spacing: -.005em; }
+.st-pl-name .st-sk-title { width: 62%; height: 26px; }
+.st-pl-coords { margin: 0; height: 18px; font: 500 var(--fs-small)/18px var(--mono); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
+.st-pl-coords .st-sk-line { width: 48%; height: 12px; margin-top: 3px; }
+.st-pl-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; flex: none; }
+.st-pl-tiles > div { background: var(--inset); border-radius: 10px; padding: 0 10px; height: 62px; display: grid; align-content: center; gap: 3px; min-width: 0; }
+.st-pl-tiles b { font: 600 20px/24px var(--mono); letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; height: 24px; }
+.st-pl-tiles b .st-sk-num { width: 56px; height: 20px; margin-top: 2px; }
+.st-pl-tiles span { font: 600 var(--fs-micro)/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-pl-sum { margin: 0; flex: none; height: 4.35em; font-size: var(--fs-small); line-height: 1.45; color: var(--text-2); overflow: hidden; }
+.st-pl-sum b { color: var(--text); font-weight: 600; }
+.st-pl-sum .st-sk-line { height: 12px; margin-bottom: 8px; }
+.st-pl-photos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; flex: none; }
+.st-pl-photos .st-pc { border-radius: 8px; border: 0; } /* the slot beside it has no border: a ring by shadow keeps both the same height */
+.st-pl-photos .st-pc:hover, .st-pl-photos .st-pc:focus-within { box-shadow: 0 0 0 1px color-mix(in srgb, var(--stat-cyan) 70%, transparent); }
+.st-pl-photos .st-pc-meta { display: none; }
+.st-pl-photos .st-pc, .st-pl-slot { aspect-ratio: 3 / 2; }  /* the same rule for the card and its slot: identical heights to the pixel */
+.st-pl-photos .st-pc-main, .st-pl-photos .st-pc-im { height: 100%; aspect-ratio: auto; }
+.st-pl-photos .st-pc-win { right: 5px; bottom: 5px; max-width: calc(100% - 10px); }
+.st-pl-photos .st-pill { font-size: 9px; padding: 0 5px; letter-spacing: 0; }
+.st-pl-slot { display: block; border-radius: 8px; background: var(--inset); }
+.st-pl-act { display: flex; align-items: center; height: 32px; flex: none; }
+.st-pl-act .st-btn { flex: 1; height: 32px; font-size: var(--fs-body); }
+.st-pl-hint { display: grid; align-content: start; gap: 10px; flex: 1; min-height: 0; }
+.st-pl-hint p { margin: 0; color: var(--text-2); font-size: var(--fs-small); line-height: 1.5; }
+.st-pl-hint .st-pl-hintn { font: 500 var(--fs-small)/1.5 var(--mono); color: var(--text-3); }
+.st-pl-hint .st-pl-hintn b { color: var(--text); font-weight: 600; }
+.st-pl-hint .st-btn { justify-self: start; }
+.st-pl-jump { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; flex: none; height: 71px; padding-top: 10px; border-top: 1px solid var(--border); overflow: hidden; }
+.st-pl-chip { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--inset); font: 500 11px var(--mono); color: var(--text-2); white-space: nowrap; max-width: 100%; }
+.st-pl-chip span { color: var(--text-3); }
+.st-pl-chip:hover { border-color: color-mix(in srgb, var(--stat-cyan) 60%, transparent); color: var(--text); }
+.st-pl-chip[aria-pressed="true"] { border-color: var(--stat-amber); color: var(--text); background: color-mix(in srgb, var(--stat-amber) var(--stat-wash), var(--inset)); }
+.st-pl-foot { margin: 10px 0 0; min-height: 20px; font-size: var(--fs-small); color: var(--text-3); }
+.st-pl-empty { padding: 30px 22px; display: grid; gap: 6px; }
+
+@media (max-width: 979px) {
+  .st-pl { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .st-pl-stage { height: 420px; }
+  .st-pl-panel { height: 560px; border-left: 0; border-top: 1px solid var(--border); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-pl-b .dot, .st-pl-b .ring { transition: none; }
+}

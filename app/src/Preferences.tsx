@@ -11,7 +11,8 @@ import { keys } from "./keys";
 import { AGX_PROFILE_DEFAULT, PROFILE_GROUPS, PROFILE_OPTIONS } from "./manifest";
 import { ThemePrefs } from "./ThemePrefs";
 import { CachePrefs } from "./CachePrefs";
-import { SearchPrefs, ClipPrefs } from "./SearchPrefs";
+import { SearchPrefs } from "./SearchPrefs";
+import { AiModelsPrefs } from "./AiModelsPrefs";
 import { MapSearchPrefs } from "./MapSearchPrefs";
 import { Chevron, Collapse } from "./Collapse";
 import { ImmichPrefs } from "./ImmichPrefs";
@@ -549,6 +550,12 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
     const frame = requestAnimationFrame(() => document.querySelector(`[data-pref-card="${card}"]`)?.scrollIntoView({ block: "start" }));
     return () => cancelAnimationFrame(frame);
   }, []);
+  // a link between Preferences pages (AI models <-> Culling): the page, then its card scrolled into view
+  const goTo = (to: Tab, to_card?: string) => {
+    setTab(to);
+    requestAnimationFrame(() => requestAnimationFrame(() =>
+      document.querySelector(to_card ? `[data-pref-card="${to_card}"]` : ".prefs-scroll")?.scrollIntoView({ block: "start" })));
+  };
   const [chosenLanguage, setChosenLanguage] = useState(loadLanguage);
   const [languageBusy, setLanguageBusy] = useState(false);
   const [languageError, setLanguageError] = useState("");
@@ -789,7 +796,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
             {tab === "modules" && <ModulePrefs focusMode={focusMode} />}
             {tab === "immich" && <ImmichPrefs />}
             {tab === "morfphoto" && <MorfPhotoPrefs />}
-            {tab === "culling" && <CullingPrefs />}
+            {tab === "culling" && <CullingPrefs onGoTo={goTo} />}
             {tab === "plugins" && <PluginPrefs plugins={plugins} onPlugins={onPlugins} />}
             {tab === "general" && (
               <>
@@ -907,7 +914,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                   ><PrefSwitch checked={stackPairs} onChange={onStackPairs} />
                 </PrefRow>
               </PrefCard>
-              <ClipPrefs />
+              <AiModelsPrefs onGoTo={goTo} />
               <PrefCard title={t("prefs.card.startup")}>
                 <PrefRow id="Quick start guide" label={t("prefs.row.tour")} hint={t("prefs.row.tour.hint")}>
                   <PrefSwitch checked={showTour} onChange={(on) => { setShowTour(on); setTourSeen(!on); }} />

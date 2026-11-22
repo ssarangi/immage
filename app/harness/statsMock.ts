@@ -10,10 +10,13 @@
 // Only the coverage block is adjusted per ?cov= (indexing, paused, ready), as it is runtime state.
 import type { StatsApi } from "../src/statsApi";
 import { normalizeReply } from "../src/statsNormalize";
-import type { Coverage, PhotoRef, StatsFilter, StatsRequest, StatsResponse } from "../src/statsTypes";
+import { harnessTile } from "./mapTiles";
+import { normalizePlace } from "../src/statsNormalize";
+import type { Coverage, PhotoRef, PlaceDetail, StatsFilter, StatsRequest, StatsResponse, StatsScope } from "../src/statsTypes";
 import type * as B from "../src/bindings";
 
-type Fixture = { request: unknown; reply: B.StatsReply };
+// a recorded stats_query (`request`) or stats_place (`place`) call and its reply
+type Fixture = { request?: unknown; place?: { key: string; filter: unknown; scope: unknown }; reply: B.StatsReply | B.PlaceDetail };
 
 const files = import.meta.glob("./stats-fixtures/*.json", { import: "default" }) as Record<string, () => Promise<Fixture[]>>;
 const thumbs = import.meta.glob("./stats-photos/*.jpg", { eager: true, query: "?url", import: "default" }) as Record<string, string>;
@@ -43,14 +46,18 @@ export function canonical(v: unknown): string {
   return JSON.stringify(r);
 }
 
-export interface MockOptions { lib: string; state: string; cov: string; delayMs: number }
+export interface MockOptions { lib: string; state: string; cov: string; delayMs: number; /** none: no photo has a position */ gps?: string }
 
-const cache = new Map<string, Promise<Map<string, B.StatsReply>>>();
+/** a filter as canonical text with its place selection left out (the map and the panel ignore it, see the contract) */
+const filterKey = (filter: unknown) => { const { place: _place, ...rest } = (filter ?? {}) as Record<string, unknown>; void _place; return canonical({ filter: rest, sections: [] }); };
+const detailKey = (key: string, filter: unknown) => `${key}|${filterKey(filter)}`;
+
+const cache = new Map<string, Promise<Map<string, B.StatsReply | B.PlaceDetail>>>();
 function load(lib: string) {
   let p = cache.get(lib);
   if (!p) {
     const f = files[`./stats-fixtures/${lib}.json`];
-    p = f ? f().then((list) => new Map(list.map((e) => [canonical(e.request), e.reply]))) : Promise.reject(new Error(`no fixtures for library "${lib}"`));
+    p = f ? f().then((list) => new Map(list.map((e) => [e.place ? detailKey(e.place.key, e.place.filter) : canonical(e.request), e.reply]))) : Promise.reject(new Error(`no fixtures for library "${lib}"`));
     cache.set(lib, p);
   }
   return p;
@@ -71,11 +78,26 @@ export function createMockApi(o: MockOptions): StatsApi & { lastGrid: { ids: str
   };
   const answer = async (req: StatsRequest): Promise<StatsResponse> => {
     const fixtures = await load(o.lib);
-    const key = canonical(req);
-    const raw = fixtures.get(key);
+    let key = canonical(req);
+    let raw = fixtures.get(key) as B.StatsReply | undefined;
+    if (!raw && req.places) {
+      // the map's viewport: the recorded replies are for the whole world at each zoom (a box is ignored; the page draws what is in view)
+      const { place: _place, ...filter } = req.filter;
+      void _place;
+      const ask = (zoom: number, heat: boolean) => canonical({ ...req, filter, places: { zoom, heat } });
+      const zoom = Math.max(1, Math.min(12, req.places.zoom));
+      key = ask(zoom, !!req.places.heat);
+      raw = (fixtures.get(key) ?? fixtures.get(ask(zoom, false))) as B.StatsReply | undefined;
+    } else if (!raw && req.filter.place?.length) {
+      // a place filter with no recorded numbers: the unfiltered ones (only the biggest cells at a few zooms were recorded)
+      const { place: _place, ...filter } = req.filter;
+      void _place;
+      raw = fixtures.get(canonical({ ...req, filter })) as B.StatsReply | undefined;
+    }
     if (!raw) { missing.push(key); throw new Error(`no recorded reply for ${key}`); }
     // a copy: the page's normaliser edits what it is given, as it does a command's fresh reply
     const reply = normalizeReply(JSON.parse(JSON.stringify(raw)) as B.StatsReply) as StatsResponse;
+    if (o.gps === "none" && reply.places) reply.places = { ...reply.places, known: 0, total: 0, bbox: null, cells: [], top: [], heat: undefined };
     return { ...reply, coverage: coverage(reply.coverage) };
   };
   const api = {
@@ -95,6 +117,15 @@ export function createMockApi(o: MockOptions): StatsApi & { lastGrid: { ids: str
       api.lastGrid = { ids };
       return { ids };
     },
+    async place(key: string, filter: StatsFilter, _scope: StatsScope): Promise<PlaceDetail> {
+      if (o.state === "loading") return new Promise(() => {});
+      if (o.delayMs) await sleep(o.delayMs);
+      const fixtures = await load(o.lib);
+      const hit = fixtures.get(detailKey(key, filter)) as B.PlaceDetail | undefined;
+      if (!hit) { missing.push(`place ${key}`); throw new Error(`no recorded stats_place reply for ${key}`); }
+      return normalizePlace(JSON.parse(JSON.stringify(hit)) as B.PlaceDetail);
+    },
+    mapTile: (z: number, x: number, y: number) => harnessTile(z, x, y, new URLSearchParams(location.search).get("tiles")),
     onDirty: () => () => {},
     async thumb(photo: PhotoRef) { return thumbOf(photo.path) ?? null; },
     async setPaused() {},

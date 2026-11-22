@@ -6,8 +6,8 @@
 // The real one goes through commands.ts; thumbnails come from the existing thumbnail cache.
 import { createContext, useContext } from "react";
 import { commands } from "./commands";
-import { normalizeReply } from "./statsNormalize";
-import type { Coverage, PhotoRef, StatsFilter, StatsRequest, StatsResponse, StatsScope } from "./statsTypes";
+import { normalizePlace, normalizeReply } from "./statsNormalize";
+import type { Coverage, PhotoRef, PlaceDetail, StatsFilter, StatsRequest, StatsResponse, StatsScope } from "./statsTypes";
 
 export interface StatsApi {
   query(req: StatsRequest): Promise<StatsResponse | { notModified: true }>;
@@ -21,6 +21,10 @@ export interface StatsApi {
   thumb(photo: PhotoRef, size: number): Promise<string | null>;
   /** pause or resume the background indexing */
   setPaused(paused: boolean): Promise<void>;
+  /** the Places side panel: one map cell under the filter (its own place selection ignored) */
+  place(key: string, filter: StatsFilter, scope: StatsScope): Promise<PlaceDetail>;
+  /** a map tile (PNG bytes) through the app's cached OpenStreetMap command; rejects when offline */
+  mapTile(z: number, x: number, y: number): Promise<ArrayBuffer>;
 }
 
 export const commandsApi: StatsApi = {
@@ -38,6 +42,8 @@ export const commandsApi: StatsApi = {
     return buf.byteLength ? URL.createObjectURL(new Blob([buf], { type: "image/jpeg" })) : null;
   },
   async setPaused(paused) { await commands.searchPause(paused); },
+  async place(key, filter, scope) { return normalizePlace(await commands.statsPlace(key, filter, scope)); },
+  mapTile: (z, x, y) => commands.mapTile(z, x, y),
 };
 
 export const StatsApiContext = createContext<StatsApi>(commandsApi);

@@ -43,7 +43,8 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Browse folders directly, import from a card with the built-in Immporter,
   and optionally search and export to an [Immich](app/docs/immich.md) library.
 - Find photos with filters, or describe them with optional Smart search, which
-  runs on your computer. The [Find panel](app/docs/library.md#find) in Grid
+  runs on your computer (a model pack you download yourself under
+  Preferences > General > AI models, with nothing downloaded or analysed until you agree). The [Find panel](app/docs/library.md#find) in Grid
   keeps filters active across folder changes and remembers its own width and
   visibility separately from the editing panel.
 - Cull automatically with **Cull** in the grid toolbar (blurry and duplicate photos, reviewed and applied or undone), or by hand with **View > Culling Preview**, ratings, color labels and keywords. Click the tag icon or press **K** to keyword the photo in the lightbox.

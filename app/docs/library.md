@@ -103,10 +103,12 @@ local analysis model requires an explicit download choice. Downloaded analysis
 packages are checked before use, and local analysis runs on the CPU.
 **Preferences > Performance > Local photo cache** shows cache and drive status,
 pauses background checks, and clears or rebuilds cached records.
-**Preferences > General > Smart search (CLIP)** offers the optional model
-download and CPU model check, and warns that background analysis uses the CPU
-and slows Immage. Clearing preserves model files;
-rebuilds wait while background work is paused.
+**Preferences > General > AI models** offers the optional Smart search (CLIP)
+model: a download that starts only after a consent dialog, check files, repair,
+resume and removal, a CPU model **Test**, the switch **Analyse photos for Smart
+search**, and the one **Pause / Resume** for background work. Background
+analysis uses the CPU and slows Immage while it runs. Clearing preserves model
+files; rebuilds wait while background work is paused.
 
 For mapped network shares, [Immage Accelerator (Experimental)](immage-accelerator.md) can
 provide folder listings, metadata for Library filters and Find, and embedded
@@ -416,7 +418,7 @@ Searching the library and narrowing a folder both happen here.
   kept, so Smart returns by itself once the model is on this computer or Immich
   is connected, even for a saved filter that asks for it. While the model is not
   downloaded, a small tip under the search row says so, with **Set up in
-  Preferences**, which opens Preferences > General at the Smart search (CLIP) card,
+  Preferences**, which opens Preferences > General at the AI models group,
   and a close button that dismisses the tip for good. The tip also goes away by
   itself once the model is installed.
 - **Analysis icon**: the icon at the end of the search box shows Smart

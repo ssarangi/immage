@@ -63,6 +63,35 @@ export const commands = {
 	searchModelProbe: () => __TAURI_INVOKE<ProbeReply>("search_model_probe"),
 	searchModelDownload: (consent: boolean) => __TAURI_INVOKE<null>("search_model_download", { consent }),
 	searchModelCancel: () => __TAURI_INVOKE<void>("search_model_cancel"),
+	packList: () => __TAURI_INVOKE<PackInfo[]>("pack_list"),
+	/**
+	 *  Starts (or resumes, or repairs) a download. `consent` is true only from the
+	 *  consent dialog, which records it; Resume and Repair pass false and are
+	 *  accepted only for a pack the user already consented to.
+	 */
+	packDownload: (id: PackId, consent: boolean) => __TAURI_INVOKE<PackInfo>("pack_download", { id, consent }),
+	packCancel: (id: PackId) => __TAURI_INVOKE<null>("pack_cancel", { id }),
+	packVerify: (id: PackId) => __TAURI_INVOKE<PackCheck>("pack_verify", { id }),
+	/**
+	 *  Removes the installed model and its kept partial files (or only the partial
+	 *  files). Removing an installed model turns its analyses off; the results
+	 *  stay unless `keep_results` is false.
+	 */
+	packRemove: (id: PackId, keepResults: boolean, partialOnly: boolean) => __TAURI_INVOKE<PackInfo>("pack_remove", { id, keepResults, partialOnly }),
+	packLicense: (id: PackId) => __TAURI_INVOKE<string>("pack_license", { id }),
+	analysisGet: () => __TAURI_INVOKE<AnalysisSettings[]>("analysis_get"),
+	/**
+	 *  Turns an analysis on or off. Turning one on is refused in Rust unless its
+	 *  pack is installed and its files are whole (the page also disables the switch).
+	 */
+	analysisSet: (setting: AnalysisSettings) => __TAURI_INVOKE<AnalysisSettings[]>("analysis_set", { setting }),
+	/**
+	 *  Memory only, like `search_analysis_status`, which it generalises: the same
+	 *  2 s poll feeds the summary strip, the CLIP row and the Find icon.
+	 */
+	analysisStatus: () => __TAURI_INVOKE<AnalysisStatusAll>("analysis_status"),
+	/**  The same pause as `search_pause` and the Find icon. */
+	analysisPause: (paused: boolean) => __TAURI_INVOKE<null>("analysis_pause", { paused }),
 	settingsSet: (changes: { [key in string]: string | null }) => __TAURI_INVOKE<null>("settings_set", { changes }),
 	meta: (imgid: number) => __TAURI_INVOKE<MetaReply>("meta", { imgid }),
 	metaSet: (imgid: number, fields: { [key in string]: Value }) => __TAURI_INVOKE<null>("meta_set", { imgid, fields }),
@@ -360,12 +389,35 @@ export type Album = {
 	count: number,
 };
 
+export type AnalysisId = "smartSearch";
+
 export type AnalysisProgress = {
 	installed: boolean,
+	/**  The analysis switch is on; nothing is analysed while it is off. */
+	enabled: boolean,
 	pending: number | null,
 	running: number,
 	active: boolean,
 	paused: boolean,
+};
+
+export type AnalysisRow = {
+	id: AnalysisId,
+	enabled: boolean,
+	installed: boolean,
+	pending: number | null,
+	running: number,
+	active: boolean,
+};
+
+export type AnalysisSettings = {
+	id: AnalysisId,
+	enabled: boolean,
+};
+
+export type AnalysisStatusAll = {
+	paused: boolean,
+	rows: AnalysisRow[],
 };
 
 export type ApertureDef = {
@@ -1578,6 +1630,72 @@ export type Overview = {
 	insights: Insight[],
 	aspect: AspectCount[],
 };
+
+export type PackCheck = {
+	files: number,
+	files_ok: number,
+	failed: string[],
+};
+
+export type PackError = {
+	kind: PackErrorKind,
+	detail: string,
+};
+
+export type PackErrorKind = "offline" | "diskFull" | "hashMismatch" | "unsupported" | 
+/**  Not shown to the user: a cancelled download is a Stopped pack with no error. */
+"cancelled" | "other";
+
+export type PackId = "clip";
+
+export type PackInfo = {
+	id: PackId,
+	name: string,
+	license: string,
+	license_url: string,
+	source_host: string,
+	/**  The download size: every file of the pinned package. */
+	bytes: number,
+	bytes_on_disk: number,
+	/**  What a Resume still has to fetch (the whole package when nothing is kept). */
+	bytes_left: number,
+	files: number,
+	files_ok: number,
+	state: PackState,
+	/**
+	 *  Installed, and a check of its files is running (an install made before
+	 *  checks were recorded is checked once in the background).
+	 */
+	checking: boolean,
+	error: PackError | null,
+	version: string,
+	update_version: string | null,
+	update_bytes: number | null,
+	verified_at: number | null,
+	free_bytes: number,
+	unsupported_reason: string | null,
+	analyses: AnalysisId[],
+	progress: PackProgress | null,
+	/**  Filled in by the command layer from the settings store. */
+	download_consent: boolean,
+	analysis_consent: boolean,
+	folder: string,
+};
+
+export type PackPhase = "download" | "verify";
+
+export type PackProgress = {
+	id: PackId,
+	done: number,
+	total: number,
+	bytes_per_sec: number | null,
+	eta_s: number | null,
+	phase: PackPhase,
+};
+
+export type PackState = "notInstalled" | "downloading" | 
+/**  Download stopped (cancelled or offline): partial files are kept. */
+"stopped" | "installed" | "needsRepair" | "updateAvailable" | "unsupported";
 
 export type PageValues = {
 	folders?: string[],

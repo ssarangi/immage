@@ -893,6 +893,12 @@ impl SearchCache {
             .map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())
     }
+    /// Drops the analysis results (CLIP embeddings) and keeps the metadata
+    /// records: Remove model and results in Preferences > AI models.
+    pub fn clear_analyses(&self) -> Result<(), String> {
+        self.db.lock().map_err(|_| "search cache lock poisoned")?
+            .execute("DELETE FROM analyses", []).map(|_| ()).map_err(|e| e.to_string())
+    }
     pub fn assets(&self) -> Result<Vec<Asset>, String> {
         let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
         let mut q = db

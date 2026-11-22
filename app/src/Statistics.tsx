@@ -20,6 +20,7 @@ import { useStatsData, useStatsState, viewMemory } from "./statsStore";
 import type { PhotoRef, StatsFilter } from "./statsTypes";
 import { CamerasSection } from "./stats/CamerasSection";
 import { CoverageBanner } from "./stats/CoverageBanner";
+import { ExposureSection } from "./stats/ExposureSection";
 import { FilterBar } from "./stats/FilterBar";
 import { FirstRun } from "./stats/FirstRun";
 import { LensesSection } from "./stats/LensesSection";
@@ -28,12 +29,14 @@ import { StatCards } from "./stats/StatCards";
 import { StatsHeader } from "./stats/StatsHeader";
 import { StatsHero } from "./stats/StatsHero";
 import { StatsNav, type Tab } from "./stats/StatsNav";
+import { PlacesSection } from "./stats/PlacesSection";
+import { TimeSection } from "./stats/TimeSection";
 import { TipLayer } from "./stats/Tip";
 import { ViewContext, type ViewCtx } from "./stats/ctx";
 
 /** The sections on the page; the later phases add Exposure, Time, Places and Top images here. */
-const SECTION_IDS = ["cameras", "lenses"] as const;
-const ANCHOR: Record<string, string> = { overview: "st-top", cameras: "cameras", lenses: "lenses" };
+const SECTION_IDS = ["cameras", "lenses", "exposure", "time", "places"] as const;
+const ANCHOR: Record<string, string> = { overview: "st-top", cameras: "cameras", lenses: "lenses", exposure: "exposure", time: "time", places: "places" };
 
 export interface StatisticsProps {
   onClose(): void;
@@ -125,6 +128,9 @@ export default function Statistics({ onClose, onOpenInGrid, onOpenPhoto, onAddFo
     { id: "overview", label: t("stats.nav.overview") },
     { id: "cameras", label: t("stats.nav.cameras"), count: overview?.gear.bodies },
     { id: "lenses", label: t("stats.nav.lenses"), count: overview?.gear.lenses },
+    { id: "exposure", label: t("stats.nav.exposure") },
+    { id: "time", label: t("stats.nav.time") },
+    { id: "places", label: t("stats.nav.places") },
   ];
   const matches = overview?.matches ?? null;
 
@@ -151,6 +157,9 @@ export default function Statistics({ onClose, onOpenInGrid, onOpenPhoto, onAddFo
                 <div className={`st-wrap st-dimmable${stale ? " is-stale" : ""}`}>
                   <CamerasSection />
                   <LensesSection />
+                  <ExposureSection />
+                  <TimeSection />
+                  <PlacesSection />
                   {gridError && <p className="st-grid-error" role="alert">{gridError}</p>}
                   <div className="st-foot"><span>{overview ? t("stats.foot.computed", { n: nf(overview.photos) }) : " "}</span><span>{t("stats.foot.private")}</span></div>
                 </div>

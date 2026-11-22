@@ -7,13 +7,13 @@ import { SMALL_AGGREGATE } from "../statsMath";
 import { nf } from "../statsFormat";
 
 /** A section's top: a mono eyebrow with a glowing dot, the serif title with one italic amber phrase, a right-hand slot. */
-export function SectionHead({ eyebrow, title, em, aside, lede }: { eyebrow: string; title: string; em: string; aside?: ReactNode; lede?: ReactNode }) {
+export function SectionHead({ eyebrow, title, em, tail, aside, lede }: { eyebrow: string; title: string; em: string; tail?: string; aside?: ReactNode; lede?: ReactNode }) {
   return (
     <>
       <div className="st-sec-head">
         <div>
           <div className="st-eyebrow">{eyebrow}</div>
-          <h2>{title} <em>{em}</em></h2>
+          <h2>{title} <em>{em}</em>{tail ? ` ${tail}` : ""}</h2>
         </div>
         {aside && <div className="st-sec-aside">{aside}</div>}
       </div>

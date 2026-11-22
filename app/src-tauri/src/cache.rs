@@ -259,7 +259,7 @@ fn scan(dir: &Path) -> Vec<Entry> {
 // read. asked of that disk alone: sysinfo's list of disks asks every
 // network share too, and one whose server has gone away never answers
 #[cfg(unix)]
-fn free_space(dir: &Path) -> Option<u64> {
+pub fn free_space(dir: &Path) -> Option<u64> {
     use std::os::unix::ffi::OsStrExt;
     let c = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
     let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
@@ -268,7 +268,7 @@ fn free_space(dir: &Path) -> Option<u64> {
 }
 
 #[cfg(windows)]
-fn free_space(dir: &Path) -> Option<u64> {
+pub fn free_space(dir: &Path) -> Option<u64> {
     use windows::core::HSTRING;
     use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
     let mut free = 0u64;

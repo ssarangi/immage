@@ -154,6 +154,19 @@ records CPU, process memory, Linux threads and available GPU counters on a
 background worker; `App.tsx` attaches phase timestamps to report version 5.
 The GUI dashboard plots these alongside timing summaries.
 
+AI models (Preferences > General): [packs.rs](../../src-tauri/src/packs.rs) is the generic model pack
+pipeline (`PackSpec` registry entry, `PackStore`: download with Range resume, verify, repair, remove,
+cancel, `pack-state` / `pack-progress` events, disk accounting; layout `<root>/<revision>/` plus
+`.partial-<revision>/`), [clip_models.rs](../../src-tauri/src/clip_models.rs) is its CLIP entry and the CLIP
+preparation, [analysis_settings.rs](../../src-tauri/src/analysis_settings.rs) the `ai.*` switches and consents,
+[pack_cmds.rs](../../src-tauri/src/pack_cmds.rs) the `pack_*` / `analysis_*` commands. Page:
+[AiModelsPrefs.tsx](../../src/AiModelsPrefs.tsx) (`AiModelsView`, connected `AiModelsPrefs`),
+[PackCard.tsx](../../src/PackCard.tsx), [PackDialogs.tsx](../../src/PackDialogs.tsx),
+[aiPacks.ts](../../src/aiPacks.ts) (state to view, `usePacks`), [aiModels.css](../../src/aiModels.css); a new pack
+is a new `PackSpec` in the manager's list in main.rs and an entry in `NAMES`. The harness
+[models.html](../../harness/models.html) (`?state=`) and [models-shift.test.mjs](../../../verify/models-shift.test.mjs)
+check every state for layout shift.
+
 Module switch: [ModuleSwitch.tsx](../../src/ModuleSwitch.tsx) is the panel icon and menu beside a
 multi-module tool's name, with a green dot when `Session.adjustedModules` (masks: `maskAdjusted`) finds
 edits in another module (hosts chosen in `PanelView` and `MasksPanel`); its
