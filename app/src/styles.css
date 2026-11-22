@@ -1253,7 +1253,8 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 /* Lightroom's Grid: the filmstrip over the editing area, in rows */
 .strip-slot > div { position: relative; }
 /* under a revealed floating side panel (41), over the photo */
-.strip-slot.grid { position: absolute; left: 0; right: 0; top: 0; z-index: 25; grid-template-rows: 1fr; }
+/* ends above the toolbar (its height is set on .center by Toolbar.tsx), not behind it */
+.strip-slot.grid { position: absolute; left: 0; right: 0; top: 0; bottom: var(--toolbar-h, 0px); z-index: 25; grid-template-rows: 1fr; }
 .strip-slot.grid > div { height: 100%; }
 /* as many columns as fit at the chosen size (--grid-column, from Filmstrip),
    each exactly that wide and the rows centered: stretched to fill the row,
@@ -1263,7 +1264,7 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   display: grid; grid-template-columns: repeat(auto-fill, var(--grid-column, 230px));
   justify-content: center;
   flex: 1; height: auto; align-content: start; gap: 6px;
-  margin: 0 8px; padding: 10px; overflow-x: hidden; overflow-y: auto; background: var(--ui-window-161616, #161616);
+  margin: 8px; padding: 10px; border-radius: var(--radius-card); overflow-x: hidden; overflow-y: auto; background: var(--ui-window-161616, #161616);
 }
 .filmstrip.grid.empty { display: flex; align-items: center; justify-content: center; }
 .grid-empty { color: var(--text-3); font-size: var(--fs-body); }
