@@ -25,7 +25,7 @@ pub(crate) const BASE_URL: &str = "https://generativelanguage.googleapis.com";
 /// the settings.json key of Preferences > Culling's AI grading switch
 pub(crate) const ENABLED: &str = "immage.aiGrading";
 /// bump when the critique prompt or schema changes, so old answers are not reused
-pub(crate) const PROMPT_VERSION: u32 = 1;
+pub(crate) const PROMPT_VERSION: u32 = 2;
 /// long edge of the JPEG sent for a critique
 pub(crate) const MAX_EDGE: u32 = 1024;
 /// the most a critique upload may weigh
@@ -218,19 +218,24 @@ pub struct CritiqueRegion {
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CritiqueBody {
+    /// a verdict of a few words, for the top of the panel
+    #[serde(default)]
+    pub headline: String,
     pub overall_summary: String,
     #[serde(default)]
     pub regions: Vec<CritiqueRegion>,
 }
 
 pub(crate) fn critique_request(image_base64: &str) -> Value {
-    let prompt = "You are a photography mentor helping someone cull a shoot. Look at this photo \
-        and identify up to 4 notable regions: genuine strengths (sharp eye, good light, clean \
-        background) or weaknesses (obstructing branch, blown highlight, distracting element, soft \
-        focus area). For each region give a short 2-4 word label, whether it is positive, a \
-        normalized bounding box [x, y, width, height] in the 0-1 range with the origin at the \
-        top-left, and a one-sentence note. Also give a 1-2 sentence overall critique. Be specific \
-        to what is actually in this image; do not give generic photography advice.";
+    let prompt = "You are a photography mentor helping someone cull a shoot. Judge this photo \
+        briefly and specifically; never give generic advice. Give: a headline of at most 8 words \
+        (the verdict, e.g. 'Sharp and well composed' or 'Soft focus on the subject'); a summary of \
+        at most 2 short sentences; then up to 3 strengths and up to 3 weaknesses, each a region of \
+        the photo. For each region give a label of 2-4 words, whether it is positive, a note of at \
+        most 12 words, and a normalized bounding box [x, y, width, height] in the 0-1 range with \
+        the origin at the top-left. Keep each box tight around the specific thing, covering well \
+        under a third of the image, and avoid boxes that overlap each other. Skip a region rather \
+        than pad the list.";
     json!({
         "contents": [{ "parts": [
             { "inline_data": { "mime_type": "image/jpeg", "data": image_base64 } },
@@ -241,6 +246,7 @@ pub(crate) fn critique_request(image_base64: &str) -> Value {
             "responseSchema": {
                 "type": "OBJECT",
                 "properties": {
+                    "headline": { "type": "STRING" },
                     "overallSummary": { "type": "STRING" },
                     "regions": { "type": "ARRAY", "items": {
                         "type": "OBJECT",
@@ -253,7 +259,7 @@ pub(crate) fn critique_request(image_base64: &str) -> Value {
                         "required": ["label", "positive", "note", "box"]
                     }}
                 },
-                "required": ["overallSummary", "regions"]
+                "required": ["headline", "overallSummary", "regions"]
             }
         }
     })
@@ -266,7 +272,8 @@ fn clip(text: &str, max: usize) -> String {
 /// A model's answer made safe to draw: text bounded, at most 6 regions, boxes
 /// clamped inside the frame, regions without a usable box dropped.
 pub(crate) fn sanitize_critique(answer: Value) -> Result<CritiqueBody, String> {
-    let overall = clip(answer["overallSummary"].as_str().unwrap_or(""), 600);
+    let overall = clip(answer["overallSummary"].as_str().unwrap_or(""), 400);
+    let headline = clip(answer["headline"].as_str().unwrap_or(""), 80);
     if overall.is_empty() {
         return Err("Gemini's critique had no summary".into());
     }
@@ -294,14 +301,14 @@ pub(crate) fn sanitize_critique(answer: Value) -> Result<CritiqueBody, String> {
         regions.push(CritiqueRegion {
             label,
             positive: region["positive"].as_bool().unwrap_or(false),
-            note: clip(region["note"].as_str().unwrap_or(""), 300),
+            note: clip(region["note"].as_str().unwrap_or(""), 160),
             bbox: [x, y, w, h],
         });
         if regions.len() == 6 {
             break;
         }
     }
-    Ok(CritiqueBody { overall_summary: overall, regions })
+    Ok(CritiqueBody { headline, overall_summary: overall, regions })
 }
 
 /// A downscaled JPEG (long edge `MAX_EDGE`) of RGBA pixels, for upload.
@@ -760,7 +767,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(&dir.path().join("c.sqlite")).unwrap();
         let id = Identity { path: "/p/a.arw".into(), size: 10, mtime: 5 };
-        let body = CritiqueBody { overall_summary: "ok".into(), regions: vec![] };
+        let body = CritiqueBody { headline: "ok".into(), overall_summary: "ok".into(), regions: vec![] };
         assert!(store.get(&id).is_none());
         store.put(&id, "gemini-2.5-flash-lite", &body).unwrap();
         assert_eq!(store.get(&id).unwrap().0, "gemini-2.5-flash-lite");

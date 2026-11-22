@@ -153,7 +153,7 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
     setAi({ state: "busy" });
     try {
       const status = await commands.geminiKeyStatus();
-      if (!status.hasKey || !status.enabled) { setAi({ state: "off", text: t(status.hasKey ? "cull.critique.disabled" : "cull.critique.noKey") }); return; }
+      if (!status.hasKey) { setAi({ state: "off", text: t("cull.critique.noKey") }); return; }
       const found = await commands.geminiSearch(q);
       if (mine !== askToken.current) return;
       const cameras = [...new Set(images.map(cameraOf).filter(Boolean))];

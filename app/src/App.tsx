@@ -127,7 +127,6 @@ import { KeywordingPanel } from "./Keywording";
 import { FindPanel } from "./FindPanel";
 import { CullDialog } from "./CullDialog";
 import { CullPanel } from "./CullPanel";
-import { loadAiGrading } from "./aiGrading";
 import { reviewOrder, scopeFor, scopeOf } from "./cullModel";
 import { cullState, setCull, showPlan, useCull } from "./cullStore";
 import { clipTipVisible, effectiveFilter, effectiveSearch, folderSearch, needsSearch, normalizeFind, reach, smartAvailable, type FindState } from "./findModel";
@@ -6093,6 +6092,7 @@ export default function App() {
         if (previewRef.current) setPreview(false);
         else if (session.current) setPreview(true);
       },
+      "critique": () => { if (gridRef.current) window.dispatchEvent(new CustomEvent("grid-critique-open", { detail: {} })); },
       "auto-cull": () => { window.dispatchEvent(new CustomEvent("auto-cull-open")); },
       "culling-preview": () => { if (gridRef.current) window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: {} })); },
       "info-overlay": () => { if (session.current) setInfoMode((m) => (m + 1) % 3); },
@@ -6506,7 +6506,7 @@ export default function App() {
     const label = selected ? t("cull.scope.selection") : dir ? baseName(dir) : t("cull.scope.listed");
     setCullAsk({ items, selected, label, aiReady: false });
     void commands.geminiKeyStatus().then((st) => {
-      setCullAsk((a) => (a ? { ...a, aiReady: st.hasKey && st.enabled && loadAiGrading() } : a));
+      setCullAsk((a) => (a ? { ...a, aiReady: st.hasKey } : a));
     }).catch(() => {});
   };
   const openCullDialogRef = useRef(openCullDialog);
@@ -7641,6 +7641,9 @@ export default function App() {
                     toggleLabel: (bit) => rateSelection(hit, { labels: bit }),
                     toggleReject: () => rateSelection(hit, { rejected: !local.every((i) => i.rejected) }),
                   } : null}
+                  onCritique={grid && hit && !isRemote(hit) ? () => window.dispatchEvent(new CustomEvent("grid-critique-open", {
+                    detail: { imgid: hit.imgid },
+                  })) : undefined}
                   onKeywords={grid && local.length ? () => window.dispatchEvent(new CustomEvent("grid-keywords", {
                     detail: local.map(i => i.imgid),
                   })) : undefined}

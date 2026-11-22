@@ -206,7 +206,7 @@ pointer over another menu opens that one. The arrow keys move through the
 enabled items, Enter chooses the highlighted one and Escape closes the menu.
 
 The View menu dims commands that are unavailable in the current view. Culling
-Preview and **Photo > Auto Cull...** require a local photo in the grid. Full Screen Preview and Before /
+Preview, **Photo > Auto Cull...** and **Photo > Critique with Gemini...** require a local photo in the grid. Full Screen Preview and Before /
 After require a photo in the editor.
 
 Menu items do nothing while a dialog is open, as the keys do. While you type

@@ -687,8 +687,10 @@ Gemini.
   **Gemini model** is **Automatic**: Immage uses the newest available flash
   model and falls back to the next. Pinning a model, and clearing saved
   critiques, are not available yet.
-- **Use AI grading**: off until you turn it on and save a key. While off,
-  nothing is sent to Google.
+- **Grade automatically with Gemini**: off by default. It is for grading that
+  would run without you asking, which sends photos to Google. No such grading
+  exists yet, so the switch changes nothing today. Asking for a critique or a
+  search yourself needs only a saved key.
 - **Gemini API key**: paste a key from Google AI Studio and choose **Save**.
   The system keychain keeps it. It is never shown again (the field shows
   **saved**), never written to Immage's settings and removed from support

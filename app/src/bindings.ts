@@ -838,6 +838,8 @@ export type FoundPreset = {
 export type GeminiCritique = {
 	imgid: number,
 	model: string,
+	/**  a verdict of a few words */
+	headline: string,
 	overallSummary: string,
 	regions: CritiqueRegion[],
 	/**  answered from the cache, with no upload */

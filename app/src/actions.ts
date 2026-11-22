@@ -39,6 +39,8 @@ const CHORDS: [(e: Chord) => boolean, (e: Chord) => ActionId, "keep"?][] = [
   // too. marked used, so WebView2 does not zoom the page
   [(e) => cmd(e) && (e.code === "Equal" || e.code === "Minus") && !e.altKey, (e) => (e.code === "Equal" ? "zoom-in" : "zoom-out")],
   [(e) => cmd(e) && (e.code === "BracketLeft" || e.code === "BracketRight"), (e) => (e.code === "BracketLeft" ? "rotate-left" : "rotate-right")],
+  // Critique with Gemini, of the photo under the pointer or the selection in the grid
+  [(e) => cmd(e) && e.altKey && !e.shiftKey && e.code === "KeyG", () => "critique"],
   // ⌘A selects every photo the filters leave showing
   [(e) => cmd(e) && e.code === "KeyA" && !e.shiftKey && !e.altKey, () => "select-all"],
 ];

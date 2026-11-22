@@ -15,7 +15,7 @@ export function CullDialog({ count, selected, label, aiReady, onRun, onClose, on
   count: number;              // photos in the scope
   selected: boolean;          // the scope is the selection, not the whole listing
   label: string;              // the folder's name, for the heading
-  aiReady: boolean;           // a Gemini key is saved and AI grading is on
+  aiReady: boolean;           // a Gemini key is saved
   onRun: (settings: CullSettings) => void;
   onClose: () => void;
   onOpenPrefs: () => void;    // Preferences > Culling

@@ -577,8 +577,8 @@ The window asks:
   that is marked as highlights.
 - **Blur threshold**: a single photo softer than this is rejected as blurry.
 - **Advanced > Similarity**: how alike two photos must be to count as one set.
-- A note says whether AI grading is on and, when it is not, links to
-  **Preferences > Culling**. A cull never needs AI grading.
+- A note says whether a Gemini key is saved and, when it is not, links to
+  **Preferences > Culling**. A cull never needs Gemini.
 
 The starting values are the ones in **Preferences > Culling**
 ([Preferences](preferences.md#culling)). **Run** closes the window and the
@@ -604,9 +604,10 @@ Each reviewed thumbnail carries a badge in words and a symbol: **Best**,
 **Keep** or **Reject**, with the set number for a photo in a set. The reviewed
 state does not rely on color alone. Opening another folder ends the review.
 
-Open a photo in the culling preview (the magnifier, or **F**) and the
-**Cull inspector** shows beside it (the scan icon in the preview's toolbar
-turns it on or off):
+Open a photo in the culling preview (the magnifier, or **F**). A column of a
+fixed width, so the photo never changes size, sits at its right with two tabs,
+**Cull** and **Critique**. Cull is shown while a cull is under review, Critique
+otherwise. The **Cull** tab has:
 
 - the verdict, with whether it is a highlight, and its reasons in plain words,
   each marked **Against**, **For** or **Note**;
@@ -635,20 +636,31 @@ Preferences forgets the measurements only.
 
 ## AI critique and natural-language search
 
-With a Gemini key saved and **Use AI grading** on (Preferences › Culling, see
+With a Gemini key saved (Preferences › Culling, see
 [Preferences](preferences.md#culling)), Immage can ask Google Gemini about a photo.
 
-- **Critique**: in the culling preview, open the **Cull inspector** and click
-  **Critique**. It returns a one or two sentence summary and up to six labeled
-  regions, each a **Strength** (green, solid box, marked +) or a **Weakness**
-  (red, dashed box, marked -) with a note, drawn over the photo; pointing at a
-  region in the list thickens its box. The photo's preview is sent to Google as
-  a JPEG with a long edge of at most 1024 pixels; nothing else about the photo
-  is. Answers are kept on this computer, keyed by the file, its size and
-  modified time and the prompt version, so asking again about an unchanged
-  photo costs nothing and says it came from the saved answer. **Critique
-  again** asks Gemini afresh. Without a key, or with AI grading off, the
-  inspector says so and links to Preferences.
+- **Critique**: choose **Photo > Critique with Gemini...**
+  (**⌥⌘G**, Ctrl+Alt+G on Windows and Linux), right-click a thumbnail and
+  choose **Critique with Gemini...**, or click **Critique** in the culling
+  preview's top bar. The preview opens on that photo (the one under the pointer,
+  else the selection) with the **Critique** tab and asks Gemini at once; an
+  answer already saved on this computer appears with nothing sent. While Gemini
+  works a spinner and the seconds so far are shown; it can take up to a minute.
+  The tab shows a short verdict as its title, a summary (**Show more** for
+  all of it), and the regions in two groups, **Strengths** and **To improve**,
+  with their counts. Each region is a numbered row, a check mark for a
+  strength or an exclamation mark for something to improve, with its label and a
+  one-line note. On the photo each region is a small numbered badge. Hover a
+  badge, or hover or focus a row, to outline that region and dim the others;
+  click to keep the outline, and click again to release it. Where badges overlap,
+  the smaller region is on top. The photo's preview is sent to Google as a JPEG
+  with a long edge of at most 1024 pixels; nothing else about the photo is.
+  Answers are kept on this computer, keyed by the file, its size and modified
+  time and the prompt version; the footer names the model and says
+  **saved answer** when nothing was sent. **Critique again** asks Gemini
+  afresh. Without a key, the tab says so and links to Preferences, which
+  closes the preview. Critique needs only the key, not the
+  **Grade automatically** switch.
 - **Natural-language search**: in Find, type a sentence in the **Describe the
   photos in words** box and click **Ask Gemini** (or press Enter). Immage
   turns it into Find filters: words for the search box (content words use

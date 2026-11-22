@@ -9,6 +9,7 @@ import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { parentDir } from "./paths";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { t } from "./i18n";
+import { keys } from "./keys";
 
 // what the system's file manager is called
 export const TRASH = navigator.userAgent.includes("Windows") ? "Recycle Bin" : "Trash";
@@ -50,10 +51,11 @@ export function useMenuClose(onClose: () => void) {
 // Delete, for rejected photos only; for Immich results, the photo or the
 // whole search in Immich's web app. any click elsewhere, a scroll or Escape
 // closes it
-export function FileMenu({ onSimilar, onKeywords, onRename, rate, captureCount, onCaptureTime, canUndoCapture, onUndoCapture, x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, parentFolder, onImportParent, editIn, onCopy,
+export function FileMenu({ onSimilar, onKeywords, onCritique, onRename, rate, captureCount, onCaptureTime, canUndoCapture, onUndoCapture, x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, parentFolder, onImportParent, editIn, onCopy,
                     onRemoveCopies, onMergeHdr, onMergePano, onDelete, onEditIn, onSetUpPlugins, onClose }: {
   onSimilar?: () => void;
   onKeywords?: () => void;
+  onCritique?: () => void;   // the grid's culling preview on this photo, with its Gemini critique
   onRename?: () => void;
   // the photos it rates: the rating and the label bits all of them share, whether all are rejected;
   // null when none can be rated (Immich results)
@@ -132,6 +134,8 @@ export function FileMenu({ onSimilar, onKeywords, onRename, rate, captureCount, 
         </>}
         {onKeywords && <button className="hinted" onClick={() => { onClose(); onKeywords(); }}>
           <span className="name">{t("library.menu.keywords")}</span><span className="hint key">K</span></button>}
+        {onCritique && <button className="hinted" onClick={() => { onClose(); onCritique(); }}>
+          <span className="name">{t("library.menu.critique")}</span><span className="hint key">{keys("⌥⌘G")}</span></button>}
         <div className="menu-sep" />
       </>}
       {editIn && <>

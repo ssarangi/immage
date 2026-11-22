@@ -31,6 +31,8 @@ pub(crate) struct GeminiStatus {
 pub(crate) struct GeminiCritique {
     pub imgid: i64,
     pub model: String,
+    /// a verdict of a few words
+    pub headline: String,
     pub overall_summary: String,
     pub regions: Vec<CritiqueRegion>,
     /// answered from the cache, with no upload
@@ -88,9 +90,9 @@ pub(crate) async fn gemini_key_test(key: Option<String>) -> Result<(), String> {
 }
 
 fn require_key(runtime: &std::path::Path) -> Result<String, String> {
-    if !gemini::enabled(runtime) {
-        return Err("AI grading is off. Turn it on in Preferences > Culling.".into());
-    }
+    // a click on Critique or Ask Gemini is the user's own request: only a saved
+    // key is needed. The automatic-grading switch is for grading that runs unasked
+    let _ = runtime;
     gemini::stored_key()?.ok_or_else(|| "Add a Gemini API key in Preferences > Culling first".to_string())
 }
 
@@ -116,7 +118,7 @@ pub(crate) async fn gemini_critique(
         let (store_file, id) = (store_file.clone(), id.clone());
         let hit = worker(move || Ok(Store::open(&store_file).ok().and_then(|s| s.get(&id)))).await?;
         if let Some((model, body)) = hit {
-            return Ok(GeminiCritique { imgid, model, overall_summary: body.overall_summary, regions: body.regions, cached: true });
+            return Ok(GeminiCritique { imgid, model, headline: body.headline, overall_summary: body.overall_summary, regions: body.regions, cached: true });
         }
     }
     // the photo as the library shows it, from the engine's own preview path
@@ -152,7 +154,7 @@ pub(crate) async fn gemini_critique(
         // a cache that cannot be written costs only the next request
         let _ = worker(move || Store::open(&store_file)?.put(&id, &model, &body)).await;
     }
-    Ok(GeminiCritique { imgid, model, overall_summary: body.overall_summary, regions: body.regions, cached: false })
+    Ok(GeminiCritique { imgid, model, headline: body.headline, overall_summary: body.overall_summary, regions: body.regions, cached: false })
 }
 
 /// Turns a sentence into Find filters. Only the sentence and today's date are
