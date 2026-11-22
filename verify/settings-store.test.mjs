@@ -52,7 +52,8 @@ const sets = calls => calls.filter(c => c.cmd === 'settings_set');
 test('native windows wait until the settings store and app state are managed', () => {
   const whole = readFileSync(new URL('../app/src-tauri/src/main.rs', import.meta.url), 'utf8');
   // the code itself: main.rs's own test module quotes these anchors as text
-  const source = whole.split('#[cfg(test)]')[0];
+  // (test-only `mod` declarations near the top also carry #[cfg(test)], so cut at the tests module)
+  const source = whole.split('#[cfg(test)]\nmod tests')[0];
   const at = (re, what) => {
     const m = re.exec(source);
     assert.ok(m, `main.rs no longer contains ${what} (${re}); update this test to the new startup code`);
