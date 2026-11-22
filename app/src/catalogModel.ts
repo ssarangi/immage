@@ -205,3 +205,44 @@ export function sizeOf(bytes: number): { n: number; unit: "B" | "KB" | "MB" | "G
   if (bytes < 1024 ** 3) return { n: Math.round(bytes / 1024 ** 2), unit: "MB" };
   return { n: Math.round(bytes / 1024 ** 3 * 10) / 10, unit: "GB" };
 }
+
+/** What the Catalog card's header says while the card is folded: the work across all sources in one line. */
+export interface Summary {
+  /** the busiest state of any source: running beats paused; "idle" has neither */
+  state: "indexing" | "paused" | "idle";
+  /** 0..1 over the sources that are reading or making thumbnails; null while only finding, or when idle */
+  fraction: number | null;
+  done: number;
+  total: number | null;
+  /** the work being counted is thumbnails (and no source is reading photos) */
+  thumbs: boolean;
+  /** sources that need attention, shown beside the work, not instead of it */
+  attention: number;
+}
+
+export function catalogSummary(sources: readonly SourceStatus[], jobs: Record<number, Jobs>): Summary {
+  let running = 0, paused = 0, attention = 0, done = 0, total = 0, counted = 0, thumbSources = 0;
+  for (const s of sources) {
+    const j = jobs[s.source.id];
+    const state = sourceState(s, j);
+    if (state === "attention") attention++;
+    if (state !== "indexing" && state !== "paused") continue;
+    if (state === "paused") paused++; else running++;
+    const p = phases(j, undefined, s.source.photos);
+    if (p[0].status === "active") continue;
+    const use = p[2].status === "active" && p[1].status !== "active" ? p[2] : p[1];
+    if (use.total === null || use.total === 0) continue;
+    counted++;
+    if (use === p[2]) thumbSources++;
+    done += use.done; total += use.total;
+  }
+  const busy = running + paused;
+  if (busy === 0) return { state: "idle", fraction: null, done: 0, total: null, thumbs: false, attention };
+  return {
+    state: running > 0 ? "indexing" : "paused",
+    fraction: counted > 0 ? Math.max(0, Math.min(1, done / total)) : null,
+    done, total: counted > 0 ? total : null,
+    thumbs: counted > 0 && thumbSources === counted,
+    attention,
+  };
+}

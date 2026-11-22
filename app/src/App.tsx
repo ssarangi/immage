@@ -84,6 +84,8 @@ import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoH
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
+import { SectionStatus } from "./SectionStatus";
+import { headerKey } from "./CatalogCard";
 import { useCatalogUi } from "./catalogUi";
 import { baseName, parentDir, within } from "./paths";
 import { isEngineExit, reopenPlan, reopening, START as ENGINE_START, step as engineStep, wait as engineWait,
@@ -604,7 +606,7 @@ export default function App() {
   const [folderMoveDialog, setFolderMoveDialog] = useState<{
     job: number; req: FolderMoveRequest; copy: boolean; plan: FolderMovePlan | null; error: string | null;
   } | null>(null);
-  const [folderTransfer, setFolderTransfer] = useState<{ source: string; target: string } | null>(null);
+  const [folderTransfer, setFolderTransfer] = useState<{ source: string; target: string; copy: boolean } | null>(null);
   const folderMoveBusy = useRef(false);
   const [canvasColor, setCanvasColor] = useState<Canvas>(loadCanvas);
   const [focusMode, setFocusMode] = useState(loadFocusMode);
@@ -3807,7 +3809,7 @@ export default function App() {
     const { req, plan } = d;
     const gone = (i: ImageEntry) => !isRemote(i) && within(i.path, req.source);
     setFolderMoveDialog(null);
-    setFolderTransfer({ source: req.source, target: plan.target });
+    setFolderTransfer({ source: req.source, target: plan.target, copy });
     if (!copy) {
       const current = currentRef.current;
       pendingDeletes.current.add(gone);
@@ -6704,8 +6706,14 @@ export default function App() {
         {/* a card as Metadata and Keywording are, open until folded, and
             kept as it was left */}
         <div className="panel folders-panel" data-tour="folders">
-          <div className={`panel-title${foldersOpen ? " open" : ""}`} onClick={(e) => toggleLeft("folders", e.altKey)}>
+          <div className={`panel-title${foldersOpen ? " open" : ""}`} onClick={(e) => toggleLeft("folders", e.altKey)}
+               role="button" tabIndex={0} aria-expanded={foldersOpen} onKeyDown={(e) => headerKey(e, (alt) => toggleLeft("folders", alt))}>
             <span>{t("app.library.folders")}</span>
+            <SectionStatus {...(!foldersOpen && folderTransfer
+              ? { kind: "indexing" as const, fraction: null, mid: null, short: null, warn: null,
+                  text: t(folderTransfer.copy ? "dialogs.folderMove.copying" : "dialogs.folderMove.moving", { name: baseName(folderTransfer.source) }),
+                  label: t(folderTransfer.copy ? "dialogs.folderMove.copying" : "dialogs.folderMove.moving", { name: baseName(folderTransfer.source) }) }
+              : { kind: "idle" as const, fraction: null, text: "", mid: null, short: null, label: "", warn: null })} />
             <button className="refresh" title={t("app.library.refreshFolders")}
                     onClick={(e) => {
                       e.stopPropagation();

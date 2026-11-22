@@ -60,6 +60,25 @@ for (const [w, h, theme, size] of [[1440, 900, 'dark', 320], [1440, 900, 'light'
   });
 }
 
+for (const [theme, size] of [['dark', 320], ['light', 320], ['dark', 240], ['grey', 420]]) {
+  test(`the folded Catalog header shows the work and moves nothing as it starts, ends, folds or opens: ${theme}, panel ${size}px`, { skip }, () => {
+    const r = report(dump(`shift=1&fold=1&theme=${theme}&w=${size}`), 'shift-report');
+    assert.equal(r.error, undefined, r.error);
+    assert.ok(r.states >= 18, `only ${r.states} states`);
+    assert.deepEqual(r.failures, [], `moved: ${JSON.stringify(r.failures.slice(0, 5))}`);
+    assert.equal(r.fixedMaxDelta, 0, r.fixedWorst);
+    assert.match(r.shown['folded:reading'], /Indexing 41,860 \/ 98,200|41,860 \/ 98,200|%/);
+    assert.match(r.shown['folded:paused'], /Paused|%/);
+    assert.equal(r.shown['folded:done'].includes('Indexing'), false);
+  });
+}
+
+test('the folded header test fails when the status slot sizes from its text (negative control)', { skip }, () => {
+  const r = report(dump('shift=1&fold=1&break=1'), 'shift-report');
+  assert.equal(r.ok, false);
+  assert.ok(r.fixedMaxDelta > 0, `expected a delta, got ${r.fixedMaxDelta}`);
+});
+
 test('the Rebuild row keeps its box when it asks for the second click', { skip }, () => {
   const r = report(dump('view=prefs&shift=1'), 'shift-report');
   assert.equal(r.error, undefined, r.error);

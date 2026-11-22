@@ -7,6 +7,12 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- **Library cards:** The Folders and Catalog cards fold and open from the
+  keyboard as well as the mouse (Enter or Space on the header), and tell
+  screen readers whether they are open. A folded Catalog card still shows its
+  work: a ring with the count (Indexing 1,240 / 8,000), Paused, or a warning
+  triangle when a source needs attention, without moving anything. A folded
+  Folders card shows a folder move or copy in progress.
 - **Folder browser:** Add folder and Add to Catalog now choose a folder in
   Immage's own browser instead of the system dialog. It follows the app's theme
   and lists your home folders, every mounted drive and network share (so a NAS

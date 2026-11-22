@@ -11,7 +11,8 @@ import { FILE_MANAGER } from "./ExportDialog";
 import { useMenuClose } from "./FileMenu";
 import { FolderIcon, DriveIcon, NetworkIcon } from "./icons";
 import { Glyph, IndexCard, Ring } from "./IndexCard";
-import { groupByVolume, isOnline, overallFraction, phases, sourceRoot, sourceState, type Ended, type Jobs, type SourceState } from "./catalogModel";
+import { SectionStatus } from "./SectionStatus";
+import { catalogSummary, groupByVolume, isOnline, overallFraction, phases, sourceRoot, sourceState, type Ended, type Jobs, type SourceState } from "./catalogModel";
 import type { SourceStatus } from "./bindings";
 import { formatNumber, t } from "./i18n";
 
@@ -26,6 +27,13 @@ export type CatalogActions = {
   reveal(path: string): void;
   dismiss(id: number): void;
 };
+
+/** Enter or Space on a card's header folds it, as a click does; keys meant for a button inside it are left alone. */
+export function headerKey(e: React.KeyboardEvent<HTMLElement>, onToggle: (alt: boolean) => void) {
+  if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+  e.preventDefault();
+  onToggle(e.altKey);
+}
 
 const stateWord = (s: SourceState) => t(`catalog.state.${s}`);
 
@@ -93,6 +101,21 @@ function SourceMenu({ x, y, s, jobs, actions, onClose }: { x: number; y: number;
   );
 }
 
+/** The folded card's header status: the work across all sources, and a warning if any needs attention. */
+export function catalogHeaderStatus(sources: SourceStatus[], jobs: Record<number, Jobs>) {
+  const m = catalogSummary(sources, jobs);
+  const n = (x: number) => formatNumber(x);
+  const text = m.state === "paused" ? t("catalog.sum.paused")
+    : m.total === null ? t("catalog.sum.finding")
+    : t(m.thumbs ? "catalog.sum.thumbs" : "catalog.sum.indexing", { done: n(m.done), total: n(m.total) });
+  const mid = m.state === "paused" ? text : m.total === null ? null : t("catalog.sum.count", { done: n(m.done), total: n(m.total) });
+  const short = m.fraction === null ? null : t("catalog.sum.pct", { pct: Math.round(m.fraction * 100) });
+  const warn = m.attention > 0 ? t("catalog.sum.attention") : null;
+  const work = m.state === "idle" ? null : text;
+  const label = t("catalog.sum.fold", { what: [work, warn].filter(Boolean).join(". ") });
+  return { kind: m.state, fraction: m.fraction, text, mid, short, label, warn };
+}
+
 export function CatalogCard({ open, onToggle, loaded, error, sources, jobs, ended, focus, current, actions, onFocus, pin }: {
   open: boolean; onToggle(alt: boolean): void;
   loaded: boolean; error: string | null;
@@ -112,8 +135,10 @@ export function CatalogCard({ open, onToggle, loaded, error, sources, jobs, ende
   ));
   return (
     <div className="panel catalog-panel" data-tour="catalog">
-      <div className={`panel-title${open ? " open" : ""}`} onClick={(e) => onToggle(e.altKey)}>
+      <div className={`panel-title${open ? " open" : ""}`} onClick={(e) => onToggle(e.altKey)}
+           role="button" tabIndex={0} aria-expanded={open} onKeyDown={(e) => headerKey(e, onToggle)}>
         <span>{t("catalog.title")}</span>
+        <SectionStatus {...(open ? { kind: "idle", fraction: null, text: "", mid: null, short: null, label: "", warn: null } : catalogHeaderStatus(sources, jobs))} />
         <button className="cat-add" title={t("catalog.add")} aria-label={t("catalog.add")} onClick={(e) => { e.stopPropagation(); actions.add(); }}>+</button>
         {pin}
         <svg className={`chevron${open ? " open" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor"

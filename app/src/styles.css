@@ -3383,3 +3383,21 @@ html[data-scheme="light"] .filmstrip.grid { background: color-mix(in srgb, var(-
 .fb-hidden { display: flex; align-items: center; gap: 6px; color: var(--text-2); cursor: pointer; }
 .fb-spacer { flex: 1; }
 @media (prefers-reduced-motion: reduce) { .fb-spin { animation: none; } }
+
+/* a folded Library card's status (SectionStatus.tsx): the slot always takes the free width between
+   the title and the buttons, so showing or hiding the status moves nothing. The text gives way to a
+   percent, then to the ring alone, as the slot narrows (it sizes from its siblings, never from its own text). */
+.panel-title[role="button"]:focus-visible { outline: 2px solid var(--focus, var(--accent)); outline-offset: -2px; border-radius: var(--radius-card); }
+.section-status {
+  flex: 1 1 0; min-width: 0; height: 26px; margin: 0 6px 0 10px; display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+  container-type: inline-size; overflow: hidden; color: var(--text-3); font-size: var(--fs-small); font-weight: 400;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.section-status .ss-long { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.section-status .ss-short, .section-status .ss-mid { display: none; }
+.section-status .cat-glyph.warn { color: var(--cat-warn); flex: none; }
+.section-status .cat-ring, .section-status .cat-glyph { flex: none; }
+@container (max-width: 175px) { .section-status .ss-long { display: none; } .section-status .ss-mid { display: block; } }
+@container (max-width: 125px) { .section-status .ss-mid { display: none; } .section-status .ss-short { display: block; } }
+@container (max-width: 60px) { .section-status .ss-short { display: none; } }
+.catalog-panel .cat-add, .folders-panel .panel-title .refresh { margin-left: 0; }

@@ -45,6 +45,28 @@ test('a folder is none, a source root, or inside one; an offline source keeps it
   assert.deepEqual(M.folderCatalog('/elsewhere', list).kind, 'none');
 });
 
+test('a folded card sums the work of every source, and a warning rides beside it', () => {
+  const two = (a, b) => [source({ id: 1 }), { ...source({ id: 2, name: 'B' }), source: { ...source({ id: 2, name: 'B' }).source, ...b } }];
+  const idle = M.catalogSummary([source()], {});
+  assert.deepEqual(idle, { state: 'idle', fraction: null, done: 0, total: null, thumbs: false, attention: 0 });
+  assert.equal(M.catalogSummary([source({ state: 'failed' })], {}).attention, 1);
+  assert.equal(M.catalogSummary([source({ state: 'failed' })], {}).state, 'idle', 'a problem alone is not work');
+  const finding = M.catalogSummary([source()], { 1: { scan: scanP() } });
+  assert.equal(finding.state, 'indexing'); assert.equal(finding.total, null); assert.equal(finding.fraction, null);
+  const reading = M.catalogSummary([source()], { 1: { meta: metaP() } });
+  assert.deepEqual([reading.state, reading.done, reading.total, reading.fraction, reading.thumbs], ['indexing', 50, 200, 0.25, false]);
+  const thumbs = M.catalogSummary([source()], { 1: { pipeline: true, thumbs: thumbP() } });
+  assert.deepEqual([thumbs.done, thumbs.total, thumbs.thumbs], [20, 200, true]);
+  const sum = M.catalogSummary(two(), { 1: { meta: metaP() }, 2: { meta: metaP({ source_id: 2, done: 150 }) } });
+  assert.deepEqual([sum.done, sum.total, sum.fraction], [200, 400, 0.5]);
+  const paused = M.catalogSummary([source()], { 1: { meta: metaP({ paused: true }) } });
+  assert.equal(paused.state, 'paused'); assert.equal(paused.done, 50);
+  const mixed = M.catalogSummary(two(), { 1: { meta: metaP({ paused: true }) }, 2: { meta: metaP({ source_id: 2 }) } });
+  assert.equal(mixed.state, 'indexing', 'running beats paused');
+  const both = M.catalogSummary(two(0, { state: 'failed' }), { 1: { meta: metaP() } });
+  assert.deepEqual([both.state, both.attention], ['indexing', 1]);
+});
+
 test('phases: finding has no total until it ends; reading and thumbnails follow; done is remembered', () => {
   let p = M.phases({ scan: scanP() }, undefined, 0);
   assert.deepEqual(p.map((x) => x.status), ['active', 'waiting', 'waiting']);

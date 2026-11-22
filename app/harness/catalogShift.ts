@@ -67,7 +67,7 @@ const CARD = [".cat-card", ".cat-head", ".cat-head-ring", ".cat-head-text", ".ca
   ".cat-phase:nth-child(3)", ".cat-phase:nth-child(1) .cat-bar", ".cat-phase:nth-child(2) .cat-bar", ".cat-phase:nth-child(3) .cat-bar", ".cat-foot", ".cat-foot-a", ".cat-foot-b"];
 const SHORT_CARD = [".cat-card", ".cat-head", ".cat-acts", ".cat-foot", ".cat-foot-a", ".cat-foot-b"];
 
-type H = { set: (s: string) => void; confirm: (on: boolean) => void };
+type H = { set: (s: string) => void; confirm: (on: boolean) => void; open: (on: boolean) => void };
 const boxesOf = (sels: string[]) => {
   const out: Record<string, R> = {};
   for (const s of sels) { const el = document.querySelector(s); if (el) out[s] = rect(el.getBoundingClientRect()); }
@@ -106,12 +106,40 @@ function compareAcross(group: string[], boxes: Record<string, Record<string, R>>
   return { max, worst };
 }
 
+// the folded card's header: every state, folded or open, keeps the title, the status slot, the add
+// button and the chevron where they were (the status takes only free space)
+const HEADER = [".catalog-panel .panel-title", ".catalog-panel .panel-title > span:first-child", ".section-status", ".cat-add", ".chevron"];
+async function headerTest(failures: { what: string; delta: number; worst: string }[]) {
+  const h = (window as unknown as { __h: H }).__h;
+  const names = ["reading", "finding", "thumbs", "paused", "yielding", "idle", "done", "offline", "never"];
+  const boxes: Record<string, Record<string, R>> = {};
+  const shown: Record<string, string> = {};
+  for (const open of [false, true]) {
+    h.open(open);
+    for (const state of names) {
+      h.set(state); await frames();
+      const key = `${open ? "open" : "folded"}:${state}`;
+      boxes[key] = boxesOf(HEADER);
+      shown[key] = document.querySelector(".section-status")?.textContent ?? "";
+      if (!open && (state === "reading" || state === "thumbs") && !shown[key]) failures.push({ what: `${key}: the folded header shows no status`, delta: 1, worst: key });
+      if (open && shown[key]) failures.push({ what: `${key}: the open header shows a status`, delta: 1, worst: key });
+    }
+  }
+  const keys = Object.keys(boxes);
+  const c = compareAcross(keys, boxes, failures);
+  h.open(false); h.set("reading"); await frames();
+  const r = await interactions(failures, "folded");
+  return { ok: failures.length === 0, states: keys.length, interactions: r.n, compared: r.compared, maxDelta: r.maxDelta, fixedMaxDelta: c.max, fixedWorst: c.worst, shown, failures };
+}
+
 export async function runShiftTest() {
   const h = (window as unknown as { __h: H }).__h;
   mirrorPseudoClasses();
   const failures: { what: string; delta: number; worst: string }[] = [];
   let interactionsRun = 0, compared = 0, maxDelta = 0, fixedMax = 0, fixedWorst = "";
   const view = new URLSearchParams(location.search).get("view") ?? "card";
+
+  if (new URLSearchParams(location.search).get("fold") === "1") return headerTest(failures);
 
   if (view === "prefs") {
     const boxes: Record<string, Record<string, R>> = {};

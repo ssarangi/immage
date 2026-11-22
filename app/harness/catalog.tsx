@@ -12,6 +12,7 @@
 //   theme   a built-in theme id (dark, graphite, slate, warm-ash, grey, classic-grey, soft-grey, light)
 //   w, h    the pixel size of the page area (the card view defaults to the Library panel's 320 px)
 //   break=1 adds a style that lets the card grow with its text, to prove the shift test fails
+//   fold=1  starts with the card folded (the header status), and shift=1 then runs the header test
 //   shift=1 runs the no-layout-shift test and writes JSON into #shift-report
 import "./tauriShim";
 import { createRoot } from "react-dom/client";
@@ -33,7 +34,7 @@ document.documentElement.dataset.scheme = theme.colorScheme;
 document.body.style.background = "var(--window)";
 if (q.get("break") === "1") {   // a deliberately bad style: the shift test must catch it (negative control)
   const st = document.createElement("style");
-  st.textContent = `.cat-card { height: auto !important; min-height: 0 !important; } .cat-foot-a, .cat-foot-b { height: auto !important; white-space: normal !important; }`;
+  st.textContent = `.section-status { flex: 0 0 auto !important; container-type: normal !important; } .cat-card { height: auto !important; min-height: 0 !important; } .cat-foot-a, .cat-foot-b { height: auto !important; white-space: normal !important; }`;
   document.head.append(st);
 }
 const noop = () => {};
@@ -43,10 +44,10 @@ function Harness() {
   const [name, setName] = useState(q.get("state") ?? "reading");
   const [confirm, setConfirm] = useState(false);
   const [fx, setFx] = useState<Fixture>(STATES[name] ?? STATES.reading);
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(q.get("fold") !== "1");
   useEffect(() => { setFx(STATES[name] ?? STATES.reading); }, [name]);
   useEffect(() => {
-    (window as unknown as { __h: unknown }).__h = { set: setName, confirm: setConfirm, states: Object.keys(STATES) };
+    (window as unknown as { __h: unknown }).__h = { set: setName, confirm: setConfirm, open: setOpen, states: Object.keys(STATES) };
     document.body.dataset.ready = "1";
     if (q.get("shift") === "1") void runShiftTest().then((r) => r, (e) => ({ ok: false, error: String(e?.stack ?? e) }))
       .then((r) => { const el = document.getElementById("shift-report")!; el.textContent = JSON.stringify(r); el.dataset.done = "1"; });

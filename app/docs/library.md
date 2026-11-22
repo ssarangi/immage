@@ -18,7 +18,11 @@ do not get placeholder cells. The scan checks whether each photo can be read.
 
 ## Folders
 
-Open the **Folders** card in the **Library** panel.
+Open the **Folders** card in the **Library** panel. Click its header (or focus
+it and press Enter or Space) to fold or open it; it stays as you left it. While
+a folder is being moved or copied, the folded header shows a ring and what is
+happening. The [Catalog](catalog.md#folding-the-card) card folds the same way
+and shows its indexing progress when folded.
 
 - **+ Add folder…** adds a folder to the list and opens it in Grid view.
   Dragging a folder from Finder or Explorer onto Immage's window does the

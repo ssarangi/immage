@@ -85,6 +85,23 @@ the file manager** and **Remove from Catalog…**.
 Removing a source says how many photos leave the Catalog. Your files, sidecars
 and edits are not touched, and the folder stays in your Folders list.
 
+### Folding the card
+
+Click the **Catalog** header (or focus it and press Enter or Space) to fold or
+open the card; Alt-click folds the others. Immage remembers it between
+launches, and it starts open. A folded card still shows the work in its header,
+in the space between the title and the buttons, so nothing moves when a job
+starts or ends:
+
+- a ring and **Indexing 1,240 / 8,000** (or **Thumbnails ...**, or **Finding
+  photos** while the folders are still being listed), counted across every
+  source that is being indexed;
+- two bars and **Paused** when the work is paused;
+- a triangle when any source needs attention, beside the work if there is some.
+
+In a narrow panel the text shortens to the count, then to a percent, then to the
+ring alone; hover it for the full line.
+
 ## A source that is offline
 
 When a drive or share is not connected, its row is dimmed, with an empty ring.
