@@ -61,7 +61,7 @@ import { VignetteOverlay } from "./VignetteOverlay";
 import { GuideOverlay } from "./GuideOverlay";
 import { autoMix } from "./bwauto";
 import { begin, end, track, useWorking } from "./activity";
-import { nextJobId, runInBackground, runMerge, runMove, useJobs } from "./background";
+import { nextJobId, runCull, runInBackground, runMerge, runMove, useJobs } from "./background";
 import { withModel } from "./aiModel";
 import { invert, pixelAt, setProbe, type RGB } from "./probe";
 import { anchored, neutralize, whitePatch, type WB, pickedCoefficients } from "./wb";
@@ -125,6 +125,11 @@ import { PerfHud } from "./PerfHud";
 import { GridCulling } from "./GridCulling";
 import { KeywordingPanel } from "./Keywording";
 import { FindPanel } from "./FindPanel";
+import { CullDialog } from "./CullDialog";
+import { CullPanel } from "./CullPanel";
+import { loadAiGrading } from "./aiGrading";
+import { reviewOrder, scopeFor, scopeOf } from "./cullModel";
+import { cullState, setCull, showPlan, useCull } from "./cullStore";
 import { clipTipVisible, effectiveFilter, effectiveSearch, folderSearch, needsSearch, normalizeFind, reach, smartAvailable, type FindState } from "./findModel";
 import { loadClipState } from "./clipStatus";
 import { ManageSavedDialog, SaveDialog, SavedLine, SavedMenu } from "./SavedFilterMenus";
@@ -145,7 +150,7 @@ import { HistogramView, SCOPE_MODES, loadScope } from "./HistogramView";
 import { Navigator } from "./Navigator";
 import { PanelView, UPRIGHT_ICONS, UPRIGHT_TITLES, WBTools, isMono, presetValues, sampleSpot } from "./PanelView";
 import { Choice, OptionPreview, Slider, Toggle } from "./Controls";
-import { commands, type Instance, type FolderConflict, type FolderMovePlan, type FolderMoveRequest, type MovePlan, type MoveRequest, type MoveSummary, type PrintReply, type RenameItem, type Value } from "./commands";
+import { commands, type CullChange, type CullScopeItem, type CullSettings, type Instance, type FolderConflict, type FolderMovePlan, type FolderMoveRequest, type MovePlan, type MoveRequest, type MoveSummary, type PrintReply, type RenameItem, type Value } from "./commands";
 import { formatNumber, t, t as translate } from "./i18n";
 
 const MAX_PREVIEW = 2560;
@@ -6088,6 +6093,7 @@ export default function App() {
         if (previewRef.current) setPreview(false);
         else if (session.current) setPreview(true);
       },
+      "auto-cull": () => { window.dispatchEvent(new CustomEvent("auto-cull-open")); },
       "culling-preview": () => { if (gridRef.current) window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: {} })); },
       "info-overlay": () => { if (session.current) setInfoMode((m) => (m + 1) % 3); },
       "canvas": () => {
@@ -6309,7 +6315,11 @@ export default function App() {
   const stackRaw = (i: Known) => !i.copy && isPrimaryRaw(i.filename);
   const unreadRaws = stackPairs ? new Set(unread.filter(stackRaw).map((k) => pairKey(k.path))) : null;
   const stacked = (i: Known) => !i.copy && isCompanion(i.filename) && !!unreadRaws?.has(pairKey(i.path));
-  const shown = passing.filter((i) => !behind.has(i.imgid) && !stacked(i));
+  const shownListed = passing.filter((i) => !behind.has(i.imgid) && !stacked(i));
+  // an auto cull under review: its chip's photos, a set's together with its best first
+  const cull = useCull();
+  const culling = grid && cull.open && cull.plan !== null;
+  const shown = culling ? reviewOrder(shownListed, cull.decisions, cull.chip) : shownListed;
   const hasCullingPhotos = grid && shown.some((i) => !isRemote(i));
   const hasPhoto = current !== null;
   const disabledMenuActions = useMemo(
@@ -6485,6 +6495,47 @@ export default function App() {
   };
   // spent on leaving, or coming back to the grid would take the keyboard for the box
   useEffect(() => { if (!findLocked) setFindFocus(0); }, [findLocked]);
+  // Auto Cull: the dialog over the selection, else the listed photos, then the
+  // analysis as a background job and, when it is done, the review
+  const [cullAsk, setCullAsk] = useState<{ items: CullScopeItem[]; selected: boolean; label: string; aiReady: boolean } | null>(null);
+  const openCullDialog = () => {
+    if (!gridRef.current) return;
+    const { items, selected } = scopeFor(shownRef.current, selectionRef.current, partnersRef.current);
+    if (!items.length) return;
+    const dir = folderRef.current;
+    const label = selected ? t("cull.scope.selection") : dir ? baseName(dir) : t("cull.scope.listed");
+    setCullAsk({ items, selected, label, aiReady: false });
+    void commands.geminiKeyStatus().then((st) => {
+      setCullAsk((a) => (a ? { ...a, aiReady: st.hasKey && st.enabled && loadAiGrading() } : a));
+    }).catch(() => {});
+  };
+  const openCullDialogRef = useRef(openCullDialog);
+  openCullDialogRef.current = openCullDialog;
+  useEffect(() => {
+    const open = () => { if (!document.querySelector(".modal-backdrop")) openCullDialogRef.current(); };
+    window.addEventListener("auto-cull-open", open);
+    return () => window.removeEventListener("auto-cull-open", open);
+  }, []);
+  const runCullFor = (settings: CullSettings) => {
+    const ask = cullAsk;
+    setCullAsk(null);
+    if (!ask) return;
+    void runCull(t("cull.job.title"), scopeOf(ask.label, ask.items), settings,
+      (plan) => {
+        showPlan(plan);
+        revealRightPanel();
+        return { text: t("cull.job.done", { total: formatNumber(plan.session.totalCount), reject: formatNumber(plan.session.rejectCount) }), ok: true };
+      }, t("cull.job.failed"));
+  };
+  // photos a cull wrote to the library (Apply, Undo, an override after Apply)
+  const applyCullChanges = (changes: CullChange[]) => {
+    for (const c of changes) {
+      const hit = imagesRef.current.find((i) => i.path === c.target.path && (i.version ?? 0) === (c.target.version ?? 0));
+      if (hit) patchImage(hit.imgid, { rating: c.state.rating, rejected: c.state.rejected, labels: c.state.labels });
+    }
+  };
+  // another folder is another shoot: the review of a cull ends with the folder it was of
+  useEffect(() => { if (cullState().plan) showPlan(null); }, [folder]);
   const renderFind = () => (
     <FindPanel state={find} onChange={changeFind} images={images} immichAvailable={!!immichBase}
               smart={smartAvailable(clipReady, !!immichBase)}
@@ -6501,7 +6552,11 @@ export default function App() {
                                                onUpdate={() => updateSaved(savedNow.id, find)}
                                                onSaveNew={() => setSaveDialog(true)} onDetach={() => setSavedId(null)} /> : undefined}
               onSaveNew={() => setSaveDialog(true)}
-              focusToken={findFocus} pin={pinButton("find")} />
+              focusToken={findFocus} pin={pinButton("find")} onOpenCullPrefs={() => setPrefsOpen("culling")} />
+  );
+  const renderCull = () => (
+    <CullPanel onChanges={applyCullChanges} onClose={() => setCull({ open: false })} onFresh={openCullDialog}
+               pin={pinButton("find")} />
   );
   const docked = { left: layout.left && !floating.left, right: rightPanelOpen && !floating.right };
 
@@ -6556,7 +6611,8 @@ export default function App() {
       activeEditorId={session.current?.imgid}
       prepare={async id => { if (session.current?.imgid === id) await session.current.saveForPreview(); }}
       onEdit={(i) => { setGrid(false); void openEntry(i); }} onMeta={(i, fields) => void setMeta(i.imgid, fields)}
-      onKeywords={(id, list) => { patchImage(id, { keywords: list }); if (id === currentId) setKeywords(list); }} />}
+      onKeywords={(id, list) => { patchImage(id, { keywords: list }); if (id === currentId) setKeywords(list); }}
+      onCullChanges={applyCullChanges} onOpenCullPrefs={() => setPrefsOpen("culling")} />}
     {/* the window's title bar is hidden (tauri.conf.json); this strip moves
         the window and leaves room for the traffic lights */}
     {/* full screen has no traffic lights to hold, and the photo wants the room */}
@@ -7053,7 +7109,7 @@ export default function App() {
       <div className={`slot right-slot${rightPanelOpen ? "" : " closed"}${floating.right ? " floating" : ""}`
                       + `${floating.right && revealed.right ? " revealed" : ""}`}>
       <aside className="right" ref={rightAside} style={{ width: rightWidth }}>
-        {findLocked && renderFind()}
+        {findLocked && (culling ? renderCull() : renderFind())}
         {/* stays mounted under Find, as the zoom bar's photo does in the grid */}
         <div style={{ display: findLocked ? "none" : "contents" }}>
         <div className="panel-head"><h1>{cropping ? t("app.panel.crop") : RIGHT_TITLES[rightMode]}</h1>
@@ -7560,6 +7616,9 @@ export default function App() {
     {supportBundle && <SupportBundleDialog values={supportBundle} onClose={() => setSupportBundle(null)} />}
     {folderMoveDialog && <FolderMoveDialog key={folderMoveDialog.job} {...folderMoveDialog}
       onConfirm={(copy, overwrite) => void confirmFolderMove(copy, overwrite)} onClose={closeFolderMove} />}
+    {cullAsk && <CullDialog count={cullAsk.items.length} selected={cullAsk.selected} label={cullAsk.label} aiReady={cullAsk.aiReady}
+      onClose={() => setCullAsk(null)} onRun={runCullFor}
+      onOpenPrefs={() => { setCullAsk(null); setPrefsOpen("culling"); }} />}
     {moveDialog && <MoveDialog plan={moveDialog.plan} error={moveDialog.error} copy={moveDialog.copy}
                                onConfirm={(copy, keep) => void confirmMove(copy, keep)} onClose={() => setMoveDialog(null)} />}
     {renameGroups && <RenameDialog groups={renameGroups} onApply={applyRename} onClose={() => setRenameGroups(null)} />}

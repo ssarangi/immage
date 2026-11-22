@@ -13,6 +13,8 @@ import { SecondaryClickGuard } from "./secondaryClick";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { t } from "./i18n";
+import { badgeOf } from "./cullModel";
+import { useDecision } from "./cullStore";
 
 // the pair names (pairKey()) that have a raw among these files
 export const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPrimaryRaw(p)).map(pairKey));
@@ -195,6 +197,7 @@ export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, typ
   types: string; active: boolean; selected: boolean; candidate: boolean; doubleOpens: boolean;
 }) {
   const clickGuard = useRef(new SecondaryClickGuard());
+  const cull = useDecision(i.path, i.version);
   return (
     <div className={`thumb${active ? " active" : ""}${i.rejected ? " rejected" : ""}`
                     + `${i.rating || i.rejected ? " rated" : ""}${selected ? " selected" : ""}`
@@ -216,7 +219,10 @@ export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, typ
         {i.edited && <span className="thumb-edited" title={t("library.filmstrip.edited")}><SlidersIcon /></span>}
         <span className="thumb-type">{types}{copyName(i)}</span>
       </div>
-      <div className="thumb-image"><ThumbCanvas loader={loader} imgid={i.imgid} dogEar={!!i.copy} /></div>
+      <div className="thumb-image"><ThumbCanvas loader={loader} imgid={i.imgid} dogEar={!!i.copy} />
+        {cull && <span className={`cull-badge ${badgeOf(cull)}`}>{{ best: "★", keep: "✓", reject: "✕" }[badgeOf(cull)]} {t(`cull.badge.${badgeOf(cull)}`)}
+          {cull.group !== null && <span className="cull-badge-set"> · {t("cull.badge.set", { n: cull.group })}</span>}</span>}
+      </div>
       {/* rated without opening the photo, as Lightroom's filmstrip does;
           an Immich result shows Immich's rating, set only once opened */}
       <div className={`thumb-foot${isRemote(i) ? " read-only" : ""}`} onClick={(e) => e.stopPropagation()}>

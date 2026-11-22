@@ -81,6 +81,52 @@ export const commands = {
 	movePlan: (req: MoveRequest) => __TAURI_INVOKE<MovePlan>("move_plan", { req }),
 	moveFiles: (job: number, req: MoveRequest, copy: boolean, keepBoth: string[]) => __TAURI_INVOKE<MoveSummary>("move_files", { job, req, copy, keepBoth }),
 	moveCancel: (job: number) => __TAURI_INVOKE<void>("move_cancel", { job }),
+	/**
+	 *  Plans a cull over `scope`: measures each photo, groups look-alikes,
+	 *  decides keepers, rejects and highlights, and records it as a session
+	 *  without changing any photo. `job` is the page's number for it, for
+	 *  `cull_cancel` and the `cull-progress` events. A cancelled plan stores
+	 *  nothing and fails with "cancelled".
+	 */
+	cullPlan: (job: number, scope: CullScope, settings: CullSettings) => __TAURI_INVOKE<CullPlan>("cull_plan", { job, scope, settings }),
+	/**
+	 *  Stops a running `cull_plan`: the photo being measured finishes, nothing
+	 *  is recorded.
+	 */
+	cullCancel: (job: number) => __TAURI_INVOKE<void>("cull_cancel", { job }),
+	/**  Past sessions, newest first, without their decisions. */
+	cullSessions: () => __TAURI_INVOKE<CullSession[]>("cull_sessions"),
+	/**  One session with its decisions, to review it again. */
+	cullSession: (sessionId: number) => __TAURI_INVOKE<CullPlan | null>("cull_session", { sessionId }),
+	/**
+	 *  Forgets a session. Photos it already changed stay as they are; undo first
+	 *  to take that back.
+	 */
+	cullDeleteSession: (sessionId: number) => __TAURI_INVOKE<boolean>("cull_delete_session", { sessionId }),
+	/**
+	 *  Forgets every photo's cached measurements, so the next cull measures
+	 *  them again.
+	 */
+	cullCacheClear: () => __TAURI_INVOKE<null>("cull_cache_clear"),
+	/**
+	 *  The user's call on one photo: Keep or Reject, and with `makeBest` the
+	 *  mark of its set's best frame. In a session already applied the library
+	 *  follows at once (the photo goes back as it was, then is flagged again for
+	 *  a reject); in a planned one only the plan changes.
+	 */
+	cullOverride: (decisionId: number, status: CullStatus, makeBest: boolean | null) => __TAURI_INVOKE<CullOverrideResult>("cull_override", { decisionId, status, makeBest }),
+	/**
+	 *  Writes a planned session to the library: rejects are flagged in place
+	 *  (no file is moved or deleted) and, if asked, highlights get a rating and
+	 *  a color label. Photos whose file changed since the analysis are skipped
+	 *  and listed. A session applies once; `cull_undo` reverses it.
+	 */
+	cullApply: (sessionId: number, options: CullApplyOptions | null) => __TAURI_INVOKE<CullApplyResult>("cull_apply", { sessionId, options }),
+	/**
+	 *  Puts every photo an applied session changed back as it was. A photo that
+	 *  has been changed since the cull is left alone and listed.
+	 */
+	cullUndo: (sessionId: number) => __TAURI_INVOKE<CullApplyResult>("cull_undo", { sessionId }),
 	folderMovePlan: (job: number, req: FolderMoveRequest) => __TAURI_INVOKE<FolderMovePlan>("folder_move_plan", { job, req }),
 	folderMove: (job: number, req: FolderMoveRequest, copy: boolean, overwrite: FolderConflict[]) => __TAURI_INVOKE<FolderMoveSummary>("folder_move", { job, req, copy, overwrite }),
 	renamePreview: (items: RenameItem[]) => __TAURI_INVOKE<RenameResult>("rename_preview", { items }),
@@ -193,6 +239,23 @@ export const commands = {
 	morfPhotoSave: (settings: Config, key: string | null) => __TAURI_INVOKE<null>("morf_photo_save", { settings, key }),
 	morfPhotoTest: (settings: Config, key: string | null) => __TAURI_INVOKE<null>("morf_photo_test", { settings, key }),
 	morfPhotoForget: () => __TAURI_INVOKE<null>("morf_photo_forget"),
+	geminiKeyStatus: () => __TAURI_INVOKE<GeminiStatus>("gemini_key_status"),
+	/**  Saves the key in the keychain. It is not echoed back or logged. */
+	geminiKeySet: (key: string) => __TAURI_INVOKE<null>("gemini_key_set", { key }),
+	geminiKeyClear: () => __TAURI_INVOKE<null>("gemini_key_clear"),
+	/**  Tests the typed key, or the saved one when `key` is None. */
+	geminiKeyTest: (key: string | null) => __TAURI_INVOKE<null>("gemini_key_test", { key }),
+	/**
+	 *  Critiques a photo, from the cache unless `force`. A miss uploads one JPEG of
+	 *  the photo (long edge 1024) to Google. `path` is the photo's file, which
+	 *  identifies it in the cache; `imgid` is its id in the engine's library.
+	 */
+	geminiCritique: (imgid: number, path: string, force: boolean | null) => __TAURI_INVOKE<GeminiCritique>("gemini_critique", { imgid, path, force }),
+	/**
+	 *  Turns a sentence into Find filters. Only the sentence and today's date are
+	 *  sent; no photo names, paths or catalog contents.
+	 */
+	geminiSearch: (query: string) => __TAURI_INVOKE<GeminiSearch>("gemini_search", { query }),
 	pluginFindApps: (patterns: string[]) => __TAURI_INVOKE<string[]>("plugin_find_apps", { patterns }),
 	pluginConfig: (legacy: PluginConfig[] | null) => __TAURI_INVOKE<PluginConfig[]>("plugin_config", { legacy }),
 	pluginConfigSave: (list: PluginConfig[]) => __TAURI_INVOKE<PluginConfig[]>("plugin_config_save", { list }),
@@ -404,6 +467,216 @@ export type Counts = {
 	analysed_photos: number,
 };
 
+export type CritiqueRegion = {
+	label: string,
+	positive: boolean,
+	note: string,
+	/**  [x, y, width, height], each 0 to 1 from the top left */
+	box: [(number | null), (number | null), (number | null), (number | null)],
+};
+
+/**
+ *  What one photo measured. `Option` fields need a subject mask and are
+ *  `None` until one is available.
+ */
+export type CullAnalysis = {
+	qualityScore: number | null,
+	sharpnessMetric: number | null,
+	centerFocusMetric: number | null,
+	subjectFocusMetric: number | null,
+	subjectCompositionMetric: number | null,
+	subjectEdgeContactRatio: number | null,
+	exposureMetric: number | null,
+	/**  the pixel size of the image that was analysed, not of the original */
+	width: number,
+	height: number,
+	/**  the softest textured part of the frame (see `find_blurriest_region`) */
+	blurryRegion: CullBlurRegion | null,
+};
+
+export type CullApplyOptions = {
+	/**  flag the rejects (default). Off applies only the highlight options. */
+	reject?: boolean,
+	/**  give each highlight at least this many stars (1-5); never lowers one */
+	highlightRating?: number | null,
+	/**
+	 *  add this color label (one of the bits red 1, yellow 2, green 4, blue 8,
+	 *  purple 16) to each highlight
+	 */
+	highlightLabel?: number | null,
+};
+
+export type CullApplyResult = {
+	session: CullSession,
+	/**
+	 *  every photo whose entry now differs, with it, so the page can update
+	 *  its thumbnails without reading the library again
+	 */
+	changes: CullChange[],
+	/**  decisions not applied (or not undone), each with the reason */
+	skipped: CullFailure[],
+	/**  photos flagged as rejected, and photos given a highlight rating or label */
+	rejected: number,
+	highlighted: number,
+};
+
+/**  A normalized (0-1) rectangle. */
+export type CullBlurRegion = {
+	x: number | null,
+	y: number | null,
+	width: number | null,
+	height: number | null,
+};
+
+/**  A photo's entry after an apply or undo. */
+export type CullChange = {
+	target: CullTarget,
+	state: CullLibraryState,
+};
+
+export type CullDecision = {
+	id: number,
+	sessionId: number,
+	path: string,
+	version: number,
+	/**  other files that take this photo's decision (a RAW's JPEG, say) */
+	backing: CullTarget[],
+	/**  the planner's verdict */
+	proposed: CullStatus,
+	/**  the user's override, if any */
+	finalStatus: CullStatus | null,
+	/**  the verdict that counts: the override, else the proposal */
+	status: CullStatus,
+	reason: CullReason,
+	/**  1-based set number, when the photo is one of a set of look-alikes */
+	group: number | null,
+	/**  the set's best frame (for a duplicate, the one it lost to) */
+	bestPath: string | null,
+	/**  the set's best frame is this photo */
+	best: boolean,
+	highlight: boolean,
+	qualityScore: number | null,
+	factors: CullFactor[],
+	blurryRegion: CullBlurRegion | null,
+	analysis: CullAnalysis,
+	/**  the file's size and modification time (ms) when it was analysed */
+	fileSize: number,
+	fileModifiedMs: number,
+	/**  written to the library by Apply and not yet undone */
+	applied: boolean,
+};
+
+/**
+ *  One line of "why this decision". `impact` is "reject", "supporting" or
+ *  "context".
+ */
+export type CullFactor = {
+	id: string,
+	label: string,
+	detail: string,
+	impact: string,
+};
+
+export type CullFailure = {
+	path: string,
+	error: string,
+};
+
+/**  What a photo's library entry says now: the three things a cull writes. */
+export type CullLibraryState = {
+	/**  0-5; 0 when rejected */
+	rating: number,
+	rejected: boolean,
+	/**  bits: red 1, yellow 2, green 4, blue 8, purple 16 */
+	labels: number,
+};
+
+export type CullOverrideResult = {
+	decision: CullDecision,
+	/**  library entries rewritten, when the session was already applied */
+	changes: CullChange[],
+};
+
+/**  A session with its decisions. */
+export type CullPlan = {
+	session: CullSession,
+	decisions: CullDecision[],
+};
+
+export type CullReason = 
+/**  not in a set and sharp enough */
+"unique" | 
+/**  the best frame of a duplicate set */
+"bestInGroup" | 
+/**  a lower-ranked frame of a set that the duplicate ratio keeps as well */
+"keptInGroup" | 
+/**  a single frame under the sharpness threshold */
+"blurry" | 
+/**  a lower-ranked frame of a set (`bestPath` names the frame it lost to) */
+"duplicateOf";
+
+export type CullScope = {
+	/**  shown in the History list: a folder's name, "Selection" */
+	label: string,
+	items: CullScopeItem[],
+};
+
+/**
+ *  A photo to cull, and the files that take its decision with it (a RAW's
+ *  JPEG when the page stacks pairs). Only the first is analysed.
+ */
+export type CullScopeItem = {
+	path: string,
+	version?: number,
+	backing?: CullTarget[],
+};
+
+/**  One past or current cull run. */
+export type CullSession = {
+	id: number,
+	/**  what was culled, for the History list (a folder's name, "Selection") */
+	scopeLabel: string,
+	state: CullSessionState,
+	settings: CullSettings,
+	totalCount: number,
+	keepCount: number,
+	rejectCount: number,
+	highlightCount: number,
+	groupCount: number,
+	/**  seconds since the epoch */
+	createdAt: number,
+	updatedAt: number,
+	/**  photos that could not be analysed, left out of the decisions */
+	failed: CullFailure[],
+};
+
+export type CullSessionState = "planned" | "applied" | "undone";
+
+export type CullSettings = {
+	/**
+	 *  "general", "portrait" or "wildlife". Kept with the session; the
+	 *  technical pass is the same for every type until subject detection exists.
+	 */
+	shootType?: string,
+	/**  perceptual-hash distance (of 512 bits) up to which two frames are one set */
+	similarityThreshold?: number,
+	/**  sharpness (Laplacian variance) below which a single frame is blurry */
+	blurThreshold?: number | null,
+	groupSimilar?: boolean,
+	filterBlurry?: boolean,
+	duplicateRatio?: DuplicateRatio,
+	/**  the share of the keepers flagged as highlights, 0-100 */
+	highlightPercent?: number,
+};
+
+export type CullStatus = "keep" | "reject";
+
+/**  A photo, as the library names it: its file and which version of the file. */
+export type CullTarget = {
+	path: string,
+	version?: number,
+};
+
 export type DepthMap = {
 	width: number,
 	height: number,
@@ -418,6 +691,12 @@ export type DtPreset = {
 	applicable: boolean,
 	active: boolean,
 };
+
+/**
+ *  How many frames of each duplicate set stay: More keeps the top 35 %
+ *  (at least one), Moderate the top 20 %, Less only the best.
+ */
+export type DuplicateRatio = "more" | "moderate" | "less";
 
 export type ExistingFile = {
 	path: string,
@@ -554,6 +833,44 @@ export type FontFamily = {
 export type FoundPreset = {
 	name: string,
 	params: { [key in string]: number },
+};
+
+export type GeminiCritique = {
+	imgid: number,
+	model: string,
+	overallSummary: string,
+	regions: CritiqueRegion[],
+	/**  answered from the cache, with no upload */
+	cached: boolean,
+};
+
+/**
+ *  A search as Find can run it: the words for its search box, a folder
+ *  Filter, and what Find has no field for.
+ */
+export type GeminiSearch = {
+	/**  what Gemini understood, one sentence */
+	summary: string,
+	/**  for Find's search box (file names, and content words for Smart search) */
+	text: string,
+	/**  for Find's Filter: rating, edited, file kind, keywords, capture dates */
+	filter: GridFilter,
+	/**  a camera or lens named, to be matched against the folder's cameras and lenses */
+	camera: string | null,
+	lens: string | null,
+	/**  color label bits (red 1, yellow 2, green 4, blue 8, purple 16) */
+	labels: number,
+	/**  parts of the request Find cannot apply, in words */
+	unmapped: string[],
+};
+
+export type GeminiStatus = {
+	/**  a key is saved in the system keychain */
+	hasKey: boolean,
+	/**  the keychain could not be read */
+	keychainError: boolean,
+	/**  Preferences > Culling's AI grading switch */
+	enabled: boolean,
 };
 
 export type GeneratedReply = {

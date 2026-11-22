@@ -3,6 +3,29 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## Unreleased
+
+Improvements
+
+- **Auto Cull:** click Cull in the grid toolbar, or choose Photo > Auto Cull,
+  to find blurry and duplicate photos in the selection or the listed photos.
+  Choose the shoot type, how many duplicates to reject, the highlight share
+  and the blur threshold; the analysis runs in the activity line and can be
+  stopped. The Cull panel, in Find's place, filters the grid by Highlights,
+  Blurry, Duplicates and Rejected, counts why photos are rejected, groups a
+  set of look-alikes with its best frame first, and keeps past sessions. The
+  preview's inspector gives each decision's reasons in plain words, outlines
+  the softest region, and lets you Keep, Reject or Make best (P, R, B). Apply
+  flags the rejects in place (nothing is moved or deleted) and can give
+  highlights a rating and a color label; Undo puts everything back.
+- **AI grading with Google Gemini:** Preferences > Culling saves a Gemini API
+  key in the system keychain, tests it, switches AI grading on, and holds the
+  Auto cull defaults and the analysis cache button. The preview's inspector
+  can critique a photo: a summary and labeled strength and weakness regions
+  drawn over it, cached per photo. In Find, a sentence typed under Describe the
+  photos in words becomes Find filters, without sending any catalog contents.
+  Support bundles remove API keys.
+
 ## 0.47.1
 
 Improvements

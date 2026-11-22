@@ -108,6 +108,7 @@ jobs:
             verify/contrast-equalizer.test.mjs \
             verify/culling.test.mjs \
             verify/culling-zoom.test.mjs \
+            verify/cull-model.test.mjs \
             verify/crop-corner.test.mjs \
             verify/crop-transition.test.mjs \
             verify/demosaic-options.test.mjs \

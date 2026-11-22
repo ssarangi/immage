@@ -46,7 +46,7 @@ and Linux. **All builds are alpha; bugs are expected.**
   runs on your computer. The [Find panel](app/docs/library.md#find) in Grid
   keeps filters active across folder changes and remembers its own width and
   visibility separately from the editing panel.
-- Cull in the grid with **View > Culling Preview**, ratings, color labels and keywords. Click the tag icon or press **K** to keyword the photo in the lightbox.
+- Cull automatically with **Cull** in the grid toolbar (blurry and duplicate photos, reviewed and applied or undone), or by hand with **View > Culling Preview**, ratings, color labels and keywords. Click the tag icon or press **K** to keyword the photo in the lightbox.
 - Rename photos individually or in bulk from the [Library grid](app/docs/library.md#rename-photos), with a file count, a live filename example, and sidecars kept alongside.
 - Drag photos or [whole folders](app/docs/library.md#moving-and-copying-folders) onto another folder, including a mounted SMB share, to move or copy them along with their sidecars. Folder copies skip Finder’s `.DS_Store` and Windows Explorer’s `Thumbs.db`. See [macOS SMB troubleshooting](app/docs/library.md#troubleshooting-macos-smb-transfers) to capture transfer errors.
 - Browse indexed photos on mapped network shares with experimental
@@ -99,7 +99,7 @@ For Linux launch options, see [Linux setup and troubleshooting](app/docs/prefere
 - [User guide](app/docs/README.md): getting started, editing tools and settings.
 - [darktable compatibility and module reference](app/docs/darktable.md).
 - [Troubleshooting and reporting issues](app/docs/troubleshooting.md): diagnostics, the support bundle and the bug report form.
-- [Library culling](app/docs/library.md): review photos with keyboard navigation, a bottom zoom slider, read-ahead, and optional camera previews for edited RAWs.
+- [Library culling](app/docs/library.md): auto cull a shoot, ask Gemini for a critique, review photos with keyboard navigation, a bottom zoom slider, read-ahead, and optional camera previews for edited RAWs.
 - [Developer docs](app/docs/dev/README.md): building, architecture and contributing to the code.
 - [Credits and licenses](app/docs/credits.md): projects, AI models and map attribution.
 

@@ -61,6 +61,7 @@ In full screen preview, Z, ⌘= ⌘-, Y, X, I, L, \, 0-9 and ← → still work.
 | 0 - 5 | Rating, for every selected photo |
 | 6 - 9 | Red, yellow, green or blue label, for every selected photo |
 | X | Reject |
+| P R B | In the culling preview of a reviewed Auto cull: keep the photo, reject it, or make it the best of its set (needs the Cull inspector open) |
 | ⌘-click | In the filmstrip: add a photo to the selection, or take it out |
 | ⇧-click | In the filmstrip: select the run from the last clicked photo |
 | ⌥1 - ⌥9 | Open saved filter 1 to 9 (Find's saved filters, in list order) |

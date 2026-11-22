@@ -553,6 +553,115 @@ component ([Preferences](preferences.md)).
 If a saved filter searches Immich and Immich is not available, Find searches
 this computer only and says that Immich was skipped.
 
+## Auto cull
+
+Auto cull sorts a shoot for you before you rate it. It measures each photo in
+the selection, or in the listed photos when none is selected, on a small
+preview of the photo (never a full RAW decode), so a long shoot takes
+minutes, and a second run over the same files is much quicker because the
+measurements are remembered. A stacked RAW+JPEG pair is one photo and takes
+one decision. Photos from an Immich search are not on this computer and are
+left out. Nothing is changed until you apply the result.
+
+### Starting a cull
+
+In the grid, click **Cull** in the toolbar or choose **Photo > Auto Cull...**.
+The window asks:
+
+- **Shoot type**: General, Portrait or Wildlife. It is kept with the session;
+  the measurements are the same for every type for now.
+- **Duplicates to reject**: **More** keeps only the best frame of each set of
+  look-alikes, **Moderate** about the top fifth and **Less** about the top
+  third.
+- **Highlights (% of the kept photos)**: the best-scoring share, 15 by default,
+  that is marked as highlights.
+- **Blur threshold**: a single photo softer than this is rejected as blurry.
+- **Advanced > Similarity**: how alike two photos must be to count as one set.
+- A note says whether AI grading is on and, when it is not, links to
+  **Preferences > Culling**. A cull never needs AI grading.
+
+The starting values are the ones in **Preferences > Culling**
+([Preferences](preferences.md#culling)). **Run** closes the window and the
+analysis goes on in the activity line under the photo, which names the photo
+it is measuring and has **Stop**. A stopped run stores nothing. You can keep
+browsing meanwhile. When it finishes, the **Cull** panel opens.
+
+### Reviewing
+
+The **Cull** panel takes Find's place in the right-hand column of the grid;
+the **x** at its top returns to Find. It shows:
+
+- **Session**: the current cull, and a list of past ones with the date and
+  whether each is applied. **Delete** removes a session from the list (it does
+  not undo an applied cull) and **New cull...** opens the window again.
+- A summary line, and the chips **All**, **Highlights**, **Blurry**,
+  **Duplicates** and **Rejected**, each with its count. A chip filters the
+  grid. A set of look-alikes is shown together with its best frame first.
+- **Why photos are rejected**: the rejects by reason (blurry, a duplicate of a
+  better frame, or rejected by you).
+
+Each reviewed thumbnail carries a badge in words and a symbol: **Best**,
+**Keep** or **Reject**, with the set number for a photo in a set. The reviewed
+state does not rely on color alone. Opening another folder ends the review.
+
+Open a photo in the culling preview (the magnifier, or **F**) and the
+**Cull inspector** shows beside it (the scan icon in the preview's toolbar
+turns it on or off):
+
+- the verdict, with whether it is a highlight, and its reasons in plain words,
+  each marked **Against**, **For** or **Note**;
+- **Show the softest region**, which outlines the softest textured part of a
+  blurry photo on the picture;
+- **Keep (P)**, **Reject (R)** and **Make best (B)**, to overrule the
+  decision. Make best works on a photo in a set. K stays Keywords. If the
+  cull was already applied, the library follows at once.
+
+### Applying and undoing
+
+**Apply** flags the rejects in place with darktable's reject flag, so they show
+in the filmstrip and Find and are written to the XMP sidecars. Nothing is moved
+or deleted, and you delete rejects yourself as described in
+[Deleting rejected photos](#deleting-rejected-photos). Before it, choose a
+**Highlight rating** (a minimum star rating, never lowering an existing one)
+and a **Highlight color** for the highlights, or none; the starting choices are
+set in **Preferences > Culling**. A photo whose file changed after the analysis
+is skipped and listed under **photos skipped**.
+
+**Undo** puts each photo's rating, reject flag and labels back as they were
+before Apply. A photo you rated again after the cull is left as you set it.
+A session applies once. Sessions and the remembered measurements are in the
+`cull.sqlite` file in Immage's runtime folder; **Clear analysis cache** in
+Preferences forgets the measurements only.
+
+## AI critique and natural-language search
+
+With a Gemini key saved and **Use AI grading** on (Preferences › Culling, see
+[Preferences](preferences.md#culling)), Immage can ask Google Gemini about a photo.
+
+- **Critique**: in the culling preview, open the **Cull inspector** and click
+  **Critique**. It returns a one or two sentence summary and up to six labeled
+  regions, each a **Strength** (green, solid box, marked +) or a **Weakness**
+  (red, dashed box, marked -) with a note, drawn over the photo; pointing at a
+  region in the list thickens its box. The photo's preview is sent to Google as
+  a JPEG with a long edge of at most 1024 pixels; nothing else about the photo
+  is. Answers are kept on this computer, keyed by the file, its size and
+  modified time and the prompt version, so asking again about an unchanged
+  photo costs nothing and says it came from the saved answer. **Critique
+  again** asks Gemini afresh. Without a key, or with AI grading off, the
+  inspector says so and links to Preferences.
+- **Natural-language search**: in Find, type a sentence in the **Describe the
+  photos in words** box and click **Ask Gemini** (or press Enter). Immage
+  turns it into Find filters: words for the search box (content words use
+  Smart search), minimum rating, edited, RAW or not, keywords, capture dates,
+  a color label, and a camera or lens when the listed photos have a matching
+  one. The line under the box says what Gemini understood, and lists anything
+  Find has no filter for, such as named people or exclusions, as not applied.
+  Only the sentence and today's date are sent. Gemini never sees your catalog
+  and cannot run database queries.
+
+If one Gemini model is overloaded or rate limited, Immage tries the next. A
+rejected key or request stops with Gemini's message.
+
 ## RAW+JPEG pairs
 
 Turn on **Stack RAW+JPEG pairs as one photo** in **Preferences › General**

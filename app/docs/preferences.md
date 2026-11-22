@@ -672,6 +672,33 @@ how search results open from this computer (External library path and Folder
 on this computer, with warnings and an example). See
 [Immich](immich.md) for setting it up step by step.
 
+## Culling
+
+Defaults for [Auto cull](library.md#auto-cull) and AI grading with Google
+Gemini.
+
+- **Auto cull defaults**: the starting values of the Auto Cull window: **Shoot
+  type**, **Duplicates to reject**, **Highlights (%)**, **Blur threshold** and
+  **Similarity**. **Reset to Immage's defaults** puts them back.
+- **Apply defaults**: the **Highlight rating** and **Highlight color label** that
+  Apply starts with. Neither is set by default.
+- **Cache and model**: **Clear analysis cache** forgets every photo's
+  measurements, so the next cull measures them again; past sessions are kept.
+  **Gemini model** is **Automatic**: Immage uses the newest available flash
+  model and falls back to the next. Pinning a model, and clearing saved
+  critiques, are not available yet.
+- **Use AI grading**: off until you turn it on and save a key. While off,
+  nothing is sent to Google.
+- **Gemini API key**: paste a key from Google AI Studio and choose **Save**.
+  The system keychain keeps it. It is never shown again (the field shows
+  **saved**), never written to Immage's settings and removed from support
+  bundles. **Replace** enters a new key and **Forget** removes it.
+- **Test**: checks the typed key, or the saved one, with Google.
+- **Privacy**: a critique uploads one downscaled JPEG of the photo (long edge
+  1024 pixels) to Google. A natural-language search sends only the sentence you
+  type and today's date, never photo names, paths or catalog contents. See
+  [Library](library.md#ai-critique-and-natural-language-search).
+
 ## Plugins
 
 Applications a photo can be sent to with right-click › **Edit In**. See

@@ -104,6 +104,12 @@ Checks and tools: [release asset tests](../../../scripts/test_release_assets.py)
 fallback, embedded JPEG equality, orientation and scaled decoding.
 
 
+Auto cull (Rust): [cull.rs](../../src-tauri/src/cull.rs) (Laplacian sharpness, exposure, blurry region, perceptual hash and grouping over pixels),
+[cull_plan.rs](../../src-tauri/src/cull_plan.rs) (`plan`: sets, keepers, rejects, highlights, decision factors),
+[cull_store.rs](../../src-tauri/src/cull_store.rs) (`cull.sqlite`: sessions, decisions, events, analysis cache),
+[cull_apply.rs](../../src-tauri/src/cull_apply.rs) (apply and undo through the `Library` trait),
+[cull_cmds.rs](../../src-tauri/src/cull_cmds.rs) (`cull_*` commands, the `cull-progress` event, `EngineLibrary` over `meta` / `meta_set`; the analysis reads the engine's `analysis_preview`).
+
 ## Keeping this map current
 
 - Add a file to its line here and its entry in [architecture.md](architecture.md); keep this map short, as it is read at the start of every session.
@@ -113,6 +119,15 @@ Support bundle: [scrub.rs](../../src-tauri/src/scrub.rs) (the scrubber),
 [support_bundle.rs](../../src-tauri/src/support_bundle.rs) (`support_bundle_*` commands, zip),
 [SupportBundleDialog.tsx](../../src/SupportBundleDialog.tsx) (review and remove lines); opened from Help
 (`support-bundle` in menu.ts) and from the engine-exit status in App.tsx.
+
+Auto cull (page): [cullModel.ts](../../src/cullModel.ts) (pure: scope, chips, `reviewOrder`, review keys, defaults, `applySearch` for Find), [cullStore.ts](../../src/cullStore.ts) (the plan under review; `useDecision` for a thumbnail's badge), [cullDefaults.ts](../../src/cullDefaults.ts), [CullDialog.tsx](../../src/CullDialog.tsx) (setup), `runCull` in [background.ts](../../src/background.ts) (the job and `cull-progress`), [CullPanel.tsx](../../src/CullPanel.tsx) (review, in Find's slot via `renderCull` in App.tsx), [CullInspector.tsx](../../src/CullInspector.tsx) (the lightbox's decision, overrides, critique and overlay, mounted by GridCulling.tsx), the `cull-badge` in Filmstrip.tsx's `FilmCell`, and Find's "Describe the photos in words" row in FindPanel.tsx (`geminiSearch`). Menu `auto-cull` and the toolbar's Cull button send the `auto-cull-open` window event.
+
+Gemini (AI grading): [gemini.rs](../../src-tauri/src/gemini.rs) (HTTP with model fallback, critique
+schema and sanitizing, critique cache `gemini-critiques.sqlite`, natural-language search mapped onto
+`GridFilter`; the key is in the keychain, `app.immage` / `gemini-api-key`) and
+[gemini_cmds.rs](../../src-tauri/src/gemini_cmds.rs) (`gemini_key_*`, `gemini_critique`, `gemini_search`);
+page side [CullingPrefs.tsx](../../src/CullingPrefs.tsx) and [aiGrading.ts](../../src/aiGrading.ts)
+(Preferences > Culling). `scrub.rs` redacts keys.
 
 GUI benchmark resource sampling: [resources.rs](../../src-tauri/src/resources.rs)
 records CPU, process memory, Linux threads and available GPU counters on a

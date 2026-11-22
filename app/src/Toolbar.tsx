@@ -190,6 +190,12 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
           </button>
           <span className="find-saved">{savedMenu(<ChevronDown size={12} strokeWidth={1.8} />)}</span>
         </div>
+        {/* in the first group, which stays on screen: the right-hand one scrolls out of view in a narrow window */}
+        {grid && <>
+          <span className="sep" />
+          <button className="tool cull-open" title={t("cull.toolbar.title")} aria-label={t("cull.toolbar.title")}
+                  onClick={() => window.dispatchEvent(new CustomEvent("auto-cull-open"))}>{t("cull.toolbar.button")}</button>
+        </>}
         {filtering && (
           <button className="tool clear-filters" title={t("library.toolbar.showEveryPhoto")} onClick={clearFilters}>{t("library.filters.clear")}</button>
         )}

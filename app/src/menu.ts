@@ -13,7 +13,7 @@ export type ActionId =
   | "import" | "add-folder" | "export" | "print" | "quit"
   | "undo" | "redo" | "cut" | "copy" | "paste" | "select-all"
   | "copy-settings" | "paste-settings" | "paste-previous" | "preferences"
-  | "virtual-copy" | "start-over" | "rotate-left" | "rotate-right" | "hdr-merge" | "pano-merge"
+  | "auto-cull" | "virtual-copy" | "start-over" | "rotate-left" | "rotate-right" | "hdr-merge" | "pano-merge"
   | "crop" | "heal" | "wb-picker"
   | "rate-0" | "rate-1" | "rate-2" | "rate-3" | "rate-4" | "rate-5"
   | "label-red" | "label-yellow" | "label-green" | "label-blue" | "reject"
@@ -35,7 +35,7 @@ export const ACTION_IDS: readonly ActionId[] = [
   "import", "add-folder", "export", "print", "quit",
   "undo", "redo", "cut", "copy", "paste", "select-all",
   "copy-settings", "paste-settings", "paste-previous", "preferences",
-  "virtual-copy", "start-over", "rotate-left", "rotate-right", "hdr-merge", "pano-merge",
+  "auto-cull", "virtual-copy", "start-over", "rotate-left", "rotate-right", "hdr-merge", "pano-merge",
   "crop", "heal", "wb-picker",
   "rate-0", "rate-1", "rate-2", "rate-3", "rate-4", "rate-5",
   "label-red", "label-yellow", "label-green", "label-blue", "reject",
@@ -90,6 +90,7 @@ export const MENUS: Menu[] = [
       item("rotate-right", t("menu.rotate-right"), "⌘]"), sep(),
       item("hdr-merge", t("menu.hdr-merge"), "⌃H"),
       item("pano-merge", t("menu.pano-merge"), "⌃M"), sep(),
+      item("auto-cull", t("menu.auto-cull")), sep(),
       item("crop", t("menu.crop"), "R"),
       item("heal", t("menu.heal"), "Q"),
       item("wb-picker", t("menu.wb-picker"), "W"), sep(),
@@ -185,7 +186,7 @@ export type { NativeItem, NativeMenu };
 
 export function disabledViewActions(grid: boolean, hasPhoto: boolean, hasCullingPhotos: boolean, cropping: boolean, preview: boolean): ReadonlySet<ActionId> {
   const disabled = new Set<ActionId>();
-  if (!grid || !hasCullingPhotos) disabled.add("culling-preview");
+  if (!grid || !hasCullingPhotos) { disabled.add("culling-preview"); disabled.add("auto-cull"); }
   if (!preview && (grid || !hasPhoto)) disabled.add("fullscreen-preview");
   if (grid || !hasPhoto) {
     for (const id of ["zoom-toggle", "before-after", "clipping", "next-scope", "info-overlay", "canvas", "soft-proof"] as const) {

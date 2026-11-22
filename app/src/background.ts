@@ -8,7 +8,7 @@
 // while, or until dismissed when anything went wrong
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
-import { commands, type ExportReply } from "./commands";
+import { commands, type CullPlan, type CullScope, type CullSettings, type ExportReply } from "./commands";
 import { formatNumber, t } from "./i18n";
 import { engineText } from "./engineState";
 
@@ -20,7 +20,7 @@ export type Job = {
   done: number;
   total: number;           // 0 for work with no count, as a denoise
   stage: string | null;    // past the count, as a panorama's "blending"
-  cancel: "export" | "merge" | "move" | null;   // the kind of command that stops it, if any
+  cancel: "export" | "merge" | "move" | "cull" | null;   // the kind of command that stops it, if any
   stopping: boolean;
   summary: string | null;  // set once it is over
   failed: boolean;
@@ -139,6 +139,27 @@ export async function runMove<R>(what: string, total: number, run: (job: number)
   return track(id, async () => { await moving; return run(id); }, summarize, failed);
 }
 
+let culling: Promise<unknown> | null = null;
+
+// runs `cull_plan` over `scope` as a job of its photos: the activity line names
+// the photo being measured (cull-progress), Stop cancels it, and a stopped run
+// leaves nothing behind. resolves with the plan, or null when it was stopped or
+// failed (the line says which)
+export async function runCull(what: string, scope: CullScope, settings: CullSettings,
+                              summarize: (r: CullPlan) => Outcome, failed: string): Promise<CullPlan | null> {
+  culling ??= listen<{ job: number; stage: string; done: number; total: number; file: string }>("cull-progress",
+    (e) => {
+      const { job, stage, done, total, file } = e.payload;
+      update(job, { done, total, stage: stage === "grouping" ? t("cull.stage.grouping") : file || null });
+    });
+  await culling;
+  const id = start(what, scope.items.length, "cull");
+  return track(id, async () => {
+    try { return await commands.cullPlan(id, scope, settings); }
+    catch (e) { throw String(e) === "cancelled" ? "stopped" : e; }
+  }, summarize, failed);
+}
+
 // `run` as job `what`, which cannot be stopped; `failed` heads its error
 export function runInBackground<R>(what: string, run: () => Promise<R>, summarize: (r: R) => Outcome,
                                    failed: string): Promise<R | null> {
@@ -151,6 +172,7 @@ export function stopJob(job: Job) {
   if (!job.cancel) return;
   update(job.id, { stopping: true });
   void (job.cancel === "export" ? commands.exportCancel(job.id)
+    : job.cancel === "cull" ? commands.cullCancel(job.id)
     : job.cancel === "move" ? commands.moveCancel(job.id) : commands.mergeCancel(job.id));
 }
 

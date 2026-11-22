@@ -1837,7 +1837,7 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .note-plain.warn { color: #f5b041; }
 
 /* Preferences: tabs down the left, a pane of cards on the right */
-.modal.prefs { width: 760px; height: min(560px, 86vh); display: flex; flex-direction: row; padding: 0; overflow: hidden; }
+.modal.prefs { width: 80vw; height: 80vh; max-width: 1500px; display: flex; flex-direction: row; padding: 0; overflow: hidden; }
 .prefs-tabs { flex: none; width: 196px; display: flex; flex-direction: column; gap: 2px; padding: 22px 12px;
               background: var(--window); border-right: 1px solid var(--inset, #262626); }
 .prefs-tabs h2 { margin: 0 8px 18px; font-size: var(--fs-title); font-weight: 700; }
@@ -3042,3 +3042,61 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .module-checker select { min-width: 0; }
 .checker-actions { display: flex; flex-wrap: wrap; gap: 4px; }
 .checker-matrix { font-variant-numeric: tabular-nums; text-align: end; }
+
+/* Auto cull: the badge on a reviewed photo, the Cull panel, the setup dialog, the lightbox inspector */
+.thumb-image { position: relative; }
+.cull-badge { position: absolute; top: 6px; left: 8px; padding: 1px 6px; border-radius: 9px; font-size: var(--fs-micro); line-height: 1.5;
+  background: #000b; color: #fff; border: 1px solid #fff5; pointer-events: none; white-space: nowrap; }
+.cull-badge.best { background: #1e4d2b; border-color: #46a758; }
+.cull-badge.reject { background: #5a1f22; border-color: #e5484d; }
+.cull-badge.keep { border-color: #888; }
+.cull-badge-set { opacity: .85; }
+.link-button { background: none; border: 0; padding: 0; color: var(--accent, #6ea8fe); text-decoration: underline; cursor: pointer; font: inherit; }
+.modal.cull-dialog { width: min(460px, calc(100vw - 32px)); }
+.cull-field { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
+.cull-field .field { width: 100%; box-sizing: border-box; }
+.cull-field .segmented { align-self: flex-start; }
+.cull-advanced { margin: 6px 0; }
+.cull-advanced summary { cursor: pointer; color: var(--text-2); }
+.cull-block { padding: 8px 0; border-bottom: 1px solid var(--inset, #262626); display: flex; flex-direction: column; gap: 6px; }
+.cull-scroll { padding-top: 6px; }
+.cull-label, .cull-h { margin: 0; font-size: var(--fs-body); font-weight: 600; }
+.cull-session-row { display: flex; align-items: center; gap: 6px; }
+.cull-session-row .field { flex: 1 1 auto; min-width: 0; }
+.cull-summary { margin: 0; color: var(--text-2); }
+.cull-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cull-chip { background: var(--panel, #2a2a2a); color: inherit; border: 1px solid var(--border, #555); border-radius: 12px; padding: 2px 10px; cursor: pointer; font: inherit; }
+.cull-chip.active { background: var(--accent, #3e7bfa); color: var(--on-accent, #fff); border-color: transparent; }
+.cull-count { font-variant-numeric: tabular-nums; opacity: .8; }
+.cull-reasons { list-style: none; margin: 0; padding: 0; }
+.cull-reasons li { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+.cull-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.cull-keys, .cull-empty { padding-top: 8px; }
+.culling-body { flex: 1; min-height: 0; display: flex; }
+.cull-overlay { position: absolute; inset: 0; pointer-events: none; }
+.cull-box { position: absolute; box-sizing: border-box; border: 2px solid; }
+.cull-box span { position: absolute; top: 0; left: 0; transform: translateY(-100%); padding: 0 4px; font-size: var(--fs-micro); white-space: nowrap; color: #fff; background: currentColor; }
+.cull-box span { background: inherit; }
+.cull-box.good { border-color: #46a758; border-style: solid; }
+.cull-box.bad { border-color: #e5484d; border-style: dashed; }
+.cull-box.blur { border-color: #f5c518; border-style: dotted; }
+.cull-box.good span { background: #46a758; } .cull-box.bad span { background: #e5484d; } .cull-box.blur span { background: #f5c518; color: #111; }
+.cull-box.hot { border-width: 4px; }
+.cull-inspector { flex: 0 0 260px; width: 260px; box-sizing: border-box; overflow-y: auto; padding: 0 0 0 12px; font-size: var(--fs-small); border-inline-start: 1px solid var(--inset, #262626); }
+.cull-inspector h2 { margin: 0 0 6px; font-size: var(--fs-body); } .cull-inspector h3 { margin: 12px 0 6px; font-size: var(--fs-body); }
+.cull-verdict { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; }
+.cull-verdict.reject { color: #ff6b6b; } .cull-verdict.keep { color: #7bd88f; }
+.cull-tag { border: 1px solid currentColor; border-radius: 8px; padding: 0 6px; font-size: var(--fs-micro); }
+.cull-factors, .cull-regions { list-style: none; margin: 6px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cull-factors li, .cull-regions li { display: flex; flex-direction: column; gap: 1px; }
+.cull-impact { font-size: var(--fs-micro); text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
+.cull-region { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: default; text-align: start; }
+.cull-regions li.good .cull-region { color: #7bd88f; } .cull-regions li.bad .cull-region { color: #ff8a8a; }
+.find-ai { margin-top: 2px; }
+.find-ai-note { align-items: flex-start; }
+
+/* the Auto Cull button in the grid toolbar, beside Find */
+.tool.cull-open { width: auto; padding: 0 8px; border-radius: 7px; font-size: var(--fs-small); white-space: nowrap; }
+/* the Gemini key field: the card's inset colour alone made it invisible */
+.prefs-scroll .field.key-field { min-width: 260px; border-color: var(--border, #444); }
+.prefs-scroll .field.key-field::placeholder { color: var(--muted, #8a8a8a); }

@@ -16,13 +16,15 @@ import {
 import type { ImageEntry } from "./library";
 import { AnalysisStatus } from "./AnalysisStatus";
 import { ResetIcon } from "./icons";
+import { applySearch } from "./cullModel";
+import { cameraOf } from "./filter";
 import type { ImmichSearch } from "./immich";
 import { formatNumber, t } from "./i18n";
 import { FilterEditor } from "./FindEditors";
 import { categoryTitle, editorId, FilterGroup, FilterRow, GROUP_TITLE, rowId, summarize } from "./FindFilters";
 
 export function FindPanel({ state, onChange, images, immichAvailable, count, busy, notes, saved, savedLine,
-                            onSaveNew, focusToken, pin, smart, clipTip }: {
+                            onSaveNew, focusToken, pin, smart, clipTip, onOpenCullPrefs }: {
   state: FindState;
   // `now`: run at once (ticks, selects, Enter); otherwise App runs it after 400 ms (typing)
   onChange: (next: FindState, now?: boolean) => void;
@@ -36,6 +38,7 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   savedLine?: React.ReactNode;  // the saved-filter name line, in the search header
   onSaveNew?: () => void;       // footer Save filter…
   clipTip?: { onSetUp: () => void; onDismiss: () => void };   // the tip about the CLIP model; none to hide it
+  onOpenCullPrefs?: () => void; // Preferences > Culling, for the AI search's key
   pin?: React.ReactNode;        // the right panel's pin button (auto-hide), in the title row
   focusToken?: number;          // a change focuses the search box (the toolbar's Find button)
 }) {
@@ -139,6 +142,29 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   }, [r.immich, busy]);
 
   const send = (next: FindState, now = true) => onChange(next, now);
+  // a sentence turned into Find's words and filters by Gemini (geminiSearch)
+  const [words, setWords] = useState("");
+  const [ai, setAi] = useState<{ state: "idle" | "busy" | "off" | "done" | "error"; text?: string; unmapped?: string[] }>({ state: "idle" });
+  const askToken = useRef(0);
+  const askAi = async () => {
+    const q = words.trim();
+    if (!q) return;
+    const mine = ++askToken.current;
+    setAi({ state: "busy" });
+    try {
+      const status = await commands.geminiKeyStatus();
+      if (!status.hasKey || !status.enabled) { setAi({ state: "off", text: t(status.hasKey ? "cull.critique.disabled" : "cull.critique.noKey") }); return; }
+      const found = await commands.geminiSearch(q);
+      if (mine !== askToken.current) return;
+      const cameras = [...new Set(images.map(cameraOf).filter(Boolean))];
+      const lenses = [...new Set(images.map((i) => i.exif.lens).filter(Boolean))];
+      const { state: next, unmapped } = applySearch(state, found, cameras, lenses);
+      send(next, true);
+      setAi({ state: "done", text: found.summary, unmapped });
+    } catch (e) {
+      if (mine === askToken.current) setAi({ state: "error", text: t("cull.critique.failed", { error: String(e) }) });
+    }
+  };
   const patchSearch = (p: Partial<ImmichSearch>) => send({ ...state, search: { ...s, ...p } });
   const names = { people, tags, albums };
 
@@ -181,6 +207,21 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
                  }} />
           <AnalysisStatus />
         </div>
+        <div className="find-row find-ai">
+          <input className="field find-text" type="text" spellCheck={false} value={words}
+                 aria-label={t("cull.find.label")} placeholder={t("cull.find.example")}
+                 onChange={(e) => setWords(e.target.value)}
+                 onKeyDown={(e) => { if (e.key === "Enter") void askAi(); else if (e.key === "Escape") e.currentTarget.blur(); }} />
+          <button type="button" className="btn small" disabled={ai.state === "busy" || !words.trim()} onClick={() => void askAi()}>
+            {ai.state === "busy" ? t("cull.find.asking") : t("cull.find.ask")}</button>
+        </div>
+        {ai.state !== "idle" && ai.state !== "busy" && <div className="find-tip find-ai-note" role={ai.state === "done" ? "status" : "alert"}>
+          <span className="find-tip-text">{ai.text}
+            {ai.state === "off" && onOpenCullPrefs && <> <button type="button" className="link-button" onClick={onOpenCullPrefs}>{t("cull.dialog.aiSetUp")}</button></>}
+            {ai.unmapped && ai.unmapped.length > 0 && <span className="find-ai-unmapped"> {t("cull.find.unmapped", { items: ai.unmapped.join("; ") })}</span>}</span>
+          <button className="find-tip-close" aria-label={t("library.find.clipTipDismiss")} title={t("library.find.clipTipDismiss")}
+                  onClick={() => setAi({ state: "idle" })}>×</button>
+        </div>}
         {clipTip && (
           <div className="find-tip" role="note">
             <span className="find-tip-text">{t("library.find.clipTip")}</span>

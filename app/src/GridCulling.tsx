@@ -1,23 +1,28 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { Camera, SlidersHorizontal, Tag, X } from "lucide-react";
+import { Camera, ScanSearch, SlidersHorizontal, Tag, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { easeZoom, ZOOM_EASE } from "./zoom";
 import { loadReadAhead } from "./Preferences";
 import { BanIcon, StarIcon } from "./icons";
-import { commands } from "./commands";
+import { commands, type CullChange } from "./commands";
+import { CullInspector, CullOverlay, NO_OVERLAY, overrideDecision, type Overlay } from "./CullInspector";
+import { reviewKey } from "./cullModel";
+import { cullState, useDecision, useReviewing } from "./cullStore";
 import { cullingKey, fallbackPhoto, pickCullingTarget, fitLightbox, keywordTargets, previewNeighbors, PreviewQueue, wheelZoom } from "./culling";
 import { LABEL_COLORS, fetchCachedThumb, fetchThumb, fileKind, type ImageEntry } from "./library";
 import { KeywordingPanel, parseKeyword } from "./Keywording";
 import { ZoomBar } from "./Toolbar";
 import { formatNumber, t } from "./i18n";
 
-export function GridCulling({ images, allImages, selection, anchor, thumbnail, activeEditorId, prepare, onEdit, onMeta, onKeywords }: {
+export function GridCulling({ images, allImages, selection, anchor, thumbnail, activeEditorId, prepare, onEdit, onMeta, onKeywords, onCullChanges, onOpenCullPrefs }: {
   images: ImageEntry[]; allImages: ImageEntry[]; selection: Set<number>; anchor: number | null;
   thumbnail: (id: number) => ImageBitmap | undefined;
   activeEditorId?: number;
   prepare: (id: number) => Promise<void>; onEdit: (image: ImageEntry) => void;
   onMeta: (image: ImageEntry, fields: Partial<ImageEntry>) => void;
   onKeywords: (id: number, keywords: string[]) => void;
+  onCullChanges: (changes: CullChange[]) => void;   // library entries an override rewrote
+  onOpenCullPrefs: () => void;                      // Preferences > Culling
 }) {
   const zoomAnchor = useRef<{ix: number; iy: number; sx: number; sy: number} | null>(null);
   const space = useRef(false);
@@ -55,6 +60,13 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
   const detailed = zoom !== null;
   const cameraFit = cameraPreviews && !detailed;
   const current = images.find(i => i.imgid === photo);
+  // auto cull under review: the inspector beside the photo, its overlay over it
+  const reviewing = useReviewing();
+  const [inspector, setInspector] = useState<boolean | null>(null);   // null: shown while reviewing
+  const [overlay, setOverlay] = useState<Overlay>(NO_OVERLAY);
+  const decision = useDecision(current?.path ?? "", current?.version);
+  const inspecting = !!current && (inspector ?? reviewing);
+  useEffect(() => { setOverlay(NO_OVERLAY); }, [photo]);
   // The frame is fixed for the window size, independent of photo or preview
   // dimensions, so swapping photos and zooming never moves the toolbar.
   const fitted = fitLightbox(windowSize.width, windowSize.height);
@@ -129,6 +141,22 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
     };
     window.addEventListener("grid-culling-open", open);
     return () => window.removeEventListener("grid-culling-open", open);
+  });
+  // P keeps, R rejects, B makes the photo its set's best, in review (the
+  // decisions go through the inspector's overrides, so the buttons and keys agree)
+  useEffect(() => {
+    const review = (e: KeyboardEvent) => {
+      if (!current || !cullState().open || !cullState().plan || targets.length || !inspecting) return;
+      const focused = e.target as HTMLElement | null;
+      const action = reviewKey({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey,
+        typing: !!focused?.closest('input:not([type="range"]),textarea,select,[contenteditable=true]') });
+      if (!action || action.type === "step" || !decision) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      void overrideDecision(decision, action.type === "reject" ? "reject" : "keep", action.type === "best" ? true : null, onCullChanges)
+        .catch(() => {});
+    };
+    window.addEventListener("keydown", review, true);
+    return () => window.removeEventListener("keydown", review, true);
   });
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -218,7 +246,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
       else animation.current = null;
     };
     animation.current.frame = requestAnimationFrame(step);
-  }, [zoom, detail, paintSize, fitted.width, fitted.height, photo]);
+  }, [zoom, detail, paintSize, fitted.width, fitted.height, photo, inspecting]);
   useLayoutEffect(() => {
     if (!current) {
       ++previewEpoch.current;
@@ -377,6 +405,8 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
               aria-label={t("library.culling.cameraPreviews")}
               title={t("library.culling.cameraPreviewsHint")}
               onClick={() => setCameraPreviews(value => !value)}><Camera size={16} aria-hidden="true" /></button>
+            <button type="button" className="tool" aria-pressed={inspecting} aria-label={t("cull.inspector.toggle")}
+              title={t("cull.inspector.toggle")} onClick={() => setInspector(!inspecting)}><ScanSearch size={16} aria-hidden="true" /></button>
             <button type="button" className="tool" aria-label={t("library.culling.keywords")}
               title={t("library.culling.keywords")} onClick={() => void keywords([current])}><Tag size={16} aria-hidden="true" /></button>
             <button type="button" className="tool" aria-label={t("library.culling.edit")}
@@ -385,7 +415,8 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
               title={t("library.culling.close")} onClick={() => setPhoto(null)}><X size={16} aria-hidden="true" /></button>
           </div>
         </div>
-        <div ref={viewport} style={{ flex: 1, overflow: "auto", minHeight: 0,
+        <div className="culling-body">
+        <div ref={viewport} style={{ flex: 1, minWidth: 0, overflow: "auto", minHeight: 0,
           cursor: detailed && spaceHeld ? (panning ? "grabbing" : "grab") : detailed ? "zoom-out" : "zoom-in" }}
           onClick={e => {
             if (panClick.current || space.current) { panClick.current = false; return; }
@@ -412,8 +443,14 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
             el.addEventListener("pointermove", move); el.addEventListener("lostpointercapture", end);
           }}>
           <div style={{ minWidth: "100%", minHeight: "100%", width: "max-content", height: "max-content", display: "grid", placeItems: "center" }}>
-            <canvas ref={canvas} style={{ maxWidth: "none", flexShrink: 0 }} />
+            <div style={{ position: "relative", width: "max-content", height: "max-content" }}>
+              <canvas ref={canvas} style={{ maxWidth: "none", flexShrink: 0, display: "block" }} />
+              <CullOverlay overlay={overlay} decision={decision} />
+            </div>
           </div>
+        </div>
+        {inspecting && <CullInspector image={current} overlay={overlay} onOverlay={setOverlay}
+          onChanges={onCullChanges} onOpenPrefs={onOpenCullPrefs} />}
         </div>
         <div className="culling-bottom-bar">
           <div className="culling-rating-controls">

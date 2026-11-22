@@ -453,8 +453,29 @@ fn private_host(host: &str) -> bool {
             || (p[0] == 169 && p[1] == 254))
 }
 
+/// API keys: a `key=` or `apikey=` query value, an `x-goog-api-key` header
+/// value, and a bare Google key (`AIza` and 35 more characters)
+fn secret_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(
+            r#"(?i)(?P<pre>[?&;](?:api[_-]?)?key=|x-goog-api-key["']?\s*[:=]\s*["']?)[^\s&"'<>]+|AIza[0-9A-Za-z_\-]{30,}"#,
+        )
+        .unwrap()
+    })
+}
+
 fn stage2(text: &str, nums: &mut Numbers, counts: &mut BTreeMap<String, usize>) -> String {
     let r = stage2_res();
+
+    let s = secret_re().replace_all(text, |c: &Captures| {
+        bump(counts, "secret");
+        match c.name("pre") {
+            Some(pre) => format!("{}<secret>", pre.as_str()),
+            None => "<secret>".to_string(),
+        }
+    });
+    let text = s.as_ref();
 
     let s = r.url.replace_all(text, |c: &Captures| {
         let whole = c.get(0).unwrap().as_str();
@@ -720,6 +741,14 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn api_keys_are_removed() {
+        let mut s = Scrubber::new(Known::default());
+        let out = s.scrub("GET https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=AIzaSyA1234567890abcdefghijklmnopqrstuv failed; x-goog-api-key: AIzaSyA1234567890abcdefghijklmnopqrstuv; bare AIzaSyA1234567890abcdefghijklmnopqrstuv");
+        assert!(!out.contains("AIza") && out.contains("key=<secret>") && out.contains("x-goog-api-key: <secret>"), "{out}");
+        assert_eq!(s.counts().get("secret"), Some(&3));
     }
 
     #[test]

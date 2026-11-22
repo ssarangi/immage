@@ -22,6 +22,7 @@ tauri-plugin-window-state = "2"
 # the SD card importer, cloned into the repo's immporter/ (app/scripts/fetch_immporter.sh)
 tauri-plugin-immporter = { path = "../../immporter/src-tauri/plugin" }
 # exports uploaded to Immich (immich_upload.rs); the same version the importer uses
+base64 = "0.22"
 reqwest = { version = "0.13", features = ["blocking", "json", "multipart", "query"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 # capture times with the local offset Immich requires (already in the tree, via the importer)
@@ -50,6 +51,8 @@ specta = { version = "=2.0.0-rc.28", features = ["derive", "function", "serde_js
 specta-typescript = "=0.0.15"
 serde_json = { version = "1", features = ["float_roundtrip"] }
 rusqlite = "0.41.1"
+# auto-culling: the perceptual hash that groups near-duplicate frames (cull.rs)
+image_hasher = { version = "3.1.1", default-features = false }
 uuid = { version = "1", features = ["v4"] }
 zip = { version = "9.5.1", default-features = false, features = ["deflate-flate2"] }
 # the zip crate leaves flate2's backend to the caller; the pure-Rust one, already in the tree
