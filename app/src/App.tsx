@@ -7600,7 +7600,7 @@ export default function App() {
         {/* in the order of the work: bring photos in, edit them, send them out */}
         <button className={`tool${importOpen ? " on" : ""}`} title={keys(t("app.rail.import"))} data-tour="import"
                 onClick={() => setImportOpen(true)}><ImportIcon /></button>
-        <button className={`tool${statsOpen ? " on" : ""}`} title={t("app.rail.stats")} ref={statsButton}
+        <button className={`tool${statsOpen ? " on" : ""}`} title={t("app.rail.stats")} ref={statsButton} data-tour="stats"
                 onClick={() => setStatsOpen(true)}><StatsIcon /></button>
         {/* the library: the grid of the folder's photos, and back to the filmstrip */}
         <button className={`tool library-toggle${grid ? " on" : ""}`} data-tour="library"

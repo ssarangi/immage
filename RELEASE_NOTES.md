@@ -92,12 +92,24 @@ Improvements
   folders first, resume where they stopped, retry failures later, and stop
   cleanly when the share goes away or the disk is nearly full. See the Catalog
   command line guide.
+- **Quick start guide:** the first-run tour now also shows Statistics, Find
+  (filters, Smart and Filename search, Ask Gemini), Cull and Critique with
+  Gemini in the grid (G, F and ⇧⌘G, Shift+Ctrl+G on Windows and Linux), and the AI models in Preferences
+  > General, in ten steps that still take about a minute. Each step appears
+  without gliding or drawing when reduced motion is on.
+
 
 Performance
 
 - **Indexing large folders:** storing photo metadata in the search index no
   longer slows down as the index grows. A batch of 20,000 photos took 9 seconds
   (30 seconds when many photos shared a fingerprint) and now takes 1.6 seconds.
+
+Bug fixes
+
+- **Quick start guide:** Skip, Back and Next now work when clicked on a fresh
+  profile, where they could do nothing while Esc worked, even with Don't show
+  on startup ticked.
 
 ## 0.47.1
 

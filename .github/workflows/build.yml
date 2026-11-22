@@ -111,6 +111,7 @@ jobs:
             verify/chord-actions.test.mjs \
             verify/color-range.test.mjs \
             verify/locales.test.mjs \
+            verify/tour.test.mjs \
             verify/field-text.test.mjs \
             verify/contrast-equalizer.test.mjs \
             verify/culling.test.mjs \

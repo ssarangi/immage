@@ -53,12 +53,20 @@ Immage also:
 
 - adds a **Sample Photos** folder with one photo in it, and opens that
   photo, so there is something to try the tools on
-- starts the **quick start guide**, a seven-step tour in the order of the
-  work: Import, the Library (adding folders, the grid and Find), Edit,
-  Advanced mode, Export and Print, and Preferences. It points out the stacked-cards button for [Advanced mode](advanced-mode.md).
-  Press → to step through it, or Esc to skip. Tick **Don't show on startup** to
-  keep it from coming back; the **?** button at the bottom of the rail
-  starts it again.
+- starts the **quick start guide**, a ten-step tour in the order of the
+  work: Import, Statistics, the Library (adding folders and the grid), Find
+  (filters, **Smart** and **Filename** search, and **Ask Gemini**), Cull
+  (**Cull** in the grid, the culling preview on F, and Critique with Gemini on
+  ⇧⌘G, or Shift+Ctrl+G on Windows and Linux), Edit, Advanced mode, Export and
+  Print, and Preferences (including the optional AI models under **General**).
+  It points out the stacked-cards button for [Advanced mode](advanced-mode.md).
+  Press → to step through it, or Esc to skip. Click **Next**, **Back** or
+  **Skip**, or a dot to jump to a step; the buttons work wherever the card
+  moves to. Tick **Don't show on startup** to keep it from coming back; the
+  **?** button at the bottom of the rail starts it again. With reduced motion
+  on, the steps appear without gliding, fading or drawn arrows. Steps for
+  parts of the window that are not showing, such as Cull outside the grid,
+  appear in the middle of the window.
 
 ![The Immage window on first launch, with a photo open](images/first-launch.png)
 <!-- screenshot: first launch, sample photo open, tour closed, both side panels showing -->

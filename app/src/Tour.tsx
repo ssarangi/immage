@@ -7,56 +7,11 @@
 // data-tour attributes. a hand-drawn arrow runs from the note to what it
 // describes; a step with callouts lights a group (the rail's edit tools)
 // and points an arrow at each member from its own note
-import { useEffect, useLayoutEffect, useState } from "react";
-import { keys } from "./keys";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { settings } from "./settings";
 import { t } from "./i18n";
-
-type Callout = { target: string; title: string; body: string };
-// `also`: further parts of the window lit with the target, each with its
-// own arrow from the note (the Library button and the Folders panel)
-type Step = { target?: string; also?: string[]; title: string; body: string; callouts?: Callout[] };
-
-const STEPS: Step[] = [
-  { title: t("dialogs.tour.welcome.title"),
-    body: t("dialogs.tour.welcome.body") },
-  { target: "import", title: t("dialogs.tour.import.title"),
-    body: keys(t("dialogs.tour.import.body")) },
-  { target: "library", also: ["folders"], title: t("dialogs.tour.library.title"),
-    body: t("dialogs.tour.library.body") },
-  { target: "edit", title: t("dialogs.tour.edit.title"),
-    body: keys(t("dialogs.tour.edit.body")),
-    callouts: [
-      { target: "adjust", title: t("dialogs.tour.adjust.title"),
-        body: t("dialogs.tour.adjust.body") },
-      { target: "crop", title: t("dialogs.tour.crop.title"),
-        body: t("dialogs.tour.crop.body") },
-      { target: "masks", title: t("dialogs.tour.masks.title"),
-        body: t("dialogs.tour.masks.body") },
-      { target: "heal", title: t("dialogs.tour.heal.title"),
-        body: t("dialogs.tour.heal.body") },
-      { target: "zones", title: t("dialogs.tour.zones.title"),
-        body: t("dialogs.tour.zones.body") },
-      { target: "film", title: t("dialogs.tour.film.title"),
-        body: t("dialogs.tour.film.body") },
-      { target: "negative", title: t("dialogs.tour.negative.title"),
-        body: t("dialogs.tour.negative.body") },
-      { target: "presets", title: t("dialogs.tour.presets.title"),
-        body: t("dialogs.tour.presets.body") },
-    ] },
-  { target: "advanced-mode", title: t("dialogs.tour.advanced.title"),
-    body: t("dialogs.tour.advanced.body") },
-  { target: "send-out", title: t("dialogs.tour.sendOut.title"),
-    body: t("dialogs.tour.sendOut.body"),
-    callouts: [
-      { target: "export", title: t("dialogs.tour.export.title"),
-        body: keys(t("dialogs.tour.export.body")) },
-      { target: "print", title: t("dialogs.tour.print.title"),
-        body: keys(t("dialogs.tour.print.body")) },
-    ] },
-  { target: "prefs", title: t("dialogs.tour.preferences.title"),
-    body: keys(t("dialogs.tour.preferences.body")) },
-];
+import { STEPS, actAt } from "./tourSteps";
+import type { Callout } from "./tourSteps";
 
 const PAD = 8; // around the spotlight, in pixels
 
@@ -117,6 +72,56 @@ export function Tour({ onClose }: { onClose: () => void }) {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [step, hide]);
+
+  // the buttons act on the release of a press that began on them, found by
+  // position: a click needs its press and release on one element, and on a
+  // fresh profile the page is busy (panels sliding open, the first photo
+  // arriving) so one that missed its element left Skip and Next dead while
+  // the keys worked. the click that follows is swallowed so nothing runs twice
+  const act = useRef<(a: string) => void>(() => {});
+  act.current = (a) => {
+    if (a === "skip") close();
+    else if (a === "back") go(step - 1);
+    else if (a === "next") go(step + 1);
+    else if (a === "hide") setHide(!hide);
+    else if (a.startsWith("dot:")) setStep(Number(a.slice(4)));
+  };
+  useEffect(() => {
+    const at = (e: PointerEvent) => {
+      const boxes = [...document.querySelectorAll<HTMLElement>(".tour [data-act]")].map((el) => {
+        const r = el.getBoundingClientRect();
+        return { act: el.dataset.act!, left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+      });
+      return actAt(boxes, e.clientX, e.clientY);
+    };
+    let pressed: string | null = null, handled = 0;
+    const down = (e: PointerEvent) => {
+      pressed = e.button === 0 ? at(e) : null;
+      if (pressed) { e.stopImmediatePropagation(); e.preventDefault(); }
+    };
+    const up = (e: PointerEvent) => {
+      const a = pressed;
+      pressed = null;
+      if (!a || e.button !== 0 || at(e) !== a) return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      handled = Date.now();
+      act.current(a);
+    };
+    const click = (e: MouseEvent) => {
+      if (Date.now() - handled > 500 || !(e.target as Element).closest?.(".tour")) return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    };
+    window.addEventListener("pointerdown", down, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("click", click, true);
+    return () => {
+      window.removeEventListener("pointerdown", down, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("click", click, true);
+    };
+  }, []);
 
   const vw = window.innerWidth, vh = window.innerHeight;
   const spot = rect
@@ -183,17 +188,17 @@ export function Tour({ onClose }: { onClose: () => void }) {
           <h3>{s.title}</h3>
           <p>{s.body}</p>
         </div>
-        <label className="tour-hide">
+        <label className="tour-hide" data-act="hide">
           <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} />
           {t("dialogs.tour.dontShow")}
         </label>
         <div className="tour-foot">
           <div className="tour-dots">
-            {STEPS.map((_, k) => <span key={k} className={k === step ? "on" : ""} onClick={() => setStep(k)} />)}
+            {STEPS.map((_, k) => <span key={k} data-act={`dot:${k}`} className={k === step ? "on" : ""} onClick={() => setStep(k)} />)}
           </div>
-          <button className="btn small" onClick={close}>{t("dialogs.tour.skip")}</button>
-          {step > 0 && <button className="btn small" onClick={() => go(step - 1)}>{t("dialogs.tour.back")}</button>}
-          <button className="btn small primary" onClick={() => go(step + 1)}>
+          <button className="btn small" data-act="skip" onClick={close}>{t("dialogs.tour.skip")}</button>
+          {step > 0 && <button className="btn small" data-act="back" onClick={() => go(step - 1)}>{t("dialogs.tour.back")}</button>}
+          <button className="btn small primary" data-act="next" onClick={() => go(step + 1)}>
             {step === STEPS.length - 1 ? t("dialogs.common.done") : t("dialogs.tour.next")}</button>
         </div>
       </div>

@@ -1666,6 +1666,13 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   font-size: var(--fs-title); font-weight: 700; color: var(--accent, #fff);
 }
 .tour-callout p { margin: 0; color: var(--text-2); font-size: var(--fs-small); line-height: 1.4; }
+/* no gliding, fading or self-drawing arrows: each step simply appears */
+@media (prefers-reduced-motion: reduce) {
+  .tour, .tour-text, .tour-callout, .tour-spot.ring::after, .tour-arrows .sketch path { animation: none; }
+  .tour-callout, .tour-arrows .sketch path.head { opacity: 1; }
+  .tour-arrows .sketch path:not(.head) { stroke-dashoffset: 0; }
+  .tour-spot, .tour-card, .tour-dots span { transition: none; }
+}
 
 /* the AI object tool */
 .mask-svg .object-box { fill: rgba(255, 255, 255, 0.08); stroke: var(--accent, #fff); stroke-width: 1.2; stroke-dasharray: 5 4;
