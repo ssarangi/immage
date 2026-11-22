@@ -8,8 +8,8 @@
 .st-places {
   /* the dark treatment is a filter over the tile pane only, so bubbles and panel keep the app's colours; a light
      scheme keeps the tiles light and only calms them */
-  --map-bg: #141517;
-  --map-filter: invert(1) hue-rotate(180deg) grayscale(.9) brightness(.62) contrast(.9);
+  --map-bg: #0c0d0e;
+  --map-filter: grayscale(1) brightness(.3) contrast(1.5);
   --pl-lbl: #06201f;
 }
 :root[data-scheme="light"] .st-places { --map-bg: #d5d9db; --map-filter: grayscale(.7) contrast(.95); --pl-lbl: #fff; }
@@ -31,7 +31,7 @@
 /* bubbles, the selected area's outline, the offline graticule: one SVG in a Leaflet pane */
 .stats-view .st-pl-svg { position: absolute; left: 0; top: 0; overflow: visible; max-width: none; pointer-events: none; } /* a width of 0 would switch rendering off */
 .st-pl-b { pointer-events: auto; cursor: pointer; outline: none; }
-.st-pl-b .dot { fill: color-mix(in srgb, var(--stat-cyan) 80%, transparent); stroke: var(--stat-cyan); stroke-width: 2; transition: fill .15s, stroke .15s;
+.st-pl-b .dot { fill: color-mix(in srgb, var(--stat-cyan) 62%, transparent); stroke: var(--stat-cyan); stroke-width: 2; transition: fill .15s, stroke .15s;
   filter: drop-shadow(var(--stat-glow) color-mix(in srgb, var(--stat-cyan) var(--stat-glow-a), transparent)); }
 .st-pl-b .ring { fill: none; stroke: transparent; stroke-width: 2; transition: stroke .15s; }
 .st-pl-b:hover .dot, .st-pl-b:focus-visible .dot { fill: color-mix(in srgb, var(--stat-cyan) 94%, transparent); }

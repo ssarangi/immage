@@ -24,7 +24,8 @@ Improvements
   field-of-view fan, exposure (aperture rings, shutter regimes and an ISO
   ladder), a 24-hour clock and month-by-month seasonality, and a map of where
   you shoot (bubbles or a heat map, from cached OpenStreetMap tiles for the
-  part in view, with a labelled grid when offline). Top images lists the frames
+  part in view, with a labelled grid when offline; the map fills its frame at any window
+  width, on a darker base). Top images lists the frames
   at or above a rating you choose, best first, with the best frame of each
   lens, camera or place. Click any bar, slice, wedge or bubble to filter every
   chart, scope it to the library, a folder or a date range, and open the

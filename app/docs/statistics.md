@@ -59,7 +59,9 @@ Statistics does not read).
   biggest areas, named by position (Statistics makes no network calls to name
   places). Zoom with the + and - buttons, or Ctrl/Cmd and the wheel or a
   trackpad pinch (a plain wheel scrolls the page); the button with four corners
-  fits all photos. Panning and zooming ask for the cells in view, a moment
+  fits all photos. The map always fills its frame edge to edge on a dark base:
+  you cannot zoom out past the whole world, so a wider window shows the world
+  at a larger scale instead of empty strips. Panning and zooming ask for the cells in view, a moment
   after you stop. Tiles are OpenStreetMap's, through the same cached tile
   download as the location editor, loaded only for the part in view and only
   once the section is near the screen; the attribution stays at the bottom

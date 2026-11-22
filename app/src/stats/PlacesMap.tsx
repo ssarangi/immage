@@ -20,7 +20,7 @@ import type { StatsApi } from "../statsApi";
 import type { PlaceCell } from "../statsTypes";
 import { Seg } from "./Controls";
 import {
-  MAX_ZOOM, MIN_ZOOM, LABEL_MIN, SOLO_RADIUS, bubbles, clampBbox, compact, coords, debounce, degrees, graticule, inside, neighbour, roundBbox, tileBounds,
+  MAX_LAT, MAX_ZOOM, MIN_ZOOM, LABEL_MIN, SOLO_RADIUS, bubbles, clampBbox, compact, coords, debounce, degrees, graticule, inside, neighbour, roundBbox, tileBounds,
   type Bbox, type Bubble, type Dir, type Mode, type View,
 } from "./placesGeometry";
 
@@ -28,6 +28,11 @@ const OSM_COPYRIGHT = "https://www.openstreetmap.org/copyright";
 /** Leaflet reports a view; the page asks for new cells after this long without another */
 export const VIEW_DEBOUNCE_MS = 250;
 const FAILED_BEFORE_OFFLINE = 3;
+/** the lowest zoom at which the whole-world square (256 * 2^z px) still covers a frame of this size, to the pixel: below it
+ *  dark strips show beside or above the tiles, and above it the map would not show the whole world at its widest */
+const coverZoom = (w: number, h: number) => Math.max(1, Math.log2(Math.max(w, h, 1) / 256) + 0.002);
+/** the next whole zoom level up or down, so a step from the fitted (fractional) zoom lands on a level the tiles are sharp at */
+const stepZoom = (z: number, d: number, min: number) => Math.max(min, Math.min(MAX_ZOOM, d > 0 ? Math.floor(z + 1e-6) + 1 : Math.ceil(z - 1e-6) - 1));
 const DIR: Record<string, Dir> = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
 
 export interface MapFocus { box: Bbox; maxZoom: number; token: number }
@@ -70,6 +75,7 @@ export function PlacesMap(props: PlacesMapProps) {
   const [rev, setRev] = useState(0);
   const [tilesOk, setTilesOk] = useState(true);
   const [zoom, setZoom] = useState(MIN_ZOOM);
+  const [minZoom, setMinZoom] = useState(MIN_ZOOM);
   const tileStats = useRef({ ok: 0, bad: 0 });
   const layer = useRef<L.GridLayer | null>(null);
   const heatCanvas = useRef<HTMLCanvasElement | null>(null);
@@ -82,8 +88,8 @@ export function PlacesMap(props: PlacesMapProps) {
     let alive = true;
     const view = L.map(el, {
       attributionControl: false, zoomControl: false, scrollWheelZoom: false, zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false,
-      inertia: !window.matchMedia("(prefers-reduced-motion: reduce)").matches, minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM, zoomSnap: 1,
-      maxBounds: [[-85, -180], [85, 180]], maxBoundsViscosity: 1, worldCopyJump: false,
+      inertia: !window.matchMedia("(prefers-reduced-motion: reduce)").matches, minZoom: coverZoom(el.clientWidth, el.clientHeight), maxZoom: MAX_ZOOM, zoomSnap: 0,
+      maxBounds: [[-MAX_LAT, -180], [MAX_LAT, 180]], maxBoundsViscosity: 1, worldCopyJump: false,
     });
     const box = fit;
     view.fitBounds([[box[1], box[0]], [box[3], box[2]]], { animate: false, padding: [76, 76], maxZoom: 9 });
@@ -117,13 +123,13 @@ export function PlacesMap(props: PlacesMapProps) {
       if (tileStats.current.ok === 0 && tileStats.current.bad >= FAILED_BEFORE_OFFLINE) setTilesOk(false);
     };
     const tiles = new Tiles() as L.GridLayer;
-    L.setOptions(tiles, { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM, keepBuffer: 0, updateWhenIdle: true, updateWhenZooming: false, noWrap: true });
+    L.setOptions(tiles, { minZoom: 0, maxZoom: MAX_ZOOM, keepBuffer: 0, updateWhenIdle: true, updateWhenZooming: false, noWrap: true });
     tiles.addTo(view);
     layer.current = tiles;
 
     const current = (): View => ({ zoom: Math.round(view.getZoom()), bbox: roundBbox(clampBbox([view.getBounds().getWest(), view.getBounds().getSouth(), view.getBounds().getEast(), view.getBounds().getNorth()])) });
     const settle = debounce<View>((v) => latest.current.onView(v), VIEW_DEBOUNCE_MS);
-    const changed = () => { setRev((r) => r + 1); setZoom(Math.round(view.getZoom())); settle.call(current()); };
+    const changed = () => { setRev((r) => r + 1); setZoom(view.getZoom()); settle.call(current()); };
     view.on("moveend zoomend resize", changed);
     view.on("dragend", () => { dragged.current = Date.now(); });
     // a plain wheel scrolls the page; the wheel zooms with Ctrl or Cmd held (which is also how a trackpad pinch arrives)
@@ -135,16 +141,37 @@ export function PlacesMap(props: PlacesMapProps) {
       if (Math.abs(acc) < 40) return;
       const dir = acc < 0 ? 1 : -1;
       acc = 0;
-      view.setZoomAround(view.mouseEventToContainerPoint(e), Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, view.getZoom() + dir)), { animate: false });
+      view.setZoomAround(view.mouseEventToContainerPoint(e), stepZoom(view.getZoom(), dir, view.getMinZoom()), { animate: false });
     };
     el.addEventListener("wheel", wheel, { passive: false });
+    // the frame changes size without a window resize (the panel loads, the sidebar toggles, the page is resized):
+    // Leaflet only listens to the window, so without this tiles keep covering the old size and strips show.
+    // The lowest zoom follows the frame, so the world always reaches every edge.
+    let size = { w: el.clientWidth, h: el.clientHeight };
+    const observer = new ResizeObserver(() => {
+      const w = el.clientWidth, h = el.clientHeight;
+      if (w === size.w && h === size.h) return;
+      const was = size;
+      size = { w, h };
+      if (!w || !h) return;
+      view.invalidateSize({ animate: false, pan: false });
+      const min = coverZoom(w, h);
+      view.setMinZoom(min);
+      setMinZoom(min);
+      if (!was.w || !was.h) view.fitBounds([[box[1], box[0]], [box[3], box[2]]], { animate: false, padding: [76, 76], maxZoom: 9 });
+      else if (view.getZoom() < min) view.setZoom(min, { animate: false });
+      view.panInsideBounds(view.options.maxBounds as L.LatLngBounds, { animate: false });
+    });
+    observer.observe(el);
+    setMinZoom(view.getMinZoom());
     setMap(view);
     setPane(overlay);
-    setZoom(Math.round(view.getZoom()));
+    setZoom(view.getZoom());
     latest.current.onView(current());
     return () => {
       alive = false;
       settle.cancel();
+      observer.disconnect();
       el.removeEventListener("wheel", wheel);
       view.remove();
       layer.current = null;
@@ -271,7 +298,7 @@ export function PlacesMap(props: PlacesMapProps) {
     setTilesOk(true);
     layer.current?.redraw();
   };
-  const zoomBy = (d: number) => map?.setZoom(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, map.getZoom() + d)), { animate: false });
+  const zoomBy = (d: number) => map?.setZoom(stepZoom(map.getZoom(), d, map.getMinZoom()), { animate: false });
   const refit = () => map?.fitBounds([[fit[1], fit[0]], [fit[3], fit[2]]], { animate: false, padding: [76, 76], maxZoom: 9 });
   const first = list[0]?.key;
   const isOn = (b: Bubble) => b.keys.some((k) => selected.some((s) => inside(k, s)));
@@ -317,8 +344,8 @@ export function PlacesMap(props: PlacesMapProps) {
       <div className="st-pl-modes"><Seg<Mode> value={mode} label={t("stats.places.mode")} onChange={props.onMode}
         options={[{ id: "photos", label: t("stats.places.mode.photos") }, { id: "top", label: t("stats.places.mode.top") }, { id: "heat", label: t("stats.places.mode.heat") }]} /></div>
       <div className="st-pl-zoom" role="group" aria-label={t("stats.places.zoom")}>
-        <button type="button" onClick={() => zoomBy(1)} disabled={zoom >= MAX_ZOOM} aria-label={t("stats.places.zoomIn")} data-tip={t("stats.places.zoomIn")}>+</button>
-        <button type="button" onClick={() => zoomBy(-1)} disabled={zoom <= MIN_ZOOM} aria-label={t("stats.places.zoomOut")} data-tip={t("stats.places.zoomOut")}>−</button>
+        <button type="button" onClick={() => zoomBy(1)} disabled={zoom >= MAX_ZOOM - 0.01} aria-label={t("stats.places.zoomIn")} data-tip={t("stats.places.zoomIn")}>+</button>
+        <button type="button" onClick={() => zoomBy(-1)} disabled={zoom <= minZoom + 0.01} aria-label={t("stats.places.zoomOut")} data-tip={t("stats.places.zoomOut")}>−</button>
         <button type="button" onClick={refit} aria-label={t("stats.places.fit")} data-tip={t("stats.places.fit")}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>
