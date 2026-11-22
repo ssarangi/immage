@@ -2222,6 +2222,8 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .prefs-note { color: var(--text-3); font-size: var(--fs-small); }
 .prefs-status { margin: 4px 2px 12px; color: var(--text-3); font-size: var(--fs-small); }
 .prefs-status.warn { color: #f5b041; }
+.prefs-status.ok { color: #6fcf97; }
+.prefs-card .prefs-status, .pref-card .prefs-status { margin: 2px 16px 12px; }
 .pref-card { margin: 0 0 16px; padding: 4px 16px; background: var(--card); border-radius: var(--radius-card); }
 .pref-card h4 { margin: 12px 0 2px; color: var(--text-3); font-size: var(--fs-caption); font-weight: 600; letter-spacing: 0.06em;
                 text-transform: uppercase; }

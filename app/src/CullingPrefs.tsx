@@ -24,6 +24,7 @@ export function CullingPrefs() {
   const [defaults, setDefaults] = useState(loadCullDefaults);
   const [cacheBusy, setCacheBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
+  const [cacheMessage, setCacheMessage] = useState<{ text: string; error?: boolean } | null>(null);
 
   async function refresh() {
     const status = await commands.geminiKeyStatus();
@@ -69,12 +70,12 @@ export function CullingPrefs() {
   const num = (v: string, d: number) => (v.trim() === "" || !Number.isFinite(Number(v)) ? d : Number(v));
   async function clearCache() {
     setCacheBusy(true);
-    setMessage(null);
+    setCacheMessage(null);
     try {
       await commands.cullCacheClear();
-      setMessage({ text: t("culling.cache.cleared") });
+      setCacheMessage({ text: t("culling.cache.cleared") });
     } catch (e) {
-      setMessage({ text: t("culling.failed", { error: String(e) }), error: true });
+      setCacheMessage({ text: t("culling.failed", { error: String(e) }), error: true });
     } finally { setCacheBusy(false); }
   }
 
@@ -107,6 +108,7 @@ export function CullingPrefs() {
           </button>}
         </div>
       </PrefRow>
+      {message && <div role="status" className={`prefs-status ${message.error ? "warn" : "ok"}`}>{message.text}</div>}
     </PrefCard>
     <PrefCard title={t("culling.card.defaults")}>
       <PrefRow label={t("culling.def.shoot")} hint={t("culling.def.hint")}>
@@ -162,6 +164,7 @@ export function CullingPrefs() {
       <PrefRow label={t("culling.cache.analysis")} hint={t("culling.cache.analysisHint")}>
         <button className="btn" disabled={cacheBusy} onClick={() => void clearCache()}>{t("culling.cache.clear")}</button>
       </PrefRow>
+      {cacheMessage && <div role="status" className={`prefs-status ${cacheMessage.error ? "warn" : "ok"}`}>{cacheMessage.text}</div>}
       <PrefRow label={t("culling.model")} hint={t("culling.model.hint")}>
         <span className="pill">{t("culling.model.auto")}</span>
       </PrefRow>
@@ -171,6 +174,5 @@ export function CullingPrefs() {
       <p className="pref-hint">{t("culling.privacy.search")}</p>
       <p className="pref-hint">{t("culling.privacy.models")}</p>
     </PrefCard>
-    {message && <div role="status" className={`prefs-status${message.error ? " warn" : ""}`}>{message.text}</div>}
   </>;
 }
