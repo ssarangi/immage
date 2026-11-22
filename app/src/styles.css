@@ -2671,7 +2671,7 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 }
 
 /* Use the theme for the editor's closed dropdowns as well as their menus. */
-:is(.panel, .masks-panel, .scope-list, .crop-aspect) select, .lens-button {
+:is(.panel, .masks-panel, .scope-list, .crop-aspect, .find-pop, .modal-body, .prefs-scroll) select, .lens-button {
   appearance: none;
   padding: 5px 9px;
   padding-inline-end: 26px;
@@ -2686,11 +2686,11 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   background-repeat: no-repeat;
   background-position: right 13px center, right 8px center;
 }
-:is(.panel, .masks-panel, .scope-list, .crop-aspect) select:dir(rtl),
+:is(.panel, .masks-panel, .scope-list, .crop-aspect, .find-pop, .modal-body, .prefs-scroll) select:dir(rtl),
 .lens-button:dir(rtl) {
   background-position: left 8px center, left 13px center;
 }
-:is(.panel, .masks-panel, .scope-list, .crop-aspect) select:disabled,
+:is(.panel, .masks-panel, .scope-list, .crop-aspect, .find-pop, .modal-body, .prefs-scroll) select:disabled,
 .lens-button:disabled { opacity: 0.4; }
 
 /* SelectMenu.tsx draws dropdown lists using the context menu layout. */
