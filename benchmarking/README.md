@@ -467,3 +467,37 @@ cargo test --manifest-path app/src-tauri/Cargo.toml --offline --locked --bin imm
 The explicit opt-in and an absolute model directory are checked before model I/O.
 Omit `IMMAGE_TEST_ORT` if the engine already locates its CPU ONNX Runtime library.
 This runs headlessly; it does not launch the app's GUI.
+
+### Opening a photo
+
+```bash
+cmake --build build                                  # the engine under test
+node benchmarking/open-photo.mjs --runs 8            # about 20 minutes; --scenarios cold,rapid,inflight,background,catalog
+node benchmarking/open-photo.mjs --runs 8 --json open.json --keep
+```
+
+`open-photo.mjs` drives the app's own `Session` (the code `openFileNow` in `App.tsx` runs) against the
+real `darktable-engine`, on photos it generates itself (a 1200x800 JPEG, a 6000x4000 JPEG and a
+6000x4000 TIFF, and 10,000 tiny JPEGs for the catalog); it reads none of your photos and uses no
+network. Per open it reports the median, p95, min and max over `--runs`, in milliseconds from the click:
+
+| column | what it is |
+|---|---|
+| `close` | what `close()` of the previous photo waited for (renders still in flight, the save) |
+| `openImage` | the `open_image` command: decode and develop history (`openImageEngine` is the engine's own count) |
+| `setup` | the rest of `Session.open`: `get_params`, history, masks, spots, white balance |
+| `firstFrame` | the click to the fit frame arriving (`firstRender` is the engine render alone) |
+| `base`, `copy` | the idle whole-image base (3072 px) and the 100% copy that `scheduleBase` / `scheduleCopy` ask for |
+
+Scenarios: `cold` (a photo the engine has not seen, nothing open before), `rapid` (A then B with A
+settled, and A>B>C each opened at the previous one's first frame), `inflight` (B opened while A's
+base or copy render is running), `background` (B opened while thumbnails, a catalog import and
+`analysis_preview` run on the engine's other threads, as the grid and Smart search send them),
+`catalog` (the same switch with 10,000 photos in the library). Not measured: the thumbnail
+placeholder and canvas upload (synchronous page work in `showOpening`), the Library grid's own
+rendering (see `grid-scroll.mjs`), real camera RAW decoding, and CLIP inference (no models are
+downloaded). The load average at the start of each scenario is in its row; with other work on the
+machine, compare runs taken under a similar load. `OPEN_DEBUG=1` prints every command's start and end.
+The app records every frame the page painted or dropped as stale in the performance trace
+(`frame.owner.painted` / `frame.owner.dropped`, with the photo's id), and drops are also logged with
+`console.debug`.

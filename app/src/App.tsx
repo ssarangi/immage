@@ -4202,11 +4202,34 @@ export default function App() {
 
   // the open whose frames may paint: a closing photo's late frames are dropped
   const frameOwner = useRef<object | null>(null);
+  // true when `token`'s open no longer owns the viewer: the frame is dropped. every drop and every
+  // paint says so in the performance trace (frame.owner.*) and, for a drop, on the console with the
+  // photo's id, so a photo painted over another can be traced to the callback that did it
+  const ownerSeq = useRef(0);
+  const dropStale = (kind: string, token: object, f?: Frame | null) => {
+    const own = token as { seq?: number; imgid?: number | null };
+    const stale = frameOwner.current !== token;
+    const now = frameOwner.current as { seq?: number; imgid?: number | null } | null;
+    perf.event(stale ? "frame.owner.dropped" : "frame.owner.painted",
+      { kind, owner: own.seq, imgid: own.imgid, current: now?.seq, currentImgid: now?.imgid, width: f?.width, height: f?.height,
+        fullWidth: f?.fullWidth, fullHeight: f?.fullHeight, hash: f?.hash?.toString(16), session: session.current?.imgid });
+    if (stale) console.debug(`[open] stale ${kind} frame dropped: photo ${own.imgid} (open #${own.seq}), viewer owned by photo ${now?.imgid} (open #${now?.seq}), frame ${f?.fullWidth}x${f?.fullHeight}`);
+    return stale;
+  };
   // the new photo's grid or filmstrip thumbnail, fitted, in place of the last
   // photo until its first frame arrives; blank when it has none
   const showOpening = (id: number | null) => {
     resetCanvases();
-    for (const c of [baseCanvas.current, clipBase.current, copyCanvas.current, clipSharp.current, navThumb.current]) if (c) c.width = 0;
+    // a canvas is cleared before it is emptied, and the base also hidden: a zero-width canvas on its own
+    // composited layer (will-change: transform) can keep showing its last pixels in WebKit until the
+    // layer repaints, which is the old photo's fitted frame left under the new photo's thumbnail.
+    // placeLayers shows the base again once a frame of the new photo is there
+    for (const c of [baseCanvas.current, clipBase.current, copyCanvas.current, clipSharp.current, navThumb.current, canvas.current]) {
+      if (!c) continue;
+      if (c.width) c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
+      c.width = 0;
+    }
+    for (const c of [baseCanvas.current, clipBase.current]) if (c) layerStyle(c, "visibility", "hidden");
     // the old photo's geometry goes with its pixels: until the old session
     // is closed (it waits for a base or copy render, seconds on a slow
     // machine) a resize or layout change would place this thumbnail by the
@@ -4257,9 +4280,13 @@ export default function App() {
     if (!reload && croppingRef.current) leaveCrop(true);
     // the old photo's pixels go before the first await, and its late frames
     // are dropped: only the frames of this open may paint from here on
-    const token = {}, previousOwner = frameOwner.current;
+    const token = { seq: ++ownerSeq.current, imgid: id }, previousOwner = frameOwner.current;
     const keptView = { full: full.current, z: viewZ.current };
     frameOwner.current = token;
+    // the old photo's idle base and copy are not asked for any more: they would render on the engine
+    // that is about to open the next photo, and their frames are dropped anyway
+    window.clearTimeout(baseTimer.current);
+    window.clearTimeout(copyTimer.current);
     if (!reload) showOpening(id);
     if (!(await commands.pathExists(path))) {
       // the photo that was open still is: its frames paint again, and the
@@ -4272,6 +4299,7 @@ export default function App() {
         overviewHash.current = null;
         session.current.requestRender();
       }
+      resumeBase();
       setStatus(t("app.status.fileNotFound", { path: baseName(path) }));
       if (folderRef.current && !immichRef.current) void showFolder(folderRef.current, true);
       return false;
@@ -4289,6 +4317,9 @@ export default function App() {
         if (o.masks.length) await o.refreshMaskStates();
         previous.current = { values: { ...o.values }, look: { name: o.look, path: o.lookPath, amount: o.lookAmount },
                              masks: structuredClone(o.masks), advanced };
+        // from here on nothing of the old photo reaches the viewer: its late base, copy and fitted
+        // frames are dropped in the session itself, as well as by the open's token
+        o.retire();
         await o.close();
         closed = true;
       }
@@ -4317,7 +4348,7 @@ export default function App() {
       baseStale.current = true;
       if (reload) showOpening(id);
       const s = await timeTunerWork("Photo open", () => track(Session.open(path, id, currentView, (f) => {
-        if (frameOwner.current !== token) return;
+        if (dropStale("frame", token, f)) return;
         drawFrame(f);
         const ready = onFirstFrame;
         onFirstFrame = undefined;
@@ -4333,7 +4364,7 @@ export default function App() {
       setOpenCell(entry);
       saveLibrary({ image: path, version: imagesRef.current.find((i) => i.imgid === s.imgid)?.version ?? 0 });
       s.onThumb = (f) => {
-        if (frameOwner.current !== token) return;
+        if (dropStale("base", token, f)) return;
         perf.drawStart(f.trace);
         try { showOverview(f); } finally { perf.drawEnd(); }
         baseLowRes.current = false;
@@ -4343,7 +4374,7 @@ export default function App() {
       s.onCopy = (f) => {
         // a copy finishing after another photo's open began is not drawn: it
         // would bump the generation below and then pass for current
-        if (frameOwner.current !== token) return;
+        if (dropStale("copy", token, f)) return;
         const cc = copyCanvas.current, gen = ++copyGen.current;
         if (!f) {
           copyMeta.current = null;
@@ -4355,7 +4386,7 @@ export default function App() {
         const bitmapWork = perf.begin("copy.bitmap", { ...f.trace?.diagnostic });
         void createImageBitmap(new ImageData(f.pixels, f.width, f.height)).then((bmp) => {
           perf.finish(bitmapWork);
-          if (session.current !== s || frameOwner.current !== token || gen !== copyGen.current || !cc) {
+          if (session.current !== s || dropStale("copy-bitmap", token, f) || gen !== copyGen.current || !cc) {
             bmp.close(); perf.discard(f.trace, "copy-bitmap-obsolete"); return;
           }
           perf.drawStart(f.trace);
@@ -6419,6 +6450,8 @@ export default function App() {
   // its entry whichever folder is shown
   const listedEntry = images.find((i) => isOpen(i, current)) ?? null;
   const currentEntry = listedEntry ?? (openCell && isOpen(openCell, current) ? openCell : null);
+  // Metadata and Keywording keep their place while the next photo opens (cardHold.ts)
+  const card = useCardHold(currentEntry, !!current, keywords);
   // the Print panel's Cells layout prints the photos selected, in the filmstrip's order, else the open one
   const sheetPhotos: SheetPhoto[] = (() => {
     if (!printOpen || printSettings.layout !== "cells") return [];
@@ -6437,8 +6470,6 @@ export default function App() {
   useEffect(() => {
     if (cellsPage && sheetKey) loader.current?.request(sheetKey.split(",").map(Number));
   }, [!!cellsPage, sheetKey]);
-  // Metadata and Keywording keep their place while the next photo opens (cardHold.ts)
-  const card = useCardHold(currentEntry, !!current, keywords);
   const cellsSheet = (() => {
     if (!cellsPage || viewerBox.w <= 0) return null;
     const { width: W, height: H } = cellsPage.page;

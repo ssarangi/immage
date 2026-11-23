@@ -217,6 +217,12 @@ Performance
 - **Indexing large folders:** storing photo metadata in the search index no
   longer slows down as the index grows. A batch of 20,000 photos took 9 seconds
   (30 seconds when many photos shared a fingerprint) and now takes 1.6 seconds.
+- **Opening photos quickly:** stepping through photos with the arrow keys or
+  the filmstrip no longer stalls for a second while the photo you just left
+  renders its whole-image preview on the engine; in a test with 24-megapixel
+  photos the next photo reached its first frame in 1.8 to 2.1 seconds instead
+  of 3.6. Leaving a photo also drops its queued previews, and stops the one
+  being made, instead of waiting for them.
 
 Bug fixes
 
@@ -227,6 +233,9 @@ Bug fixes
   copy, histogram, navigator and placement could still show over the new
   photo for a second or two. They are now cleared the moment the next photo
   begins to open, and late results from the old photo are dropped.
+  The old photo's canvases are also wiped and hidden, and the old session is
+  cut off from the viewer, so none of its frames can be painted once the next
+  photo begins to open.
 - **Quick start guide:** Skip, Back and Next now work when clicked on a fresh
   profile, where they could do nothing while Esc worked, even with Don't show
   on startup ticked.

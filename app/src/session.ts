@@ -565,6 +565,25 @@ export class Session {
     void this.pump();
   }
 
+  // the next photo's open has begun: nothing of this one is painted from now on, whatever the page's
+  // own ownership checks say. its edits and saves still go through close()
+  retire() {
+    this.onFrame = () => {};
+    this.onThumb = null;
+    this.onCopy = null;
+    perf.event("session.retired", { imgid: this.imgid });
+  }
+
+  // the renders that only show the photo (not edits to it): queued ones are forgotten, the one in
+  // flight is stopped, and nothing is painted from it
+  private dropViewWork() {
+    this.needThumb = this.needCopy = this.needWarm = this.needLoupe = false;
+    this.fitView = null;
+    this.copyScale = null;
+    if (this.copyWait) { end(this.copyWait); this.copyWait = null; }
+    this.stopBase();
+  }
+
   // nothing queued or in flight
   async settled() {
     while (!this.idle && !this.dead) {
@@ -2399,7 +2418,11 @@ export class Session {
 
   async close(confirmSave = false) {
     if (this.dead) return;
-    this.requestRender();
+    // only work that changes the photo is waited for: the saved edit needs it. a render with nothing
+    // to apply, and the idle base, copy, fitted frame, warm-up and loupe, only paint a photo that is
+    // being left, and a big one holds the engine (and the next photo's open) for seconds
+    if (this.editFrame !== null || this.editPending) this.requestRender();
+    this.dropViewWork();
     window.clearTimeout(this.saveTimer);
     if (this.before) this.showBefore(null);
     this.peek(null);
