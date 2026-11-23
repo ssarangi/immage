@@ -85,7 +85,7 @@ Improvements
   and adds the keywords it is confident about (40 to 95%, 70% by default) to the
   photo and its XMP sidecar, where Keywording, Find and other programs see them.
   A confidence change applies to analysed photos at once. Keywords Immage added
-  are marked **AI** in Keywording, listed under **AI keywords** in Find's Keywords
+  sit in their own **Auto-keywords** group in Keywording, listed under **AI keywords** in Find's Keywords
   row, and can be reviewed and removed one by one or all together without
   touching your own keywords. The model runs in its own process that ends when
   there is nothing left to analyse, so its memory (about 3 GB) returns to the
@@ -194,6 +194,16 @@ Improvements
   Gemini in the grid (G, F and ⇧⌘G, Shift+Ctrl+G on Windows and Linux), and the AI models in Preferences
   > General, in ten steps that still take about a minute. Each step appears
   without gliding or drawing when reduced motion is on.
+- **Keywording:** keywords that Auto-keywords added now sit in their own
+  quiet **Auto-keywords** group below the add box, marked by a small sparkle and
+  a faint tint instead of a dashed outline and an **AI** badge. The group's header
+  shows what it is doing (analysing, nothing found, paused or not running), and
+  a long list folds to two rows with a **+N** button. Chips are the same 24 px
+  height with the **×** always in place, long names end in an ellipsis, and the
+  card no longer shifts the panels below it as keywords arrive or are removed.
+  Each list is one Tab stop: the arrow keys (swapped for right-to-left
+  languages), Home and End move along the chips and Backspace or Delete takes
+  the focused keyword off; screen readers hear "added by Auto-keywords".
 
 
 Performance

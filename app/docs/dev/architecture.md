@@ -218,7 +218,7 @@ and one undo after Done.
 |---|---|
 | [ColorWheel.tsx](../../src/ColorWheel.tsx), [PointCurve.tsx](../../src/PointCurve.tsx) | Color grading wheels; the point curve editor. |
 | [CropTool.tsx](../../src/CropTool.tsx), [VignetteOverlay.tsx](../../src/VignetteOverlay.tsx) | Crop overlay and aspects; vignette guides. |
-| [MetadataPanel.tsx](../../src/MetadataPanel.tsx), [Keywording.tsx](../../src/Keywording.tsx) | The left panel's metadata and keywords cards. |
+| [MetadataPanel.tsx](../../src/MetadataPanel.tsx), [Keywording.tsx](../../src/Keywording.tsx) | The left panel's metadata and keywords cards. Keywording keeps the Auto-keywords group apart (the split and header state are the pure [keywordGroup.ts](../../src/keywordGroup.ts); the state is read from `analysis_status`); [cards-shift.test.mjs](../../../verify/cards-shift.test.mjs) holds it to the no-shift rule. |
 
 ### Masks, heal and zones
 

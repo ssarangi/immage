@@ -2,7 +2,10 @@
 // The Library panel's Metadata and Keywording cards must stay mounted, and move nothing below them, while
 // the user keeps opening photos (app/harness/cards.tsx mounts the real cards with the real hold from
 // app/src/cardHold.ts, opens photos with a gap where the entry and keywords are not in yet, and measures a
-// Folders marker under them). A negative control renders the cards as before the hold. Starts a vite dev
+// Folders marker under them). A negative control renders the cards as before the hold. The Auto-keywords group
+// (test=2) is held to the same rule at 190 and 280 px: analysis arriving, chips taken off, 40 keywords and long
+// names move nothing below, chips stay 24 px and inside the card, and the keys work; dropping the group's reserved
+// header and body (break=reserve) must fail it. Starts a vite dev
 // server and drives headless Chrome with --dump-dom; skips when Chrome or app/node_modules is missing.
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,7 +36,7 @@ after(() => { server?.kill(); if (profile) rmSync(profile, { recursive: true, fo
 
 function report(query) {
   const r = spawnSync(CHROME, ['--headless=new', '--no-sandbox', '--disable-gpu', `--user-data-dir=${profile}`, '--window-size=1000,900',
-    '--virtual-time-budget=60000', '--dump-dom', `http://127.0.0.1:${PORT}/harness/cards.html?test=1&${query}`],
+    '--virtual-time-budget=60000', '--dump-dom', `http://127.0.0.1:${PORT}/harness/cards.html?${query}`],
     { encoding: 'utf8', maxBuffer: 64 << 20, timeout: 170000 });
   assert.equal(r.status, 0, r.stderr);
   const m = /<pre id="cards-report"[^>]*>([\s\S]*?)<\/pre>/.exec(r.stdout);
@@ -42,7 +45,7 @@ function report(query) {
 }
 
 test('Metadata and Keywording stay mounted and move nothing while photos keep opening', { skip }, () => {
-  const r = report('');
+  const r = report('test=1');
   assert.equal(r.error, undefined, r.error);
   assert.deepEqual(r.fail, []);
   assert.equal(r.moved, 0);
@@ -52,8 +55,31 @@ test('Metadata and Keywording stay mounted and move nothing while photos keep op
 });
 
 test('the cards check fails without the hold (negative control)', { skip }, () => {
-  const r = report('break=1');
+  const r = report('test=1&break=1');
   assert.equal(r.ok, false);
   assert.ok(r.fail.some((f) => /gone/.test(f)), 'the vanishing was not seen');
   assert.ok(r.moved > 0, 'the marker did not move');
+});
+
+for (const w of [190, 280]) {
+  test(`the Auto-keywords group moves nothing below it and works from the keyboard at ${w}px`, { skip }, () => {
+    const r = report(`test=2&w=${w}`);
+    assert.equal(r.error, undefined, r.error);
+    assert.deepEqual(r.fail, []);
+    assert.equal(r.moved, 0);
+    assert.equal(r.rows, 2, 'the folded list is two rows');
+    assert.equal(r.ok, true);
+  });
+}
+
+test('the Auto-keywords group check fails without its reserved header and body (negative control)', { skip }, () => {
+  const r = report('test=2&w=190&break=reserve');
+  assert.equal(r.ok, false);
+  assert.ok(r.moved > 0, 'the marker did not move');
+});
+
+test('the Auto-keywords group keys swap in right-to-left text', { skip }, () => {
+  const r = report('test=2&w=190&dir=rtl');
+  assert.deepEqual(r.fail, []);
+  assert.equal(r.ok, true);
 });

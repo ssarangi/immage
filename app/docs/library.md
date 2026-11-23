@@ -1055,10 +1055,25 @@ have used before, and **Recent keywords** holds the last few: click one to
 add it or take it off.
 
 When [Auto-keywords](preferences.md#general) is on, the keywords it adds are
-ordinary keywords in the photo's sidecar, marked in this card with a dashed
-outline and a small **AI** mark. Click **×** to remove one like any other. They
-are in English. Preferences > General > AI models lists them all with counts
-and removes them in bulk, and never touches the keywords you typed.
+ordinary keywords in the photo's sidecar. This card keeps them apart from yours
+in an **Auto-keywords** group below the add box and above Recent keywords, each
+chip a little paler with a small sparkle (and "added by Auto-keywords" for a
+screen reader). The group's header says what it is doing: the number of
+keywords, **analysing** while photos wait for it, **nothing found**,
+**paused** (background work is paused) or **not running** (the model cannot
+run; see Preferences > General > AI models). It is read from the library-wide
+analysis, so **analysing** can show while the queue works on other photos. More
+than two rows fold into a **+N** button; click it to show them all. Click **×**
+to remove one like any other. They are in English. Preferences > General > AI
+models lists them all with counts and removes them in bulk, and never touches
+the keywords you typed.
+
+From the keyboard, Tab enters a list of keywords at one stop; **Left** and
+**Right** (swapped in right-to-left languages), **Home** and **End** move
+between the keywords, and **Backspace** or **Delete** removes the focused one
+and moves to its neighbour, or to the add box when the list is empty. Long
+names end in an ellipsis and show in full as a tooltip. The card keeps its
+height as keywords arrive or are removed, so the panels below it do not jump.
 
 ## Opening a photo or folder from another program
 

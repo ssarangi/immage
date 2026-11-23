@@ -288,8 +288,8 @@ describe, and runs on this computer.
     the stored tags unless you choose **Remove model and results**, which
     deletes the stored tags but leaves the keywords on your photos; use Review
     first to take those off.
-  - In Keywording, a keyword Immage added is drawn with a dashed outline and a
-    small **AI** mark; in [Find](library.md#find), the **Keywords** row lists
+  - In Keywording, the keywords Immage added are in their own **Auto-keywords**
+    group, each marked with a small sparkle; in [Find](library.md#find), the **Keywords** row lists
     them again under **AI keywords**, so a search can ask for what the model saw.
 
 While CLIP or RAM++ analyses your photos in the background, Immage's performance is

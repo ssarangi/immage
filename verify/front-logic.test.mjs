@@ -34,6 +34,7 @@ const F = await import('../app/src/filter.ts');
 const L = await import('../app/src/library.ts');
 const K = await import('../app/src/keys.ts');
 const PN = await import('../app/src/presetName.ts');
+const KG = await import('../app/src/keywordGroup.ts');
 
 const exif = (o = {}) => ({ maker: 'Canon', model: 'EOS R5', lens: 'RF 50mm F1.8', exposure: 1 / 250, aperture: 2.79,
   iso: 400.4, focal_length: 50, exposure_bias: 0, focus_distance: 0, datetime: '2024:03:05 14:07:09', ...o });
@@ -337,4 +338,23 @@ test('presetLabel shows darktable preset names for the menu', () => {
   assert.equal(PN.presetLabel('_builtin_film|neutral'), 'film › neutral');
   assert.equal(PN.presetLabel('my look | warm'), 'my look › warm');
   assert.equal(PN.presetLabel('plain'), 'plain');
+});
+
+test('keywordGroup: the Auto-keywords group state follows the analysis and what the photo has', () => {
+  const on = { enabled: true, paused: false, busy: false, blocked: false };
+  assert.equal(KG.autoGroupState(null, 0), null);
+  assert.equal(KG.autoGroupState(null, 3), 'done');
+  assert.equal(KG.autoGroupState({ ...on, enabled: false }, 0), null, 'off with nothing added: no group');
+  assert.equal(KG.autoGroupState({ ...on, enabled: false }, 2), 'done', 'off, but the photo has some');
+  assert.equal(KG.autoGroupState(on, 0), 'none');
+  assert.equal(KG.autoGroupState({ ...on, busy: true }, 0), 'analysing');
+  assert.equal(KG.autoGroupState({ ...on, busy: true }, 4), 'done', 'chips win over the queue');
+  assert.equal(KG.autoGroupState({ ...on, paused: true }, 0), 'paused');
+  assert.equal(KG.autoGroupState({ ...on, blocked: true, paused: true }, 4), 'blocked');
+});
+
+test('keywordGroup: own keywords keep their order, Auto-keywords are sorted apart', () => {
+  const r = KG.splitKeywords(['zebra', 'sky', 'family', 'beach', 'Places|Paris'], new Set(['sky', 'beach', 'gone']));
+  assert.deepEqual(r.own, ['zebra', 'family', 'Places|Paris']);
+  assert.deepEqual(r.auto, ['beach', 'sky']);
 });

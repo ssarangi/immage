@@ -5,10 +5,11 @@
 // known ones, and the recently used ones a click away. keywords are
 // darktable's tags, "|" between the levels of a hierarchy; the engine keeps
 // them in the sidecar and remembers every one ever used
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { commands } from "./commands";
 import { settings } from "./settings";
 import { t } from "./i18n";
+import { autoGroupState, splitKeywords, type AutoInput } from "./keywordGroup";
 
 const RECENT_KEY = "immage.recentKeywords";
 const RECENT_MAX = 9;
@@ -102,20 +103,154 @@ export function KeywordInput({ attached, known, onAdd, addOnBlur = false, autoFo
   );
 }
 
-// the chips of a list of keywords, each taken off with its ×
-// `ai` names the keywords Auto-keywords added, which carry an AI mark (text, so not by color alone)
-export function KeywordChips({ keywords, onRemove, ai, disabled = false }: { keywords: string[]; onRemove: (name: string) => void; ai?: ReadonlySet<string>; disabled?: boolean }) {
+// the chips of a list of keywords, each taken off with its x. One roving tab stop: Tab enters the list,
+// the arrow keys (swapped in right-to-left text) and Home/End move along it, Backspace or Delete takes
+// the focused one off. `ai` names the keywords Auto-keywords added: a sparkle, a tint and an accessible
+// name say so (never color alone). `collapse` keeps a long list to two rows with a "+N" button.
+const NO_AI: ReadonlySet<string> = new Set();
+const ROWS = 2;
+const MORE_W = 34;     // room kept for the "+N" button at the end of the last row, px
+export function KeywordChips({ keywords, onRemove, ai, disabled = false, label, collapse = false }: {
+  keywords: string[]; onRemove: (name: string) => void; ai?: ReadonlySet<string>; disabled?: boolean;
+  label?: string; collapse?: boolean;
+}) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);     // kept while the card stays, not per photo
+  const [limit, setLimit] = useState<number | null>(null);   // null: everything is drawn, to measure it
+  const [width, setWidth] = useState(0);
+  const next = useRef<{ key: string | null; at: number } | null>(null);
+  const names = keywords.join("\0");
+  const collapsed = collapse && !expanded;
+
+  useLayoutEffect(() => {
+    const el = wrap.current;
+    if (!collapse || !el) return;
+    const ro = new ResizeObserver(() => setWidth(Math.round(el.clientWidth)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [collapse]);
+  // a new list, width or fold: draw everything, then (before paint) count what fits in two rows
+  useLayoutEffect(() => { setLimit(null); }, [names, width, collapsed]);
+  useLayoutEffect(() => {
+    const el = wrap.current;
+    if (limit !== null || !collapsed || !el) return;
+    const chips = Array.from(el.querySelectorAll<HTMLElement>(".kw-chip"));
+    const tops = [...new Set(chips.map((c) => Math.round(c.getBoundingClientRect().top)))];
+    if (tops.length <= ROWS) { setLimit(chips.length); return; }
+    const box = el.getBoundingClientRect(), rtl = getComputedStyle(el).direction === "rtl";
+    const used = (c: HTMLElement) => { const r = c.getBoundingClientRect(); return rtl ? box.right - r.left : r.right - box.left; };
+    let n = chips.filter((c) => Math.round(c.getBoundingClientRect().top) <= tops[ROWS - 1]).length;
+    while (n > 1 && used(chips[n - 1]) + 4 + MORE_W > box.width) n--;
+    setLimit(n);
+  }, [limit, collapsed, names]);
+
+  const shown = collapsed && limit !== null ? keywords.slice(0, limit) : keywords;
+  const hidden = keywords.length - shown.length;
+  const tabKey = active !== null && shown.includes(active) ? active : shown[0];
+
+  const focusKey = (k: string | null) => {
+    const el = wrap.current;
+    const chip = k === null ? null : Array.from(el?.querySelectorAll<HTMLElement>(".kw-chip") ?? []).find((c) => c.dataset.kw === k);
+    if (chip) chip.focus();
+    else el?.closest(".kw-body, .keyword-dialog-content")?.querySelector<HTMLInputElement>(".kw-add input")?.focus();
+  };
+  // after a removal (which the engine answers a moment later) focus goes to the neighbour, or the add box
+  useEffect(() => {
+    const n = next.current;
+    if (!n) return;
+    next.current = null;
+    if (Date.now() - n.at < 3000) focusKey(n.key);
+  }, [names]);
+
+  const onKey = (e: React.KeyboardEvent<HTMLElement>, k: string) => {
+    if (e.target !== e.currentTarget) return;
+    const i = shown.indexOf(k);
+    const rtl = getComputedStyle(e.currentTarget).direction === "rtl";
+    let to: number | null = null;
+    if (e.key === (rtl ? "ArrowLeft" : "ArrowRight")) to = Math.min(i + 1, shown.length - 1);
+    else if (e.key === (rtl ? "ArrowRight" : "ArrowLeft")) to = Math.max(i - 1, 0);
+    else if (e.key === "Home") to = 0;
+    else if (e.key === "End") to = shown.length - 1;
+    else if ((e.key === "Backspace" || e.key === "Delete") && !disabled) {
+      e.preventDefault();
+      next.current = { key: shown[i + 1] ?? shown[i - 1] ?? null, at: Date.now() };
+      onRemove(k);
+      return;
+    } else return;
+    e.preventDefault();
+    focusKey(shown[to]);
+  };
+
   return (
-    <div className="kw-chips">
+    <div className="kw-chips" ref={wrap} role="list" aria-label={label}>
       {keywords.length === 0 && <span className="kw-none">{t("library.keywording.none")}</span>}
-      {keywords.map((k) => (
-        <span key={k} className={`kw-chip${ai?.has(k) ? " ai" : ""}`} title={ai?.has(k) ? `${path(k)} - ${t("keywording.aiTip")}` : path(k)}>
-          {leaf(k)}{ai?.has(k) && <span className="kw-ai">{t("keywording.ai")}</span>}
-          <button disabled={disabled} title={t("library.keywording.remove", { keyword: path(k) })} onClick={() => onRemove(k)}>×</button>
-        </span>
-      ))}
+      {shown.map((k) => {
+        const auto = !!ai?.has(k);
+        return (
+          <span key={k} role="listitem" className={`kw-chip${auto ? " ai" : ""}`} data-kw={k}
+                tabIndex={k === tabKey ? 0 : -1} onFocus={() => setActive(k)} onKeyDown={(e) => onKey(e, k)}
+                aria-label={auto ? t("keywording.autoChip", { keyword: path(k) }) : path(k)}
+                title={auto ? `${path(k)} - ${t("keywording.aiTip")}` : path(k)}>
+            {auto && <Sparkle className="kw-spark" />}
+            <span className="kw-leaf">{leaf(k)}</span>
+            <button type="button" tabIndex={-1} disabled={disabled} title={t("library.keywording.remove", { keyword: path(k) })}
+                    aria-label={t("library.keywording.remove", { keyword: path(k) })} onClick={() => onRemove(k)}>×</button>
+          </span>
+        );
+      })}
+      {collapse && (hidden > 0 || expanded) && (
+        <button type="button" className="kw-more" aria-expanded={expanded}
+                aria-label={expanded ? t("keywording.less") : t("keywording.more", { n: hidden })}
+                title={expanded ? t("keywording.less") : t("keywording.more", { n: hidden })}
+                onClick={() => setExpanded((v) => !v)}>
+          {expanded
+            ? <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 15 6-6 6 6" /></svg>
+            : <bdi dir="ltr">{`+${hidden}`}</bdi>}
+        </button>
+      )}
     </div>
   );
+}
+
+// the four-point sparkle that marks what Auto-keywords added (the same glyph leads Find's AI keywords)
+export function Sparkle({ className }: { className?: string }) {
+  return <svg className={className} viewBox="0 0 24 24" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M12 2C12.8 8 16 11.2 22 12 16 12.8 12.8 16 12 22 11.2 16 8 12.8 2 12 8 11.2 11.2 8 12 2Z" /></svg>;
+}
+
+let lastAuto: AutoInput = null;     // the last read, so a card that mounts again starts from it
+// Auto-keywords' library-wide state while the card is open: read now and every 5 s while the window
+// is visible. `keywords_summary` is only asked when photos wait and nothing runs, to tell stalled from idle
+function useAutoStatus(on: boolean): AutoInput {
+  const [s, setS] = useState(lastAuto);
+  useEffect(() => {
+    if (!on) return;
+    let alive = true, reading = false;
+    const read = async () => {
+      if (reading || document.visibilityState !== "visible") return;
+      reading = true;
+      try {
+        const a = await commands.analysisStatus();
+        const row = a.rows.find((r) => r.id === "keywords");
+        if (!row) return;
+        const pending = row.pending ?? 0;
+        const enabled = row.enabled && row.installed;
+        let blocked = false;
+        if (enabled && !a.paused && row.running === 0 && !row.active && pending > 0) {
+          const k = await commands.keywordsSummary();
+          blocked = !!k.blocked || k.health !== "ok";
+        }
+        const nextState: AutoInput = { enabled, paused: a.paused, busy: row.running > 0 || row.active || pending > 0, blocked };
+        lastAuto = nextState;
+        if (alive) setS((p) => (p && JSON.stringify(p) === JSON.stringify(nextState) ? p : nextState));
+      } catch { /* keep the last reading; the next read tries again */ }
+      finally { reading = false; }
+    };
+    void read();
+    const id = setInterval(read, 5000);
+    return () => { alive = false; clearInterval(id); };
+  }, [on]);
+  return s;
 }
 
 export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true, onToggle, photoPath, loading = false }: {
@@ -132,20 +267,36 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true,
   loading?: boolean;
 }) {
   const [recent, setRecent] = useState(loadRecent);
-  const attached = useMemo(() => new Set(keywords ?? []), [keywords]);
-  const [ai, setAi] = useState<ReadonlySet<string>>(new Set());
+  // The chips shown are the last whole read: the photo's keywords and which of them Auto-keywords added,
+  // swapped in together, so a photo change moves nothing until both are in. Edits to the same photo
+  // show at once; the card is read-only while it waits for the other.
+  const [snap, setSnap] = useState<{ path: string; keywords: string[]; ai: ReadonlySet<string> } | null>(null);
   useEffect(() => {
+    if (!photoPath || !keywords || loading) return;
     let alive = true;
-    if (!photoPath) { setAi(new Set()); return; }
-    commands.keywordsAiOf(photoPath).then((l) => { if (alive) setAi(new Set(l)); }, () => { if (alive) setAi(new Set()); });
+    const done = (ai: ReadonlySet<string>) => { if (alive) setSnap({ path: photoPath, keywords, ai }); };
+    commands.keywordsAiOf(photoPath).then((l) => done(new Set(l)), () => done(NO_AI));
     return () => { alive = false; };
-  }, [photoPath, keywords]);
+  }, [photoPath, keywords, loading]);
+  const fresh = !!photoPath && !loading && snap?.path === photoPath;
+  const view = !photoPath ? { keywords: keywords ?? [], ai: NO_AI } : fresh ? { keywords: keywords ?? [], ai: snap!.ai }
+    : { keywords: snap?.keywords ?? keywords ?? [], ai: snap?.ai ?? NO_AI };
+  const busy = loading || (!!photoPath && !fresh);
+  const attached = useMemo(() => new Set(view.keywords), [view.keywords]);
+  const { own, auto } = useMemo(() => splitKeywords(view.keywords, view.ai), [view.keywords, view.ai]);
+  const status = useAutoStatus(!!photoPath && !!keywords && (onToggle ? open : true));
+  const state = photoPath ? autoGroupState(status, auto.length) : null;
+  const headId = useId();
+  // once a photo's group has had a body, it keeps it (taking off the last chip must not pull Recent up)
+  const bodyKept = useRef<{ path?: string; on: boolean }>({ on: false });
+  const showBody = auto.length > 0 || state === "analysing" || (bodyKept.current.path === photoPath && bodyKept.current.on);
+  bodyKept.current = { path: photoPath, on: showBody && !!state };
 
   const add = (names: string[]) => {
-    const fresh = [...new Set(names.map(parseKeyword).filter(Boolean))];
-    if (!fresh.length) return;
-    onAdd(fresh.filter((k) => !attached.has(k)));
-    const next = [...fresh, ...recent.filter((k) => !fresh.includes(k))].slice(0, RECENT_MAX);
+    const typed = [...new Set(names.map(parseKeyword).filter(Boolean))];
+    if (!typed.length) return;
+    onAdd(typed.filter((k) => !attached.has(k)));
+    const next = [...typed, ...recent.filter((k) => !typed.includes(k))].slice(0, RECENT_MAX);
     setRecent(next);
     storeRecent(next);
   };
@@ -153,14 +304,33 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true,
   if (!keywords) return null;
   const content = (
     <div className={onToggle ? "kw-body" : "keyword-dialog-content"}>
-      <KeywordChips keywords={keywords} onRemove={onRemove} ai={ai} disabled={loading} />
-      <KeywordInput attached={attached} known={known} onAdd={add} disabled={loading} />
+      {(own.length > 0 || auto.length === 0) && (
+        <KeywordChips keywords={own} onRemove={onRemove} disabled={busy} label={t("library.keywording.title")} />
+      )}
+      <KeywordInput attached={attached} known={known} onAdd={add} disabled={busy} />
+      {state && (
+        <div className="kw-auto" role="group" aria-labelledby={headId}>
+          <div className="kw-auto-head" title={t("keywording.groupTip")}>
+            <Sparkle className="kw-spark" />
+            <span id={headId} className="kw-auto-name">{t("keywording.auto")}</span>
+            <span className="kw-auto-state" role="status" aria-live="polite">
+              {state === "analysing" && <span className="kw-spin" aria-hidden="true" />}
+              {state === "done" ? auto.length : t(`keywording.state.${state}`)}
+            </span>
+          </div>
+          {showBody && (
+            <div className="kw-auto-body">
+              {auto.length > 0 && <KeywordChips keywords={auto} ai={view.ai} onRemove={onRemove} disabled={busy} collapse />}
+            </div>
+          )}
+        </div>
+      )}
       {recent.length > 0 && (
         <>
           <div className="kw-label">{t("library.keywording.recent")}</div>
           <div className="kw-recent">
             {recent.map((k) => (
-              <button key={k} disabled={loading} className={attached.has(k) ? "on" : ""} title={path(k)}
+              <button key={k} disabled={busy} className={attached.has(k) ? "on" : ""} title={path(k)}
                       onClick={() => (attached.has(k) ? onRemove(k) : add([k]))}>{leaf(k)}</button>
             ))}
           </div>
