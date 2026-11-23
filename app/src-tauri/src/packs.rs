@@ -183,6 +183,9 @@ pub struct PackSpec {
     pub source_host: &'static str,
     /// The revision-pinned address the files are fetched from: `{base_url}/{path}`.
     pub base_url: &'static str,
+    /// Tried after `base_url` when it fails (offline, an error status, a hash mismatch): the
+    /// same pinned files from another host. Size and digest are the pin's, whichever host answers.
+    pub fallback_base_url: Option<&'static str>,
     pub revision: &'static str,
     pub files: &'static [PackFile],
     pub analyses: &'static [AnalysisId],
@@ -217,6 +220,8 @@ pub struct PackStore {
     last_emit: Mutex<Option<Instant>>,
     /// Test seams: a mock server in place of the pinned host, and a disk size.
     base_override: Mutex<Option<String>>,
+    /// Test seam: a plain-http second source, tried after the overridden first.
+    fallback_override: Mutex<Option<String>>,
     free_override: Mutex<Option<u64>>,
 }
 
@@ -374,6 +379,7 @@ impl PackStore {
             events: Mutex::new(None),
             last_emit: Mutex::new(None),
             base_override: Mutex::new(None),
+            fallback_override: Mutex::new(None),
             free_override: Mutex::new(None),
         }
     }
@@ -806,12 +812,29 @@ impl PackStore {
 
     fn http_fetch(&self, asset: &PackFile, dest: &Path) -> Result<(), PackError> {
         let override_base = self.base_override.lock().unwrap().clone();
-        let base = override_base.clone().unwrap_or_else(|| self.spec.base_url.to_string());
+        let mut bases: Vec<String> = vec![override_base.clone().unwrap_or_else(|| self.spec.base_url.to_string())];
+        match &override_base {
+            None => bases.extend(self.spec.fallback_base_url.map(str::to_string)),
+            Some(_) => bases.extend(self.fallback_override.lock().unwrap().clone()),
+        }
+        let mut last = None;
+        for base in &bases {
+            match self.http_fetch_from(base, override_base.is_some(), asset, dest) {
+                Ok(()) => return Ok(()),
+                // these end the install whichever host would answer
+                Err(e) if matches!(e.kind, PackErrorKind::Cancelled | PackErrorKind::DiskFull) => return Err(e),
+                Err(e) => last = Some(e),
+            }
+        }
+        Err(last.unwrap_or_else(|| PackError::other("no source for the pack")))
+    }
+
+    fn http_fetch_from(&self, base: &str, plain_http: bool, asset: &PackFile, dest: &Path) -> Result<(), PackError> {
         let url = format!("{base}/{}", asset.path);
         // Blocking Response::read applies this per read, bounding a stalled
         // transfer without imposing a minute-long whole-model deadline.
         let client = reqwest::blocking::Client::builder()
-            .https_only(override_base.is_none())
+            .https_only(!plain_http)
             .connect_timeout(Duration::from_secs(30))
             .timeout(Duration::from_secs(60))
             .build()
@@ -1057,6 +1080,10 @@ impl PackStore {
     pub fn set_test_seams(&self, base: Option<String>, free: Option<u64>) {
         *self.base_override.lock().unwrap() = base;
         *self.free_override.lock().unwrap() = free;
+    }
+    #[cfg(test)]
+    pub fn set_test_fallback(&self, base: Option<String>) {
+        *self.fallback_override.lock().unwrap() = base;
     }
 }
 

@@ -77,6 +77,7 @@ pub static SPEC: PackSpec = PackSpec {
     license_text: MIT,
     source_host: "huggingface.co",
     base_url: "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/6b7c523703ae26e39be4b03774966f8571c7f523",
+    fallback_base_url: None,
     revision: REVISION,
     files: ASSETS,
     analyses: &[AnalysisId::SmartSearch],

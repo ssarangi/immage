@@ -33,6 +33,7 @@ fn spec_named(revision: &'static str, files: &[(&'static str, &[u8])]) -> &'stat
         license_text: "MIT",
         source_host: "mock.invalid",
         base_url: "https://mock.invalid/rev",
+        fallback_base_url: None,
         revision,
         files: Box::leak(files.into_boxed_slice()),
         analyses: &[],
@@ -436,4 +437,48 @@ fn progress_and_state_events_are_emitted() {
     let (states, progress) = *seen.lock().unwrap();
     assert!(states >= 2, "state events at the start and the end");
     assert!(progress >= 1, "at least one throttled progress event");
+}
+
+#[test]
+fn a_failing_first_source_falls_back_to_the_second_with_the_same_pin() {
+    let mut first = Server::new();
+    let mut second = Server::new();
+    let rig = Rig::new(&first);
+    rig.store.set_test_fallback(Some(format!("{}/rev", second.url())));
+    // the first host is gone for one file and serves wrong bytes for the other
+    let a1 = first.mock("GET", "/rev/onnx/a.bin").with_status(404).expect(1).create();
+    let b1 = first.mock("GET", "/rev/b.json").with_body(vec![0u8; rig.b.len()]).expect(1).create();
+    let (a2, b2) = serve_all(&mut second, &rig);
+    rig.store.install_blocking().unwrap();
+    for m in [&a1, &b1, &a2, &b2] {
+        m.assert();
+    }
+    assert_eq!(rig.state(), PackState::Installed);
+    assert_eq!(std::fs::read(rig.store.final_dir().join("b.json")).unwrap(), rig.b);
+}
+
+#[test]
+fn the_first_source_is_not_bypassed_when_it_works() {
+    let mut first = Server::new();
+    let mut second = Server::new();
+    let rig = Rig::new(&first);
+    rig.store.set_test_fallback(Some(format!("{}/rev", second.url())));
+    let (a1, b1) = serve_all(&mut first, &rig);
+    let a2 = second.mock("GET", "/rev/onnx/a.bin").expect(0).create();
+    rig.store.install_blocking().unwrap();
+    a1.assert();
+    b1.assert();
+    a2.assert();
+}
+
+#[test]
+fn when_every_source_fails_the_error_is_reported_and_nothing_is_published() {
+    let mut first = Server::new();
+    let mut second = Server::new();
+    let rig = Rig::new(&first);
+    rig.store.set_test_fallback(Some(format!("{}/rev", second.url())));
+    first.mock("GET", "/rev/onnx/a.bin").with_status(404).create();
+    second.mock("GET", "/rev/onnx/a.bin").with_body(vec![1u8; 10]).create();
+    assert!(rig.store.install_blocking().is_err());
+    assert!(!rig.store.final_dir().exists());
 }

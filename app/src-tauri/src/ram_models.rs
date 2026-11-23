@@ -47,6 +47,23 @@ const ASSETS: &[PackFile] = &[
     },
 ];
 
+/// The Hugging Face address the files are fetched from today (WC-ECL's export at REVISION).
+const ORIGINAL_BASE: &str = "https://huggingface.co/WC-ECL/ram-plus-onnx/resolve/ce61dc6d6cc47769e69fc8b7ad7bfdfaf8c4e65b";
+/// The owner's GitHub release holding the same three files, named exactly as in ASSETS (the
+/// folder `{RELEASE_BASE}/{path}`), built and checked by scripts/models-release.sh. Stays `None`
+/// until the release exists; then set it to
+/// `Some("https://github.com/ssarangi/immage/releases/download/models-ram-plus-v1")`. The release is
+/// tried first and ORIGINAL_BASE second, with the same size and SHA-256 pins either way.
+const RELEASE_BASE: Option<&str> = None;
+const PRIMARY_BASE: &str = match RELEASE_BASE {
+    Some(release) => release,
+    None => ORIGINAL_BASE,
+};
+const FALLBACK_BASE: Option<&str> = match RELEASE_BASE {
+    Some(_) => Some(ORIGINAL_BASE),
+    None => None,
+};
+
 const APACHE: &str = "Apache License, Version 2.0\n\nRAM++ (Recognize Anything Plus) was created by the OPPO research team and is published at\nhttps://huggingface.co/xinyu1205/recognize-anything-plus-model under the Apache License 2.0.\nThe ONNX graph in this pack was exported from those official weights without changing them.\n\nLicensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file\nexcept in compliance with the License. You may obtain a copy of the License at\n\n    http://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software distributed under the\nLicense is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,\neither express or implied. See the License for the specific language governing permissions\nand limitations under the License.\n";
 
 /// The registry entry of the RAM++ pack.
@@ -57,7 +74,8 @@ pub static SPEC: PackSpec = PackSpec {
     license_url: "https://huggingface.co/xinyu1205/recognize-anything-plus-model",
     license_text: APACHE,
     source_host: "huggingface.co",
-    base_url: "https://huggingface.co/WC-ECL/ram-plus-onnx/resolve/ce61dc6d6cc47769e69fc8b7ad7bfdfaf8c4e65b",
+    base_url: PRIMARY_BASE,
+    fallback_base_url: FALLBACK_BASE,
     revision: REVISION,
     files: ASSETS,
     analyses: &[AnalysisId::Keywords],
@@ -261,7 +279,22 @@ mod tests {
         assert_eq!(SPEC.bytes(), 1849852180 + 46488 + 26601);
         assert!(ASSETS.iter().all(|a| a.digest.len() == 64 && !a.git_blob));
         assert_eq!(SPEC.license, "Apache-2.0");
-        assert!(SPEC.base_url.ends_with(REVISION));
+        assert!(ORIGINAL_BASE.ends_with(REVISION));
+    }
+
+    #[test]
+    fn the_source_order_is_the_original_host_until_a_release_is_set() {
+        match RELEASE_BASE {
+            None => assert_eq!((SPEC.base_url, SPEC.fallback_base_url), (ORIGINAL_BASE, None)),
+            Some(release) => {
+                assert!(release.starts_with("https://github.com/ssarangi/immage/releases/download/"));
+                assert_eq!((SPEC.base_url, SPEC.fallback_base_url), (release, Some(ORIGINAL_BASE)));
+            }
+        }
+        // every source is https and ends without a slash, so `{base}/{path}` is well formed
+        for base in [SPEC.base_url].into_iter().chain(SPEC.fallback_base_url) {
+            assert!(base.starts_with("https://") && !base.ends_with('/'));
+        }
     }
 
     #[test]
