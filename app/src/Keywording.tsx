@@ -217,7 +217,7 @@ export function KeywordChips({ keywords, onRemove, ai, disabled = false, label, 
         const name = auto ? t(pct !== undefined ? "keywording.autoChipSure" : "keywording.autoChip", { keyword: path(k), pct: pct ?? 0 })
           : mixed ? t("keywording.onSomeName", { keyword: path(k), n: c!.n, total: c!.total }) : path(k);
         return (
-          <span key={k} role="listitem" className={`kw-chip${auto ? " ai" : ""}${mixed ? " mixed" : ""}${actable ? " act" : ""}`} data-kw={k} data-conf={pct === undefined ? undefined : Math.min(5, Math.floor(pct * 6 / 100))}
+          <span key={k} role="listitem" className={`kw-chip${auto ? " ai" : ""}${mixed ? " mixed" : ""}${actable ? " act" : ""}`} data-kw={k} data-conf={pct === undefined ? undefined : Math.max(0, Math.min(5, Math.floor((pct - 40) / 10)))}
                 style={pct !== undefined ? { "--c": `${pct}%` } as React.CSSProperties : undefined}
                 tabIndex={k === tabKey ? 0 : -1} onFocus={() => setActive(k)} onKeyDown={(e) => onKey(e, k)}
                 onClick={(e) => { if (!disabled && !(e.target as HTMLElement).closest("button")) act(k); }}
