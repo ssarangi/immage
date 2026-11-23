@@ -7,7 +7,7 @@
 use crate::pack_cmds::AiState;
 use crate::ram_models::{MAX_THRESHOLD, MIN_THRESHOLD};
 use crate::settings::Settings;
-use crate::tags_store::TagCount;
+use crate::tags_store::{PhotoKeywordState, TagCount};
 use crate::AppState;
 use serde_json::json;
 use std::sync::atomic::Ordering;
@@ -124,6 +124,53 @@ pub fn keywords_ai_of(ai: State<'_, AiState>, path: String) -> Result<Vec<String
     ai.tags.applied_for(&path)
 }
 
+/// The analysis's state for each of these photos (the open one, or a selection): whether it has a
+/// result and its AI keywords with their confidence. The page combines it with the library-wide
+/// `analysis_status` to say "analysing" or "nothing found".
+#[tauri::command]
+#[specta::specta]
+pub fn keywords_photo_states(ai: State<'_, AiState>, paths: Vec<String>) -> Result<Vec<PhotoKeywordState>, String> {
+    paths.iter().take(2000).map(|p| ai.tags.photo_state(p)).collect()
+}
+
+/// `keywords_photo_states` for one photo.
+#[tauri::command]
+#[specta::specta]
+pub fn keywords_photo_state(ai: State<'_, AiState>, path: String) -> Result<PhotoKeywordState, String> {
+    ai.tags.photo_state(&path)
+}
+
+/// Keep: the named AI keywords of these photos (all of each photo's when `names` is empty) become the
+/// user's own. They stay in the sidecar; only Immage's record of having added them changes.
+#[tauri::command]
+#[specta::specta]
+pub fn keywords_ai_keep(ai: State<'_, AiState>, paths: Vec<String>, names: Vec<String>) -> Result<u32, String> {
+    let mut n = 0;
+    for p in &paths {
+        n += ai.tags.keep_applied(p, &names)?;
+    }
+    Ok(n)
+}
+
+/// Takes the named AI keywords (all when `names` is empty) off these photos only, not the library.
+/// The user's own keywords are never touched, and a removed keyword is not added to the photo again.
+#[tauri::command]
+#[specta::specta]
+pub async fn keywords_ai_remove_photos(
+    state: State<'_, AppState>,
+    ai: State<'_, AiState>,
+    paths: Vec<String>,
+    names: Vec<String>,
+) -> Result<RemoveReport, String> {
+    let (store, tagged, apply) = (ai.tags.clone(), state.tagged.clone(), ai.apply.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        let photos = store.applied_photos_in(&paths, &names)?;
+        detach(&store, &tagged, &apply, photos)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[derive(serde::Serialize, specta::Type)]
 pub struct RemoveReport {
     pub photos: u32,
@@ -155,6 +202,15 @@ pub fn remove_applied(
     names: &[String],
 ) -> Result<RemoveReport, String> {
     let photos = store.applied_photos(names, u32::MAX)?;
+    detach(store, tagged, apply, photos)
+}
+
+fn detach(
+    store: &crate::tags_store::TagStore,
+    tagged: &crate::engine::Tagged,
+    apply: &crate::tags_service::Applier,
+    photos: Vec<(String, Vec<String>)>,
+) -> Result<RemoveReport, String> {
     let mut report = RemoveReport { photos: 0, keywords: 0, failed: 0 };
     for (path, tags) in photos {
         if !std::path::Path::new(&path).is_file() {

@@ -26,6 +26,28 @@ pub struct StoredTag {
     /// The user removed this AI keyword from the photo: it is never attached again, by
     /// a change of the confidence setting or by a new analysis.
     pub dismissed: bool,
+    /// The user kept this AI keyword: it is theirs now, so the analysis neither takes it off
+    /// (a higher confidence setting, a re-analysis) nor counts it as its own.
+    pub kept: bool,
+}
+
+/// What the analysis knows about one photo, for the Keywording card's Auto-keywords group.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct PhotoKeywordState {
+    pub path: String,
+    /// A result is stored for the photo (the analysis has been through it, or copied a burst mate's).
+    pub analysed: bool,
+    /// The tags were copied from a burst mate instead of analysing the photo itself.
+    pub shared: bool,
+    /// The keywords the analysis attached and the user has not kept, with the confidence each was
+    /// decided at (0 to 1; 0 once a newer result no longer lists it).
+    pub keywords: Vec<AutoKeyword>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct AutoKeyword {
+    pub name: String,
+    pub confidence: f32,
 }
 
 /// How a stored result came about.
@@ -207,7 +229,7 @@ impl TagStore {
         let rows = q
             .query_map(params![path], |r| {
                 let state: i64 = r.get(2)?;
-                Ok(StoredTag { name: r.get(0)?, confidence: r.get::<_, f64>(1)? as f32, applied: state == 1, dismissed: state == 2 })
+                Ok(StoredTag { name: r.get(0)?, confidence: r.get::<_, f64>(1)? as f32, applied: state == 1, dismissed: state == 2, kept: state == 3 })
             })
             .map_err(|e| e.to_string())?;
         rows.collect::<Result<_, _>>().map_err(|e| e.to_string())
@@ -290,6 +312,10 @@ impl TagStore {
         }
         Ok(out)
     }
+    /// `applied_photos` for these photos only (all of `names`' matches, or every applied keyword when empty).
+    pub fn applied_photos_in(&self, paths: &[String], names: &[String]) -> Result<Vec<(String, Vec<String>)>, String> {
+        Ok(self.applied_photos(names, u32::MAX)?.into_iter().filter(|(p, _)| paths.contains(p)).collect())
+    }
     /// The keywords the analysis attached to this photo.
     pub fn applied_for(&self, path: &str) -> Result<Vec<String>, String> {
         let db = self.db()?;
@@ -305,6 +331,36 @@ impl TagStore {
             db.execute("UPDATE tag_rows SET applied=2 WHERE path=?1 AND tag=?2 AND applied=1", params![path, name]).map_err(|e| e.to_string())?;
         }
         Ok(())
+    }
+    /// The user keeps these keywords (all the photo's AI keywords when `names` is empty): they stay on
+    /// the photo as its own, and stop being Immage's. Returns how many were kept.
+    pub fn keep_applied(&self, path: &str, names: &[String]) -> Result<u32, String> {
+        let db = self.db()?;
+        let mut n = 0;
+        if names.is_empty() {
+            n = db.execute("UPDATE tag_rows SET applied=3 WHERE path=?1 AND applied=1", params![path]).map_err(|e| e.to_string())?;
+        }
+        for name in names {
+            n += db.execute("UPDATE tag_rows SET applied=3 WHERE path=?1 AND tag=?2 AND applied=1", params![path, name]).map_err(|e| e.to_string())?;
+        }
+        Ok(n as u32)
+    }
+    /// The analysis's state for one photo: whether it has a result, and its AI keywords with confidence.
+    pub fn photo_state(&self, path: &str) -> Result<PhotoKeywordState, String> {
+        let db = self.db()?;
+        let from: Option<Option<String>> = db
+            .query_row("SELECT propagated_from FROM tag_photos WHERE path=?1", params![path], |r| r.get(0))
+            .optional()
+            .map_err(|e| e.to_string())?;
+        let mut q = db
+            .prepare("SELECT tag,confidence FROM tag_rows WHERE path=?1 AND applied=1 ORDER BY confidence DESC, tag")
+            .map_err(|e| e.to_string())?;
+        let keywords = q
+            .query_map(params![path], |r| Ok(AutoKeyword { name: r.get(0)?, confidence: r.get::<_, f64>(1)? as f32 }))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<_, _>>()
+            .map_err(|e| e.to_string())?;
+        Ok(PhotoKeywordState { path: path.to_string(), analysed: from.is_some(), shared: matches!(from, Some(Some(_))), keywords })
     }
     /// Drops every stored result (Remove model and results). Keywords already on photos stay.
     pub fn clear(&self) -> Result<(), String> {
@@ -388,6 +444,28 @@ mod tests {
         assert_eq!(s.totals().unwrap().applied, 2);
         let b = s.tags("/p/b.jpg").unwrap();
         assert!(!b[0].applied && b[0].dismissed, "a removed AI keyword is remembered as dismissed");
+    }
+
+    #[test]
+    fn a_kept_keyword_is_the_users_and_a_photo_state_lists_the_rest() {
+        let s = store();
+        s.put("/p/a.jpg", "f", "m", &tags(&[("beach", 0.9), ("sea", 0.8), ("sky", 0.7)]), 1).unwrap();
+        s.record_applied("/p/a.jpg", 70, &["beach".into(), "sea".into(), "sky".into()], &[]).unwrap();
+        assert_eq!(s.keep_applied("/p/a.jpg", &["sea".into(), "nope".into()]).unwrap(), 1);
+        let st = s.photo_state("/p/a.jpg").unwrap();
+        assert!(st.analysed && !st.shared);
+        assert_eq!(st.keywords.iter().map(|k| k.name.as_str()).collect::<Vec<_>>(), ["beach", "sky"]);
+        assert!((st.keywords[0].confidence - 0.9).abs() < 1e-6);
+        assert_eq!(s.totals().unwrap().applied, 2, "a kept keyword is no longer counted as Immage's");
+        assert!(s.tags("/p/a.jpg").unwrap().iter().find(|t| t.name == "sea").unwrap().kept);
+        // a new analysis keeps it kept, and removing AI keywords never reaches it
+        s.put("/p/a.jpg", "g", "m", &tags(&[("beach", 0.9)]), 2).unwrap();
+        assert!(s.tags("/p/a.jpg").unwrap().iter().find(|t| t.name == "sea").unwrap().kept);
+        assert_eq!(s.applied_photos(&[], 10).unwrap(), vec![("/p/a.jpg".to_string(), vec!["beach".to_string(), "sky".to_string()])]);
+        assert_eq!(s.keep_applied("/p/a.jpg", &[]).unwrap(), 2, "no names keeps all that are left");
+        assert!(s.photo_state("/p/a.jpg").unwrap().keywords.is_empty());
+        let none = s.photo_state("/p/zzz.jpg").unwrap();
+        assert!(!none.analysed && none.keywords.is_empty());
     }
 
     #[test]

@@ -722,7 +722,7 @@ impl Service {
         let pct = self.models.threshold();
         let stored = self.store.tags(path)?;
         let wanted = |c: f32| c * 100.0 >= f32::from(pct);
-        let add: Vec<&str> = stored.iter().filter(|t| wanted(t.confidence) && !t.applied && !t.dismissed).map(|t| t.name.as_str()).collect();
+        let add: Vec<&str> = stored.iter().filter(|t| wanted(t.confidence) && !t.applied && !t.dismissed && !t.kept).map(|t| t.name.as_str()).collect();
         let remove: Vec<&str> = stored.iter().filter(|t| !wanted(t.confidence) && t.applied).map(|t| t.name.as_str()).collect();
         if add.is_empty() && remove.is_empty() {
             return self.store.record_applied(path, pct, &[], &[]);

@@ -160,6 +160,24 @@ export const commands = {
 	 *  store recorded as attached by the analysis is detached.
 	 */
 	keywordsAiRemove: (names: string[]) => __TAURI_INVOKE<RemoveReport>("keywords_ai_remove", { names }),
+	/**
+	 *  Takes the named AI keywords (all when `names` is empty) off these photos only, not the library.
+	 *  The user's own keywords are never touched, and a removed keyword is not added to the photo again.
+	 */
+	keywordsAiRemovePhotos: (paths: string[], names: string[]) => __TAURI_INVOKE<RemoveReport>("keywords_ai_remove_photos", { paths, names }),
+	/**
+	 *  Keep: the named AI keywords of these photos (all of each photo's when `names` is empty) become the
+	 *  user's own. They stay in the sidecar; only Immage's record of having added them changes.
+	 */
+	keywordsAiKeep: (paths: string[], names: string[]) => __TAURI_INVOKE<number>("keywords_ai_keep", { paths, names }),
+	/**  `keywords_photo_states` for one photo. */
+	keywordsPhotoState: (path: string) => __TAURI_INVOKE<PhotoKeywordState>("keywords_photo_state", { path }),
+	/**
+	 *  The analysis's state for each of these photos (the open one, or a selection): whether it has a
+	 *  result and its AI keywords with their confidence. The page combines it with the library-wide
+	 *  `analysis_status` to say "analysing" or "nothing found".
+	 */
+	keywordsPhotoStates: (paths: string[]) => __TAURI_INVOKE<PhotoKeywordState[]>("keywords_photo_states", { paths }),
 	settingsSet: (changes: { [key in string]: string | null }) => __TAURI_INVOKE<null>("settings_set", { changes }),
 	meta: (imgid: number) => __TAURI_INVOKE<MetaReply>("meta", { imgid }),
 	metaSet: (imgid: number, fields: { [key in string]: Value }) => __TAURI_INVOKE<null>("meta_set", { imgid, fields }),
@@ -557,6 +575,11 @@ export type AssetExif = {
 	exposure: string | null,
 	focal: number | null,
 	datetime: string | null,
+};
+
+export type AutoKeyword = {
+	name: string,
+	confidence: number | null,
 };
 
 export type Availability = 
@@ -1989,6 +2012,20 @@ export type Peak = {
 export type PendingRoot = {
 	folder: string,
 	pending: number,
+};
+
+/**  What the analysis knows about one photo, for the Keywording card's Auto-keywords group. */
+export type PhotoKeywordState = {
+	path: string,
+	/**  A result is stored for the photo (the analysis has been through it, or copied a burst mate's). */
+	analysed: boolean,
+	/**  The tags were copied from a burst mate instead of analysing the photo itself. */
+	shared: boolean,
+	/**
+	 *  The keywords the analysis attached and the user has not kept, with the confidence each was
+	 *  decided at (0 to 1; 0 once a newer result no longer lists it).
+	 */
+	keywords: AutoKeyword[],
 };
 
 export type PhotoRef = {
