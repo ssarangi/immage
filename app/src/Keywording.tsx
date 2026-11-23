@@ -11,6 +11,7 @@ import { commands } from "./commands";
 import { settings } from "./settings";
 import { t } from "./i18n";
 import { menuKeys, useCardMenu } from "./cardMenu";
+import { createUndoTimer, mergeUndo, removalItems, undoSummary, type UndoLine } from "./undoLine";
 import { autoGroupState, groupRows, type AutoInput, type KeywordItem } from "./keywordGroup";
 
 const RECENT_KEY = "immage.recentKeywords";
@@ -361,7 +362,26 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true,
   const changed = () => { setRev((v) => v + 1); onChanged?.(); };
   const act = (run: Promise<unknown>) => { void run.then(changed, changed); };
   const keep = (names: string[]) => act(commands.keywordsAiKeep(paths, names));
-  const removeAuto = (names: string[]) => act(commands.keywordsAiRemovePhotos(paths, names));
+  // the 5 s Undo line: what a removal took off goes back through keywords_ai_restore. Keep is not undoable
+  // (nothing leaves the photo), and a removal while the line is up joins it
+  const [undo, setUndo] = useState<UndoLine | null>(null);
+  const timer = useRef<ReturnType<typeof createUndoTimer> | null>(null);
+  timer.current ??= createUndoTimer(() => setUndo(null));
+  useEffect(() => { timer.current?.cancel(); setUndo(null); }, [key]);
+  useEffect(() => () => timer.current?.cancel(), []);
+  const removeAuto = (names: string[]) => {
+    const items = removalItems(shownRows, new Map([...ai].map(([p, m]) => [p, new Set(m.keys())])), names);
+    act(commands.keywordsAiRemovePhotos(paths, names));
+    if (items.length) { setUndo((u) => mergeUndo(u, key, items)); timer.current?.start(); }
+  };
+  const undoNow = () => {
+    if (!undo) return;
+    const items = undo.items;
+    timer.current?.cancel(); setUndo(null);
+    act(commands.keywordsAiRestore(items));
+  };
+  const line = undo && undo.key === key ? undo : null;
+  const sum = line ? undoSummary(line) : null;
   const menu = useCardMenu(auto.length);
 
   const add = (names: string[]) => {
@@ -381,14 +401,25 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true,
                       counts={multi ? counts : undefined} onAddMixed={multi ? (k) => add([k]) : undefined} />
       )}
       <KeywordInput attached={attached} known={known} onAdd={add} disabled={busy} />
-      {state && (
+      {(state || line) && (
         <div className="kw-auto" role="group" aria-labelledby={headId}>
           <div className="kw-auto-head" title={t("keywording.groupTip")}>
             <Sparkle className="kw-spark" />
             <span id={headId} className="kw-auto-name">{t("keywording.auto")}</span>
-            <span className="kw-auto-state" role="status" aria-live="polite">
-              {state === "analysing" && <span className="kw-spin" aria-hidden="true" />}
-              {state === "done" ? auto.length : t(`keywording.state.${state}`)}
+            <span className="kw-auto-state" role="status" aria-live="polite" aria-atomic="true"
+                  onPointerEnter={() => timer.current?.hold("hover")} onPointerLeave={() => timer.current?.release("hover")}
+                  onFocus={() => timer.current?.hold("focus")} onBlur={() => timer.current?.release("focus")}>
+              {line && sum ? (
+                <>
+                  <span className="kw-undo-text">{sum.n === 1 ? t("keywording.undoRemoved", { keyword: path(sum.first) }) : t("keywording.undoRemovedMany", { n: sum.n })}</span>
+                  <button type="button" className="kw-undo" disabled={busy} title={t("keywording.undoTip")} onClick={undoNow}>{t("keywording.undo")}</button>
+                </>
+              ) : state && (
+                <>
+                  {state === "analysing" && <span className="kw-spin" aria-hidden="true" />}
+                  {state === "done" ? auto.length : t(`keywording.state.${state}`)}
+                </>
+              )}
             </span>
             <span className="kw-auto-menu" ref={menu.box} style={{ visibility: auto.length ? "visible" : "hidden" }}>
               <button type="button" className={`kw-auto-more${menu.at ? " on" : ""}`} aria-haspopup="menu" aria-expanded={!!menu.at} disabled={busy || !auto.length}

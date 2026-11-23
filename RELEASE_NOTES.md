@@ -33,7 +33,7 @@ Improvements
   of every scene, rejects frames under a minimum quality, always keeps frames
   rated at least a chosen number of stars and the ones you accepted, and keeps
   or skips single frames. **Preview rules** counts what would be kept, rejected
-  and left alone, **Review piles** shows a Keep and a Reject pile per scene
+  and left alone (frames already rejected are noted, not counted), **Review piles** shows a Keep and a Reject pile per scene
   where you can move frames, and **Apply** flags the rejects in place as one
   undoable cull session (nothing is moved or deleted). Photos' cached quality
   scores from earlier versions are measured again once, to find their sharpest
@@ -227,7 +227,8 @@ Improvements
   photos selected, the card shows the keywords all of them share and, paler with
   an n/m count, the ones on only some; click one to add it to all. The **×** on
   an Auto-keywords keyword now removes it from that photo only and it is not
-  added there again.
+  added there again, and for 5 seconds the group's header offers **Undo**
+  (also after **Remove all from this photo**) to put it back.
 
 
 Performance

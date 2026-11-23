@@ -29,6 +29,7 @@ const broken = q.get("break") === "1";
 const noReserve = q.get("break") === "reserve";
 if (q.get("dir")) document.documentElement.dir = q.get("dir")!;
 if (noReserve) document.head.insertAdjacentHTML("beforeend", "<style>.kw-auto-body{min-height:0!important}.kw-auto-head{height:auto!important}</style>");
+if (q.get("break") === "undo") document.head.insertAdjacentHTML("beforeend", "<style>.kw-auto-head{height:auto!important}.kw-auto-state{flex-direction:column;white-space:normal!important}</style>");
 const W = Number(q.get("w") ?? 320);
 
 // stands in for the three commands the Auto-keywords group reads
@@ -59,6 +60,15 @@ const calls: string[] = [];
       setKeywordsOf?.(p, (k) => k.filter((n) => !gone.includes(n)));
     }
     return { photos: args.paths.length, keywords: 0, failed: 0 };
+  }
+  if (cmd === "keywords_ai_restore") {
+    const items = (args as unknown as { items: { path: string; names: string[] }[] }).items;
+    calls.push(`restore ${items.map((i) => `${i.names.length}`).join(",")}`);
+    for (const i of items) {
+      aiOf[i.path] = [...new Set([...(aiOf[i.path] ?? []), ...i.names])].sort((x, y) => WORDS.indexOf(x) - WORDS.indexOf(y));
+      setKeywordsOf?.(i.path, (k) => [...new Set([...k, ...i.names])]);
+    }
+    return { photos: items.length, keywords: 0, failed: 0 };
   }
   if (cmd === "analysis_status") return status;
   if (cmd === "keywords_summary") return summary;
@@ -101,7 +111,7 @@ function Harness() {
       .then((r) => r, (e) => ({ ok: false, error: String(e?.stack ?? e) }))
       .then((r) => { const el = document.getElementById("cards-report")!; el.textContent = JSON.stringify(r); el.dataset.done = "1"; });
     const test = q.get("test");
-    if (test === "3" || test === "4") void (test === "3" ? runMulti() : runActions()).then((r) => r, (e) => ({ ok: false, error: String(e?.stack ?? e) }))
+    if (test === "3" || test === "4" || test === "5") void (test === "3" ? runMulti() : test === "5" ? runUndo() : runActions()).then((r) => r, (e) => ({ ok: false, error: String(e?.stack ?? e) }))
       .then((r) => { const el = document.getElementById("cards-report")!; el.textContent = JSON.stringify(r); el.dataset.done = "1"; });
     if (q.get("test") === "2") void runAuto().then((r) => r, (e) => ({ ok: false, error: String(e?.stack ?? e) }))
       .then((r) => { const el = document.getElementById("cards-report")!; el.textContent = JSON.stringify(r); el.dataset.done = "1"; });
@@ -327,6 +337,74 @@ async function runMulti() {
   ys.one = y() - base;
   const moved = Math.max(...Object.values(ys).map(Math.abs));
   if (moved !== 0) fail.push(`the Folders marker moved by ${moved}px: ${JSON.stringify(ys)}`);
+  return { ok: fail.length === 0, fail, moved, ys, calls };
+}
+
+// the Undo line: it takes the state row's place, so nothing below the card moves when it appears or goes;
+// Undo puts the keyword back through keywords_ai_restore; it goes by itself after 5 s but waits while the
+// pointer or the focus is on it
+async function runUndo() {
+  const set = (window as unknown as { __set: (v: S) => void }).__set;
+  const y = () => document.getElementById("folders")!.getBoundingClientRect().top;
+  const p = photo(1);
+  const fail: string[] = [];
+  const ai = names(8, false);
+  aiOf[p.path] = ai; set({ entry: p, keywords: ["family", ...ai], current: true }); await wait(); await wait();
+  const base = y();
+  const ys: number[] = [];
+  const settle = async () => { await wait(); await wait(); ys.push(y() - base); };
+  const autoNames = () => Array.from(document.querySelectorAll<HTMLElement>(".kw-auto .kw-chip")).map((c) => c.dataset.kw!);
+  const line = () => document.querySelector<HTMLElement>(".kw-auto-state");
+  const undoBtn = () => document.querySelector<HTMLButtonElement>(".kw-undo");
+  const sleep = (ms: number) => new Promise<void>((d) => { setTimeout(d, ms); });
+  if (undoBtn()) fail.push("an Undo line before any removal");
+  const live = line();
+  if (live?.getAttribute("role") !== "status" || live?.getAttribute("aria-live") !== "polite") fail.push("the state row is not a polite status");
+  const rm = autoNames()[0];
+  must(`.kw-auto .kw-chip[data-kw="${rm}"] button`).click(); await settle();
+  if (!undoBtn()) fail.push("no Undo line after removing a chip");
+  if (!line()?.textContent?.includes(rm.slice(0, 3))) fail.push(`line text "${line()?.textContent}"`);
+  if (line() !== live) fail.push("the Undo line is not the announced status element");
+  if (autoNames().includes(rm)) fail.push("the chip stayed");
+  const head = () => document.querySelector<HTMLElement>(".kw-auto-head")!.getBoundingClientRect().height;
+  if (head() !== 22) fail.push(`header ${head()}px with the line`);
+  // Undo puts it back
+  undoBtn()?.click(); await settle();
+  if (!autoNames().includes(rm)) fail.push("Undo did not put the chip back");
+  if (undoBtn()) fail.push("the line stayed after Undo");
+  if (!calls.some((c) => c === "restore 1")) fail.push(`calls ${calls}`);
+  // it goes by itself
+  must(`.kw-auto .kw-chip[data-kw="${rm}"] button`).click(); await settle();
+  if (!undoBtn()) fail.push("no line for the timer check");
+  await sleep(4000); if (!undoBtn()) fail.push("the line went before 5 s");
+  await sleep(1500); await settle();
+  if (undoBtn()) fail.push("the line stayed past 5 s");
+  // hovering holds it, leaving lets it go
+  const second = autoNames()[0];
+  must(`.kw-auto .kw-chip[data-kw="${second}"] button`).click(); await settle();
+  line()!.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+  await sleep(6000);
+  if (!undoBtn()) fail.push("the line went while hovered");
+  line()!.dispatchEvent(new PointerEvent("pointerout", { bubbles: true, pointerType: "mouse" }));
+  await sleep(1000); if (!undoBtn()) fail.push("the line went at once when the pointer left");
+  await sleep(4500); await settle();
+  if (undoBtn()) fail.push("the line stayed after the pointer left");
+  // taking off the rest: the line takes the state row's place with the group kept
+  const shownBefore = autoNames().length;
+  document.querySelectorAll<HTMLElement>(".kw-auto-more")[0].click(); await wait();
+  document.querySelectorAll<HTMLElement>("[role=menuitem]")[1].click(); await settle();
+  if (!undoBtn() || !/\d/.test(line()?.textContent ?? "")) fail.push(`Remove all line "${line()?.textContent}"`);
+  if (autoNames().length) fail.push("Remove all left chips");
+  if (head() !== 22) fail.push(`header ${head()}px after Remove all`);
+  undoBtn()?.click(); await settle();
+  if (autoNames().length !== shownBefore) fail.push(`Undo of Remove all put back ${autoNames().length}`);
+  // another photo drops the line
+  must(`.kw-auto .kw-chip[data-kw="${autoNames()[0]}"] button`).click(); await settle();
+  const q2 = photo(2); aiOf[q2.path] = ["x"];
+  set({ entry: q2, keywords: ["x"], current: true }); await wait(); await wait();
+  if (undoBtn()) fail.push("the line followed to another photo");
+  const moved = Math.max(...ys.map(Math.abs));
+  if (moved !== 0) fail.push(`moved ${moved}px: ${ys}`);
   return { ok: fail.length === 0, fail, moved, ys, calls };
 }
 

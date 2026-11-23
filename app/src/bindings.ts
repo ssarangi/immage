@@ -166,6 +166,12 @@ export const commands = {
 	 */
 	keywordsAiRemovePhotos: (paths: string[], names: string[]) => __TAURI_INVOKE<RemoveReport>("keywords_ai_remove_photos", { paths, names }),
 	/**
+	 *  Undo of `keywords_ai_remove_photos`: attaches the listed keywords to their photos again and makes
+	 *  them Auto-keywords' once more, at the confidence they had. A keyword the user has since added
+	 *  again stays theirs.
+	 */
+	keywordsAiRestore: (items: RestoreItem[]) => __TAURI_INVOKE<RemoveReport>("keywords_ai_restore", { items }),
+	/**
 	 *  Keep: the named AI keywords of these photos (all of each photo's when `names` is empty) become the
 	 *  user's own. They stay in the sidecar; only Immage's record of having added them changes.
 	 */
@@ -2346,6 +2352,12 @@ export type ResourceLevels = {
 };
 
 export type Restore = string | ModuleState;
+
+/**  What an Undo puts back: these keywords of this photo. */
+export type RestoreItem = {
+	path: string,
+	names: string[],
+};
 
 export type RootStatus = {
 	path: string,

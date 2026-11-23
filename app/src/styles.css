@@ -841,6 +841,11 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .kw-auto-head { display: flex; align-items: center; gap: 6px; height: 22px; min-width: 0; color: var(--text-3); }
 .kw-auto-name { flex: 0 1 auto; min-width: 5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
 .kw-auto-state { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 1.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kw-undo-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
+.kw-undo { flex: none; padding: 0 4px; height: 20px; background: none; border: none; border-radius: 4px; color: var(--accent); font: inherit; cursor: pointer; }
+.kw-undo:hover { background: var(--hover); }
+.kw-undo:focus-visible { outline: 2px solid var(--focus, var(--accent)); outline-offset: -2px; }
+.kw-undo:disabled { cursor: default; opacity: 0.5; }
 .kw-auto-body { min-height: 52px; margin-top: 4px; }
 .kw-auto-body .kw-chips { margin-bottom: 0; }
 .kw-spin { flex: none; width: 10px; height: 10px; box-sizing: border-box; border: 1.5px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: kw-spin 0.9s linear infinite; }

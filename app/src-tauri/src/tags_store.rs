@@ -332,6 +332,16 @@ impl TagStore {
         }
         Ok(())
     }
+    /// Undo of `forget_applied`: these dismissed keywords are Immage's again, with the confidence
+    /// they were stored at. Returns how many were restored.
+    pub fn restore_applied(&self, path: &str, names: &[String]) -> Result<u32, String> {
+        let db = self.db()?;
+        let mut n = 0;
+        for name in names {
+            n += db.execute("UPDATE tag_rows SET applied=1 WHERE path=?1 AND tag=?2 AND applied=2", params![path, name]).map_err(|e| e.to_string())?;
+        }
+        Ok(n as u32)
+    }
     /// The user keeps these keywords (all the photo's AI keywords when `names` is empty): they stay on
     /// the photo as its own, and stop being Immage's. Returns how many were kept.
     pub fn keep_applied(&self, path: &str, names: &[String]) -> Result<u32, String> {
@@ -444,6 +454,18 @@ mod tests {
         assert_eq!(s.totals().unwrap().applied, 2);
         let b = s.tags("/p/b.jpg").unwrap();
         assert!(!b[0].applied && b[0].dismissed, "a removed AI keyword is remembered as dismissed");
+    }
+
+    #[test]
+    fn a_restored_keyword_is_immages_again_at_its_confidence() {
+        let s = store();
+        s.put("/p/a.jpg", "f", "m", &tags(&[("beach", 0.9), ("sea", 0.8)]), 1).unwrap();
+        s.record_applied("/p/a.jpg", 70, &["beach".into(), "sea".into()], &[]).unwrap();
+        s.forget_applied("/p/a.jpg", &["sea".into()]).unwrap();
+        assert_eq!(s.restore_applied("/p/a.jpg", &["sea".into(), "beach".into(), "nope".into()]).unwrap(), 1, "only a dismissed one comes back");
+        let st = s.photo_state("/p/a.jpg").unwrap();
+        assert_eq!(st.keywords.iter().map(|k| k.name.as_str()).collect::<Vec<_>>(), ["beach", "sea"]);
+        assert!((st.keywords[1].confidence - 0.8).abs() < 1e-6);
     }
 
     #[test]

@@ -115,3 +115,18 @@ test('the selection check fails without the group reserved header and body (nega
   assert.equal(r.ok, false);
   assert.ok(r.moved > 0, 'the marker did not move');
 });
+
+test('the Undo line takes the state row, restores, expires and pauses without moving anything below', { skip }, () => {
+  const r = report('test=5&w=190');
+  assert.equal(r.error, undefined, r.error);
+  assert.deepEqual(r.fail, []);
+  assert.equal(r.moved, 0);
+  assert.ok(r.calls?.some((c) => c.startsWith('restore ')), 'Undo did not reach keywords_ai_restore');
+  assert.equal(r.ok, true);
+});
+
+test('the Undo check fails when the line grows the state row (negative control)', { skip }, () => {
+  const r = report('test=5&w=190&break=undo');
+  assert.equal(r.ok, false);
+  assert.ok(r.moved > 0 || r.fail.some((f) => /header/.test(f)), 'nothing moved');
+});

@@ -132,6 +132,7 @@ jobs:
             verify/find-model.test.mjs \
             verify/saved-filters.test.mjs \
             verify/keyword-group.test.mjs \
+            verify/undo-line.test.mjs \
             verify/catalog-ui.test.mjs \
             verify/folder-tree.test.mjs \
             verify/folder-edits.test.mjs \

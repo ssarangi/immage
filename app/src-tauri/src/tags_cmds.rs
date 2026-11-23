@@ -171,6 +171,47 @@ pub async fn keywords_ai_remove_photos(
     .map_err(|e| e.to_string())?
 }
 
+/// What an Undo puts back: these keywords of this photo.
+#[derive(serde::Deserialize, specta::Type)]
+pub struct RestoreItem {
+    pub path: String,
+    pub names: Vec<String>,
+}
+
+/// Undo of `keywords_ai_remove_photos`: attaches the listed keywords to their photos again and makes
+/// them Auto-keywords' once more, at the confidence they had. A keyword the user has since added
+/// again stays theirs.
+#[tauri::command]
+#[specta::specta]
+pub async fn keywords_ai_restore(
+    state: State<'_, AppState>,
+    ai: State<'_, AiState>,
+    items: Vec<RestoreItem>,
+) -> Result<RemoveReport, String> {
+    let (store, tagged, apply) = (ai.tags.clone(), state.tagged.clone(), ai.apply.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut report = RemoveReport { photos: 0, keywords: 0, failed: 0 };
+        for RestoreItem { path, names } in items {
+            if !std::path::Path::new(&path).is_file() {
+                report.failed += 1;
+                continue;
+            }
+            let imgid = tagged.cached_photo(&path, 0);
+            match (apply)(json!({"cmd":"tags_apply","imgid":imgid,"add":names,"remove":[]})) {
+                Ok(reply) => {
+                    let added: Vec<String> = reply["added"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(str::to_string)).collect();
+                    report.keywords += store.restore_applied(&path, &added)?;
+                    report.photos += 1;
+                }
+                Err(_) => report.failed += 1,
+            }
+        }
+        Ok(report)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[derive(serde::Serialize, specta::Type)]
 pub struct RemoveReport {
     pub photos: u32,

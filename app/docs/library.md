@@ -814,7 +814,9 @@ the background), so the rules never guess. Manual decisions always win.
 
 **Preview rules** shows how many frames would be kept, rejected and left
 undecided, without writing anything; the numbers dim when a rule, a score or a
-choice has changed since. **Review piles** opens a review in the grid's place:
+choice has changed since. Frames already rejected are not counted as rejects:
+the panel notes how many there are and leaves them alone. When the rules would
+keep or reject nothing, the panel says so and Apply stays off. **Review piles** opens a review in the grid's place:
 one row per scene with a **Keep** pile and a **Reject** pile side by side.
 Click a frame to move it to the other pile, or use **Keep all** and **Reject all**
 for a scene; your calls win over the rules. **Apply** writes the previewed
@@ -1123,7 +1125,12 @@ button; click it to show them all. They are in English.
 Click a keyword in the group, or press Enter on it, to **keep** it: it becomes
 one of your own keywords and moves up among yours, and the group's **Remove
 all** and Preferences' bulk removal never take it off. **×** removes it from this photo
-only, and it is not added to that photo again. Hover a keyword to see how sure
+only, and it is not added to that photo again. After **×** or **Remove all from this
+photo**, the group's header shows "Removed sea" with an **Undo** button for 5 seconds:
+Undo attaches the keywords again and makes them Auto-keywords' once more. The line
+waits while the pointer or keyboard focus is on it, joins further removals made
+meanwhile, goes when you open another photo, and never moves the panels below.
+Keep has no Undo, as nothing leaves the photo. Hover a keyword to see how sure
 the model was (a thin line at the foot of the chip shows it too); the group is
 ordered with the surest first. The group's **...** menu has **Keep all**,
 **Remove all from this photo** (only what Auto-keywords added; yours stay) and
