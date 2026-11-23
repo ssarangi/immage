@@ -3572,3 +3572,10 @@ html[data-scheme="light"] .strip-slot.grid::before { background: color-mix(in sr
   .pref-label { flex-basis: 160px; }
 }
 @media (max-width: 720px) { .prefs-note { display: none; } }
+
+/* with both trees open, each is held to about 38% of the Library panel (not less than 140px) and scrolls
+   inside itself; one open tree uses the panel's own scroll. --left-h is the aside's height (useHeightVar). */
+.left:has(.folders-body):has(.cat-body) :is(.folders-body, .cat-body) {
+  max-height: max(140px, calc(var(--left-h, 0px) * 0.38));
+  overflow-y: auto;
+}

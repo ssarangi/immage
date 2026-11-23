@@ -84,7 +84,7 @@ In full screen preview, Z, ⌘= ⌘-, Y, X, I, L, \, 0-9 and ← → still work.
 | Double-click | A slider's value: type one |
 | Scroll | Over a slider: nudge it, when Preferences allows |
 | ⌥-drag | Some sliders: show what they affect |
-| ⌥-click | A panel's title: open it alone (in focus mode, alongside the others) |
+| ⌥-click | A tool panel's title on the right: open it alone (in Focus mode, alongside the others). Library cards ignore it |
 
 ## Crop
 

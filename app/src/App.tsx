@@ -87,6 +87,7 @@ import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, ty
 import { FolderTree, type Volume } from "./FolderTree";
 import { SectionStatus } from "./SectionStatus";
 import { headerKey } from "./CatalogCard";
+import { togglePanelSet, toggleLeftSet, useHeightVar } from "./panelToggle";
 import { useCatalogUi } from "./catalogUi";
 import { baseName, parentDir, within } from "./paths";
 import { isEngineExit, reopenPlan, reopening, START as ENGINE_START, step as engineStep, wait as engineWait,
@@ -3113,15 +3114,13 @@ export default function App() {
       return id === "folders" || id === "catalog" ? v !== "0" : v === "1";
     } catch { return id === "folders" || id === "catalog"; }
   })));
-  // focus mode and ⌥ as for the right panel's panels (togglePanel)
-  const toggleLeft = (id: LeftCard, alt = false) => setLeftOpen((old) => {
-    const solo = focusMode ? !alt && !old.has(id) : alt;
-    let next: Set<LeftCard>;
-    if (solo) next = new Set(old.has(id) && old.size === 1 ? [] : [id]);
-    else { next = new Set(old); if (next.has(id)) next.delete(id); else next.add(id); }
+  // the cards are always independent: Focus mode and ⌥ apply to the right panel only
+  const toggleLeft = (id: LeftCard, _alt = false) => setLeftOpen((old) => {
+    const next = toggleLeftSet(old, id);
     try { for (const c of LEFT_CARDS) settings.set(`immage.${c}.open`, next.has(c) ? "1" : "0"); } catch { /* not kept */ }
     return next;
   });
+  useHeightVar(leftAside, "--left-h");
   const foldersOpen = leftOpen.has("folders");
   // Lightroom's Include Photos from Subfolders, for every folder shown
   const [includeSub, setIncludeSub] = useState(loadIncludeSubfolders);
@@ -5635,13 +5634,7 @@ export default function App() {
   ) : undefined;
 
   const togglePanel = (id: string, alt = false) =>
-    setOpenPanels((old) => {
-      const solo = focusMode ? !alt && !old.has(id) : alt;
-      if (solo) return new Set(old.has(id) && old.size === 1 ? [] : [id]);
-      const next = new Set(old);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+    setOpenPanels((old) => togglePanelSet(old, id, alt, focusMode));
   // all of the right panel's panels (or preset groups) shut, or all open
   const [presetGroupsOpen, setPresetGroupsOpen] = useState(true);
   const [presetFold, setPresetFold] = useState<{ open: boolean; n: number }>({ open: true, n: 0 });

@@ -139,8 +139,9 @@ starts with default settings. To start with defaults on purpose, see
   the vignette's guides and a mask shape's outline. **White**, **Yellow**,
   **Red** or a color of your own. Each line has a thin dark edge, so even
   white shows on a light photo or a White canvas.
-- **Focus mode**: opening a panel closes the others; ⌥-click opens one
-  alongside. On by default.
+- **Focus mode (tool panels)**: in the Edit view, opening a tool panel, preset
+  group or Advanced group closes the others; ⌥-click opens one alongside. The
+  Library cards on the left always open independently. On by default.
 - **Auto-hide panels**: the side panels and filmstrip slide away when the
   pointer leaves them, and back at their edge: the rail, or the window's
   bottom edge below the toolbar. A pin keeps one open.

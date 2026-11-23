@@ -168,9 +168,14 @@ the photo:
   the pointer leaves them, and back when it rests a moment at the window
   edge or the rail; the filmstrip comes back at the very bottom, below the
   toolbar. The pin in a panel's head keeps it open.
-- **Focus mode** (on by default) means opening one panel or card closes
-  the others; ⌥-click opens one alongside. With it off, ⌥-click opens one
-  alone.
+- **Focus mode (tool panels)** (on by default) means opening one tool panel,
+  preset group or Advanced group on the right closes the others; ⌥-click
+  opens one alongside. With it off, ⌥-click opens one alone. The Library
+  cards on the left (Metadata, Keywording, Folders, Catalog, History) ignore
+  it: a click opens or shuts only that card, and Folders and Catalog can be
+  open together. With both open, each tree takes at most about 38% of the
+  panel (never less than about 140 px) and scrolls inside itself; one open
+  tree uses the panel's own scroll.
 - **Canvas** (Preferences › General) sets what is behind the photo, in
   full screen too: **Dark**, **Neutral Gray**, which judges tones without
   a dark surround, or **White**, which shows the photo as on a print. L

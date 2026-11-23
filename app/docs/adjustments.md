@@ -28,8 +28,10 @@ is no process version to choose: the tone mapper, AgX, plays that part.
   Preferences sets how far this goes: Quality turns it off, Performance
   goes further.
 
-**Panels:** click a panel's title to open it. With **Focus mode** on (the
-default), opening one closes the others; ⌥-click opens one alongside.
+**Panels:** click a panel's title to open it. With **Focus mode (tool
+panels)** on (the default), opening one closes the others; ⌥-click opens one
+alongside. The Library cards on the left are not affected: they always open
+independently.
 Opening a photo shows Adjustments with only Basic open. The buttons in the
 panel's head collapse or expand them all, and **Reset all** takes the photo
 back to its starting point (⌘Z undoes it).
