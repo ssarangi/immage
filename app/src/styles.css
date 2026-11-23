@@ -813,6 +813,21 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 /* what Auto-keywords added: the faintest tint, full-strength text (muted text failed 4.5 contrast on the grey themes) and a sparkle; no border, no badge */
 .kw-chip.ai { color: var(--text); background: color-mix(in srgb, var(--text) 7%, var(--inset)); }
 .kw-spark { flex: none; opacity: 0.9; }
+.kw-chip { position: relative; }
+.kw-chip.act { cursor: pointer; }
+.kw-chip.mixed { color: var(--text-2); }
+.kw-chip .kw-n { flex: none; opacity: 0.55; font-size: 0.92em; font-variant-numeric: tabular-nums; }
+/* confidence: a 2px line at the foot of the chip, always laid out, only shown for an Auto-keywords chip that has one */
+.kw-chip.ai[style*="--c"]::after {
+  content: ""; position: absolute; inset-inline: 6px; bottom: 1px; height: 2px; border-radius: 1px; opacity: 0.45; pointer-events: none;
+  background: linear-gradient(to right, currentColor var(--c), transparent var(--c));
+}
+[dir="rtl"] .kw-chip.ai[style*="--c"]::after { background: linear-gradient(to left, currentColor var(--c), transparent var(--c)); }
+.kw-auto-menu { flex: none; margin-inline-start: auto; display: inline-flex; }
+.kw-auto-more { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; background: none; border: none; border-radius: 4px; color: var(--text-3); cursor: pointer; }
+.kw-auto-more:hover, .kw-auto-more.on, .kw-auto-more:focus-visible { color: var(--text); background: var(--hover); }
+.kw-auto-more:focus-visible { outline: 2px solid var(--focus, var(--accent)); outline-offset: 1px; }
+.kw-auto-more:disabled { cursor: default; opacity: 0.5; }
 .kw-more {
   height: 24px; min-width: 28px; padding: 0 6px; display: inline-grid; place-items: center; background: none; border: none;
   border-radius: 6px; color: var(--text-3); font: inherit; cursor: pointer;

@@ -462,6 +462,10 @@ mod tests {
         s.put("/p/a.jpg", "g", "m", &tags(&[("beach", 0.9)]), 2).unwrap();
         assert!(s.tags("/p/a.jpg").unwrap().iter().find(|t| t.name == "sea").unwrap().kept);
         assert_eq!(s.applied_photos(&[], 10).unwrap(), vec![("/p/a.jpg".to_string(), vec!["beach".to_string(), "sky".to_string()])]);
+        s.put("/p/b.jpg", "f", "m", &tags(&[("beach", 0.9)]), 1).unwrap();
+        s.record_applied("/p/b.jpg", 70, &["beach".into()], &[]).unwrap();
+        assert_eq!(s.applied_photos_in(&["/p/b.jpg".into()], &[]).unwrap(), vec![("/p/b.jpg".to_string(), vec!["beach".to_string()])]);
+        assert!(s.applied_photos_in(&["/p/nope.jpg".into()], &[]).unwrap().is_empty(), "only the named photos");
         assert_eq!(s.keep_applied("/p/a.jpg", &[]).unwrap(), 2, "no names keeps all that are left");
         assert!(s.photo_state("/p/a.jpg").unwrap().keywords.is_empty());
         let none = s.photo_state("/p/zzz.jpg").unwrap();

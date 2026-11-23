@@ -36,9 +36,30 @@ const aiOf: Record<string, string[]> = {};
 const status = { paused: false, rows: [{ id: "smartSearch", enabled: false, installed: false, pending: 0, running: 0, active: false },
   { id: "keywords", enabled: true, installed: true, pending: 0, running: 0, active: false }] };
 const summary = { blocked: null as string | null, health: "ok" };
-(window as unknown as { __TAURI_INTERNALS__: { invoke: unknown } }).__TAURI_INTERNALS__.invoke = async (cmd: string, args: { path: string }) => {
+const kept: Record<string, Set<string>> = {};
+const analysed = new Set<string>();     // photos with a stored result; others count as not analysed yet
+const calls: string[] = [];
+(window as unknown as { __TAURI_INTERNALS__: { invoke: unknown } }).__TAURI_INTERNALS__.invoke = async (cmd: string, args: { paths: string[]; names: string[] }) => {
   await new Promise((r) => setTimeout(r, 10));
-  if (cmd === "keywords_ai_of") return aiOf[args.path] ?? [];
+  if (cmd === "keywords_photo_states") {
+    for (const p of args.paths) if ((aiOf[p] ?? []).length) analysed.add(p);
+    return args.paths.map((path) => ({ path, analysed: analysed.has(path) || (aiOf[path] ?? []).length > 0, shared: false,
+      keywords: (aiOf[path] ?? []).filter((n) => !kept[path]?.has(n)).map((name, i) => ({ name, confidence: 0.9 - (i % 9) / 10 })) }));
+  }
+  if (cmd === "keywords_ai_keep") {
+    calls.push(`keep ${args.paths.length} ${args.names.join(",")}`);
+    for (const p of args.paths) for (const n of args.names.length ? args.names : aiOf[p] ?? []) (kept[p] ??= new Set()).add(n);
+    return args.paths.length;
+  }
+  if (cmd === "keywords_ai_remove_photos") {
+    calls.push(`remove ${args.paths.length} ${args.names.join(",")}`);
+    for (const p of args.paths) {
+      const gone = args.names.length ? args.names : (aiOf[p] ?? []).filter((n) => !kept[p]?.has(n));
+      aiOf[p] = (aiOf[p] ?? []).filter((n) => !gone.includes(n));
+      setKeywordsOf?.(p, (k) => k.filter((n) => !gone.includes(n)));
+    }
+    return { photos: args.paths.length, keywords: 0, failed: 0 };
+  }
   if (cmd === "analysis_status") return status;
   if (cmd === "keywords_summary") return summary;
   throw new Error("harness: no Tauri");
@@ -53,13 +74,15 @@ const photo = (n: number): ImageEntry => ({ imgid: n, path: `/p/IMG_${n}.NEF`, f
 const noop = () => {};
 const removed: string[] = [];
 
-type S = { entry: ImageEntry | null; keywords: string[] | null; current: boolean };
+let setKeywordsOf: ((path: string, f: (k: string[]) => string[]) => void) | undefined;
+type S = { entry: ImageEntry | null; keywords: string[] | null; current: boolean; selected?: { path: string; keywords: string[] }[] };
 function Harness() {
   const [s, setS] = useState<S>({ entry: null, keywords: null, current: false });
   const hold = useCardHold(s.entry, s.current, s.keywords);
   const entry = broken ? s.entry : hold.entry, keywords = broken ? (s.entry ? s.keywords : null) : hold.keywords;
   useEffect(() => {
     (window as unknown as { __set: (v: S) => void }).__set = setS;
+    setKeywordsOf = (path, f) => setS((v) => (v.entry?.path === path && v.keywords ? { ...v, keywords: f(v.keywords) } : v));
     document.body.dataset.ready = "1";
     if (q.get("shot") === "1") {
       document.head.insertAdjacentHTML("beforeend", "<style>.panel.metadata{display:none}</style>");
@@ -77,6 +100,9 @@ function Harness() {
     if (q.get("test") === "1") void run()
       .then((r) => r, (e) => ({ ok: false, error: String(e?.stack ?? e) }))
       .then((r) => { const el = document.getElementById("cards-report")!; el.textContent = JSON.stringify(r); el.dataset.done = "1"; });
+    const test = q.get("test");
+    if (test === "3" || test === "4") void (test === "3" ? runMulti() : runActions()).then((r) => r, (e) => ({ ok: false, error: String(e?.stack ?? e) }))
+      .then((r) => { const el = document.getElementById("cards-report")!; el.textContent = JSON.stringify(r); el.dataset.done = "1"; });
     if (q.get("test") === "2") void runAuto().then((r) => r, (e) => ({ ok: false, error: String(e?.stack ?? e) }))
       .then((r) => { const el = document.getElementById("cards-report")!; el.textContent = JSON.stringify(r); el.dataset.done = "1"; });
   }, []);
@@ -84,7 +110,7 @@ function Harness() {
     <div className="app" style={{ position: "fixed", inset: 0, display: "block" }}>
       <div className="left" style={{ width: W }}>
         <MetadataPanel image={entry} text={null} onText={noop} onMeta={noop} onCaptureTime={noop} onLocationSaved={noop} open onToggle={noop} />
-        <KeywordingPanel keywords={keywords} loading={hold.loading} known={[]} photoPath={entry?.path} open onToggle={noop} onAdd={noop}
+        <KeywordingPanel keywords={keywords} loading={hold.loading} known={[]} photoPath={entry?.path} selected={s.selected} open onToggle={noop} onAdd={noop}
                          onRemove={(k) => { removed.push(k); (window as unknown as { __remove?: (k: string) => void }).__remove?.(k); }} />
         <div id="folders" className="panel" style={{ height: 40 }}>Folders</div>
       </div>
@@ -173,9 +199,9 @@ async function runAuto() {
   press(document.activeElement!, "Home"); await wait();
   const atHome = document.activeElement === list()[0];
   const target = (document.activeElement as HTMLElement).dataset.kw;
-  removed.length = 0;
-  press(document.activeElement!, "Backspace");
-  const removedByKey = removed.length === 1 && removed[0] === target;
+  calls.length = 0;
+  press(document.activeElement!, "Backspace"); await wait();
+  const removedByKey = calls.includes(`remove 1 ${target}`);
   const named = list()[0].getAttribute("aria-label") ?? "";
   if (moved !== 0) fail.push(`the Folders marker moved by ${moved}px: ${JSON.stringify(ys)}`);
   if (heights.length !== 1 || heights[0] !== 24) fail.push(`chip heights ${heights}`);
@@ -188,6 +214,120 @@ async function runAuto() {
   if (!/Auto-keywords|automatiques/.test(named)) fail.push(`chip name "${named}"`);
   if (!(grew > 0 && Math.abs(back) < 1)) fail.push(`fold: grew ${grew}, back ${back}`);
   return { ok: fail.length === 0, fail, moved, ys, bodyH, headH, rows: rowsShown, moreText, grew, back, stops };
+}
+
+// Keep, the group menu and removing an Auto-keywords chip: the keyword moves to the user's own chips (or
+// goes), the card's chip count follows, and nothing below the card moves, down to the last chip
+const must = (sel: string) => { const el = document.querySelector<HTMLElement>(sel); if (!el) throw new Error(`no ${sel}`); return el; };
+async function runActions() {
+  const set = (window as unknown as { __set: (v: S) => void }).__set;
+  const y = () => document.getElementById("folders")!.getBoundingClientRect().top;
+  const p = photo(1);
+  const fail: string[] = [];
+  const own = ["family"], ai = names(8, false);
+  aiOf[p.path] = ai; set({ entry: p, keywords: [...own, ...ai], current: true }); await wait(); await wait();
+  // a kept keyword joins the user's own chips, which may add a row above: only what is below the add box
+  // (the group and Recent) must keep its height
+  const below = () => y() - must(".kw-add").getBoundingClientRect().bottom;
+  const base = below();
+  const autoNames = () => Array.from(document.querySelectorAll<HTMLElement>(".kw-auto .kw-chip")).map((c) => c.dataset.kw!);
+  const ownNames = () => Array.from(document.querySelectorAll<HTMLElement>(".kw-body > .kw-chips .kw-chip")).map((c) => c.dataset.kw!);
+  const ys: number[] = [];
+  const settle = async () => { await wait(); await wait(); ys.push(below() - base); };
+  const tip = must(".kw-auto .kw-chip").title;
+  if (!/% sure/.test(tip) || !/keep/i.test(tip)) fail.push(`tooltip "${tip}"`);
+  const aria = must(".kw-auto .kw-chip").getAttribute("aria-label") ?? "";
+  if (!/% sure/.test(aria)) fail.push(`name "${aria}"`);
+  const sorted = autoNames();
+  // confidence order: the shim gives the first state keyword the highest confidence
+  if (sorted[0] !== ai[0]) fail.push(`order ${sorted.slice(0, 2)}`);
+  // click keeps one
+  if (autoNames().length < 2) fail.push(`auto chips ${autoNames()} own ${ownNames()} head ${document.querySelector(".kw-auto-head")?.textContent}`);
+  const target = autoNames()[1] ?? autoNames()[0];
+  must(`.kw-auto .kw-chip[data-kw="${target}"] .kw-leaf`).click(); await settle();
+  if (autoNames().includes(target) || !ownNames().includes(target)) fail.push(`click kept ${target}: auto ${autoNames().includes(target)}, own ${ownNames().includes(target)}`);
+  // Enter keeps the focused one
+  const second = autoNames()[0];
+  const chip = must(`.kw-auto .kw-chip[data-kw="${second}"]`); chip.focus();
+  chip.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); await settle();
+  if (autoNames().includes(second) || !ownNames().includes(second)) fail.push(`Enter kept ${second}`);
+  // the x of an Auto-keywords chip removes it from this photo only
+  const rm = autoNames()[0];
+  must(`.kw-auto .kw-chip[data-kw="${rm}"] button`).click(); await settle();
+  if (autoNames().includes(rm) || ownNames().includes(rm)) fail.push(`x removed ${rm}`);
+  if (!calls.some((c) => c === `remove 1 ${rm}`)) fail.push(`calls ${calls}`);
+  // the menu: Keep all
+  const headState = () => document.querySelector(".kw-auto-state")?.textContent;
+  const before = autoNames().length;
+  const menuBtn = must(".kw-auto-more");
+  menuBtn.click(); await wait();
+  const items = Array.from(document.querySelectorAll<HTMLElement>("[role=menuitem]")).map((b) => b.textContent);
+  if (items.length < 2) fail.push(`menu items ${items}`);
+  document.querySelectorAll<HTMLElement>("[role=menuitem]")[0].click(); await settle();
+  if (autoNames().length !== 0 || ownNames().length < before) fail.push(`keep all: auto ${autoNames().length}, own ${ownNames().length}`);
+  // the group stays (header and body) with nothing left
+  const head = document.querySelector<HTMLElement>(".kw-auto-head")?.getBoundingClientRect().height;
+  const bodyH = document.querySelector<HTMLElement>(".kw-auto-body")?.getBoundingClientRect().height ?? 0;
+  const moved = Math.max(...ys.map(Math.abs));
+  if (moved !== 0) fail.push(`the card below the add box changed height by ${moved}px: ${ys}`);
+  if (head !== 22 || bodyH < 52) fail.push(`group kept? head ${head}, body ${bodyH}, state ${headState()}`);
+  // an open photo the analysis has been through with nothing found says so; one it has not does not
+  const q2 = photo(2);
+  aiOf[q2.path] = []; analysed.add(q2.path);
+  set({ entry: q2, keywords: ["x"], current: true }); await wait(); await wait();
+  const nothing = document.querySelector(".kw-auto-state")?.textContent ?? "";
+  if (!/nothing found|rien trouvé/.test(nothing)) fail.push(`analysed, none found says "${nothing}"`);
+  const q3 = photo(3);
+  set({ entry: q3, keywords: ["x"], current: true }); await wait(); await wait();
+  const unseen = document.querySelector(".kw-auto");
+  if (unseen) fail.push("a photo that was never analysed, with an idle queue, has a group");
+  return { ok: fail.length === 0, fail, moved, ys, items, calls };
+}
+
+// several photos: keywords on all of them are chips, ones on some are dimmed with n/m, a click adds a mixed
+// one to all, and going between selections moves nothing below
+async function runMulti() {
+  const set = (window as unknown as { __set: (v: S) => void }).__set;
+  const y = () => document.getElementById("folders")!.getBoundingClientRect().top;
+  const fail: string[] = [];
+  const a = photo(1), b = photo(2), c = photo(3);
+  const rowsOf = (list: [ImageEntry, string[], string[]][]) => list.map(([e, own, ai]) => { aiOf[e.path] = ai; return { path: e.path, keywords: [...own, ...ai] }; });
+  const open = async (list: [ImageEntry, string[], string[]][]) => {
+    const rows = rowsOf(list);
+    set({ entry: list[0][0], keywords: rows[0].keywords, current: true, selected: rows.length > 1 ? rows : undefined }); await wait(); await wait();
+  };
+  await open([[a, ["family"], names(5, false)]]);
+  const base = y();
+  const ys: Record<string, number> = {};
+  const chipsOf = (sel: string) => Array.from(document.querySelectorAll<HTMLElement>(sel));
+  await open([[a, ["family", "trip"], ["beach", "dog"]], [b, ["family"], ["beach", "dog"]], [c, ["family", "trip"], ["dog", "extra"]]]);
+  const own = chipsOf(".kw-body > .kw-chips .kw-chip");
+  const mixedOwn = own.filter((x) => x.classList.contains("mixed"));
+  if (own[0]?.dataset.kw !== "family" || own[0].classList.contains("mixed")) fail.push(`common first: ${own.map((x) => x.dataset.kw)}`);
+  if (mixedOwn.length !== 1 || !/2\/3/.test(mixedOwn[0].textContent ?? "")) fail.push(`mixed own: ${mixedOwn.map((x) => x.textContent)}`);
+  // a narrow card folds the list; open it to see every chip
+  const more = document.querySelector<HTMLElement>(".kw-more");
+  if (more && /^\+/.test(more.textContent ?? "")) { more.click(); await wait(); }
+  const auto = chipsOf(".kw-auto .kw-chip");
+  const mixedAuto = auto.filter((x) => x.classList.contains("mixed"));
+  if (!mixedAuto.some((x) => x.dataset.kw === "extra" && /1\/3/.test(x.textContent ?? ""))) fail.push(`mixed auto: ${mixedAuto.map((x) => x.textContent)} of ${auto.map((x) => x.textContent)}, state ${document.querySelector(".kw-auto-state")?.textContent} widths ${auto.map((x) => Math.round(x.getBoundingClientRect().width))} wrap ${document.querySelector(".kw-auto .kw-chips")?.getBoundingClientRect().width} more ${document.querySelector(".kw-more")?.textContent}`);
+  if (auto.filter((x) => !x.classList.contains("mixed")).length < 1) fail.push("common Auto-keywords chips missing");
+  const rm = mixedOwn[0].querySelector("button")!.title;
+  if (!/3|2/.test(rm)) fail.push(`remove title "${rm}"`);
+  // Keep on a common Auto-keywords chip keeps it on every photo
+  calls.length = 0;
+  chipsOf(".kw-auto .kw-chip:not(.mixed) .kw-leaf")[0].click(); await wait(); await wait();
+  if (!calls.some((x) => /^keep 3 /.test(x))) fail.push(`keep calls ${calls}`);
+  document.querySelector<HTMLElement>(".kw-more[aria-expanded=true]")?.click(); await wait();
+  await open([[a, ["family"], []], [b, ["family"], []]]);
+  ys.none = y() - base;
+  await open([[a, ["family"], names(30, false)], [b, ["family"], names(12, false)]]);
+  ys.many = y() - base;
+  await open([[a, ["family"], names(1, false)]]);
+  ys.one = y() - base;
+  const moved = Math.max(...Object.values(ys).map(Math.abs));
+  if (moved !== 0) fail.push(`the Folders marker moved by ${moved}px: ${JSON.stringify(ys)}`);
+  return { ok: fail.length === 0, fail, moved, ys, calls };
 }
 
 createRoot(document.getElementById("root")!).render(<Harness />);

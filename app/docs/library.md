@@ -1061,12 +1061,30 @@ chip a little paler with a small sparkle (and "added by Auto-keywords" for a
 screen reader). The group's header says what it is doing: the number of
 keywords, **analysing** while photos wait for it, **nothing found**,
 **paused** (background work is paused) or **not running** (the model cannot
-run; see Preferences > General > AI models). It is read from the library-wide
-analysis, so **analysing** can show while the queue works on other photos. More
-than two rows fold into a **+N** button; click it to show them all. Click **×**
-to remove one like any other. They are in English. Preferences > General > AI
-models lists them all with counts and removes them in bulk, and never touches
-the keywords you typed.
+run; see Preferences > General > AI models). **Analysing** shows for a photo
+the analysis has not been through while it works on the library; **nothing
+found** only for a photo it has been through. A photo it has not reached while
+the analysis is idle shows no group. More than two rows fold into a **+N**
+button; click it to show them all. They are in English.
+
+Click a keyword in the group, or press Enter on it, to **keep** it: it becomes
+one of your own keywords and moves up among yours, and the group's **Remove
+all** and Preferences' bulk removal never take it off. **×** removes it from this photo
+only, and it is not added to that photo again. Hover a keyword to see how sure
+the model was (a thin line at the foot of the chip shows it too); the group is
+ordered with the surest first. The group's **...** menu has **Keep all**,
+**Remove all from this photo** (only what Auto-keywords added; yours stay) and
+**Auto-keywords settings**, which opens Preferences > General > AI models.
+
+With several photos selected, the card shows the keywords all of them have as
+ordinary chips and the ones on only some of them paler, with the count (for
+example 2/5). Click a paler keyword to add it to all of the selected photos; **×**
+removes a keyword from all of them. The Auto-keywords group follows the same
+rule and its menu acts on every selected photo. The card reads up to 50 selected
+photos; beyond that it shows the open photo.
+
+Preferences > General > AI models lists the keywords Auto-keywords added with
+counts and removes them in bulk. It never touches the keywords you typed or kept.
 
 From the keyboard, Tab enters a list of keywords at one stop; **Left** and
 **Right** (swapped in right-to-left languages), **Home** and **End** move

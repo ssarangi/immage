@@ -5,7 +5,8 @@
 // Folders marker under them). A negative control renders the cards as before the hold. The Auto-keywords group
 // (test=2) is held to the same rule at 190 and 280 px: analysis arriving, chips taken off, 40 keywords and long
 // names move nothing below, chips stay 24 px and inside the card, and the keys work; dropping the group's reserved
-// header and body (break=reserve) must fail it. Starts a vite dev
+// header and body (break=reserve) must fail it. test=4 (Keep, the menu, removal) and test=3 (a selection) are held to the
+// same rule. Starts a vite dev
 // server and drives headless Chrome with --dump-dom; skips when Chrome or app/node_modules is missing.
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
@@ -82,4 +83,35 @@ test('the Auto-keywords group keys swap in right-to-left text', { skip }, () => 
   const r = report('test=2&w=190&dir=rtl');
   assert.deepEqual(r.fail, []);
   assert.equal(r.ok, true);
+});
+
+test('Keep, the group menu and removing an Auto-keywords chip move nothing below the card', { skip }, () => {
+  const r = report('test=4&w=280');
+  assert.equal(r.error, undefined, r.error);
+  assert.deepEqual(r.fail, []);
+  assert.equal(r.moved, 0);
+  assert.ok(r.calls.some((c) => c.startsWith('keep 1 ')), 'Keep did not reach the command');
+  assert.equal(r.ok, true);
+});
+
+test('the Keep check fails without the group reserved header and body (negative control)', { skip }, () => {
+  const r = report('test=4&w=280&break=reserve');
+  assert.equal(r.ok, false);
+  assert.ok(r.moved > 0, 'the marker did not move');
+});
+
+for (const w of [190, 280]) {
+  test(`a selection shows common and mixed keywords and moves nothing below at ${w}px`, { skip }, () => {
+    const r = report(`test=3&w=${w}`);
+    assert.equal(r.error, undefined, r.error);
+    assert.deepEqual(r.fail, []);
+    assert.equal(r.moved, 0);
+    assert.equal(r.ok, true);
+  });
+}
+
+test('the selection check fails without the group reserved header and body (negative control)', { skip }, () => {
+  const r = report('test=3&w=190&break=reserve');
+  assert.equal(r.ok, false);
+  assert.ok(r.moved > 0, 'the marker did not move');
 });

@@ -6570,7 +6570,33 @@ export default function App() {
       setStatus(t("app.status.error", { error: e }));
     }
   };
+  // photos selected in the grid or filmstrip: the Keywording card shows their keywords together (the first
+  // KEYWORD_SELECTION of them; a larger selection shows the open photo's)
+  const keywordPhotos = selection.size > 1
+    ? shown.filter((i) => selection.has(i.imgid) && !isRemote(i)).slice(0, KEYWORD_SELECTION) : [];
+  const keywordPhotosKey = keywordPhotos.length > 1 ? keywordPhotos.map((i) => i.imgid).join(",") : "";
+  const [keywordRead, setKeywordRead] = useState<{ key: string; rows: { path: string; keywords: string[] }[] } | null>(null);
+  const [keywordTick, setKeywordTick] = useState(0);
+  useEffect(() => {
+    if (!keywordPhotosKey) { setKeywordRead(null); return; }
+    let stale = false;
+    const list = keywordPhotos;
+    Promise.all(list.map((i) => commands.meta(i.imgid).then((r) => ({ path: i.path, keywords: r.image.keywords }))))
+      .then((rows) => { if (!stale) setKeywordRead({ key: keywordPhotosKey, rows }); }, () => {});
+    return () => { stale = true; };
+  }, [keywordPhotosKey, keywordTick]);
+  const keywordSelection = keywordPhotosKey && keywordRead?.key === keywordPhotosKey ? keywordRead.rows : undefined;
+  const keywordsLoading = !!keywordPhotosKey && !keywordSelection;
   const setPhotoKeywords = async (add: string[], remove: string[]) => {
+    if (keywordPhotosKey && (add.length || remove.length)) {
+      try {
+        await Promise.all(keywordPhotos.map((i) => commands.keywordsSet(i.imgid, add, remove)));
+        if (add.length) setKnownKeywords((k) => [...new Set([...k, ...add])].sort((x, y) => x.localeCompare(y)));
+        setKeywordTick((n) => n + 1);
+        if (currentId !== undefined && keywordPhotos.some((i) => i.imgid === currentId)) reloadKeywords();
+      } catch (e) { setStatus(t("app.status.error", { error: e })); }
+      return;
+    }
     if (currentId === undefined || (!add.length && !remove.length)) return;
     try {
       setKeywords(await commands.keywordsSet(currentId, add, remove));
@@ -6797,7 +6823,9 @@ export default function App() {
                          setMetaText((t) => (t ? { ...t, [field]: value } : t));
                          void setMeta(currentEntry.imgid, { [field]: value });
                        }} />
-        <KeywordingPanel keywords={card.keywords} loading={card.loading} known={knownKeywords} photoPath={currentEntry?.path}
+        <KeywordingPanel keywords={card.keywords} loading={card.loading || keywordsLoading} known={knownKeywords} photoPath={currentEntry?.path}
+                         selected={keywordSelection} onSetUp={() => { setPrefsCard("ai-models"); setPrefsOpen("general"); }}
+                         onChanged={() => { reloadKeywords(); setKeywordTick((n) => n + 1); }}
                          open={leftOpen.has("keywording")} onToggle={(alt) => toggleLeft("keywording", alt)}
                          onAdd={(names) => void setPhotoKeywords(names, [])}
                          onRemove={(name) => void setPhotoKeywords([], [name])} />
@@ -7984,6 +8012,8 @@ const NEG_PICK_LABELS: Record<NegPick, string> = {
 };
 // the Library panel's foldable cards; each keeps its open state under
 // immage.<id>.open
+// the most photos whose keywords the Keywording card reads together
+const KEYWORD_SELECTION = 50;
 const LEFT_CARDS = ["metadata", "keywording", "folders", "catalog", "history"] as const;
 type LeftCard = typeof LEFT_CARDS[number];
 const RIGHT_TITLES: Record<RightMode, string> = { adjust: t("app.panel.adjustments"), presets: t("app.panel.presets"), masks: t("app.panel.masks"), heal: t("app.panel.heal"),

@@ -204,6 +204,16 @@ Improvements
   Each list is one Tab stop: the arrow keys (swapped for right-to-left
   languages), Home and End move along the chips and Backspace or Delete takes
   the focused keyword off; screen readers hear "added by Auto-keywords".
+  The group follows the open photo: **analysing** only for a photo the analysis
+  has not been through, **nothing found** only for one it has. Click an
+  Auto-keywords keyword (or press Enter) to **keep** it as your own, so removing
+  Auto-keywords keywords later never takes it off; its **...** menu has **Keep
+  all**, **Remove all from this photo** and **Auto-keywords settings**. Hovering
+  one shows how sure the model was, and the surest come first. With several
+  photos selected, the card shows the keywords all of them share and, paler with
+  an n/m count, the ones on only some; click one to add it to all. The **×** on
+  an Auto-keywords keyword now removes it from that photo only and it is not
+  added there again.
 
 
 Performance

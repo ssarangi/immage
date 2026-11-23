@@ -296,7 +296,8 @@ describe, and runs on this computer.
     deletes the stored tags but leaves the keywords on your photos; use Review
     first to take those off.
   - In Keywording, the keywords Immage added are in their own **Auto-keywords**
-    group, each marked with a small sparkle; in [Find](library.md#find), the **Keywords** row lists
+    group, each marked with a small sparkle (click one to keep it as your own,
+    and the bulk removal then leaves it alone; see [Keywording](library.md#keywording)); in [Find](library.md#find), the **Keywords** row lists
     them again under **AI keywords**, so a search can ask for what the model saw.
 
 While CLIP or RAM++ analyses your photos in the background, Immage's performance is

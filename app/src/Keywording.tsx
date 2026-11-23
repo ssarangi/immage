@@ -6,10 +6,12 @@
 // darktable's tags, "|" between the levels of a hierarchy; the engine keeps
 // them in the sidecar and remembers every one ever used
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { commands } from "./commands";
 import { settings } from "./settings";
 import { t } from "./i18n";
-import { autoGroupState, splitKeywords, type AutoInput } from "./keywordGroup";
+import { menuKeys, useCardMenu } from "./cardMenu";
+import { autoGroupState, groupRows, type AutoInput, type KeywordItem } from "./keywordGroup";
 
 const RECENT_KEY = "immage.recentKeywords";
 const RECENT_MAX = 9;
@@ -107,12 +109,16 @@ export function KeywordInput({ attached, known, onAdd, addOnBlur = false, autoFo
 // the arrow keys (swapped in right-to-left text) and Home/End move along it, Backspace or Delete takes
 // the focused one off. `ai` names the keywords Auto-keywords added: a sparkle, a tint and an accessible
 // name say so (never color alone). `collapse` keeps a long list to two rows with a "+N" button.
-const NO_AI: ReadonlySet<string> = new Set();
 const ROWS = 2;
 const MORE_W = 34;     // room kept for the "+N" button at the end of the last row, px
-export function KeywordChips({ keywords, onRemove, ai, disabled = false, label, collapse = false }: {
+export function KeywordChips({ keywords, onRemove, ai, disabled = false, label, collapse = false, counts, conf, onKeep, onAddMixed }: {
   keywords: string[]; onRemove: (name: string) => void; ai?: ReadonlySet<string>; disabled?: boolean;
   label?: string; collapse?: boolean;
+  // a selection: the photos each keyword is on (a keyword on only some is dimmed with "n/m")
+  counts?: ReadonlyMap<string, KeywordItem>;
+  conf?: ReadonlyMap<string, number>;      // the confidence of Auto-keywords' keywords, percent
+  onKeep?: (name: string) => void;         // click or Enter on an Auto-keywords chip keeps it
+  onAddMixed?: (name: string) => void;     // click or Enter on a chip on only some of the photos adds it to all
 }) {
   const wrap = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState<string | null>(null);
@@ -163,6 +169,13 @@ export function KeywordChips({ keywords, onRemove, ai, disabled = false, label, 
     if (Date.now() - n.at < 3000) focusKey(n.key);
   }, [names]);
 
+  // what a click or Enter does to a chip: keep an Auto-keywords one, add a mixed one to every photo
+  const act = (k: string): boolean => {
+    const c = counts?.get(k);
+    if (c && c.n < c.total && onAddMixed) { onAddMixed(k); return true; }
+    if (ai?.has(k) && onKeep) { onKeep(k); return true; }
+    return false;
+  };
   const onKey = (e: React.KeyboardEvent<HTMLElement>, k: string) => {
     if (e.target !== e.currentTarget) return;
     const i = shown.indexOf(k);
@@ -172,6 +185,11 @@ export function KeywordChips({ keywords, onRemove, ai, disabled = false, label, 
     else if (e.key === (rtl ? "ArrowRight" : "ArrowLeft")) to = Math.max(i - 1, 0);
     else if (e.key === "Home") to = 0;
     else if (e.key === "End") to = shown.length - 1;
+    else if (e.key === "Enter" && !disabled && (act(k))) {
+      e.preventDefault();
+      next.current = { key: shown[i + 1] ?? shown[i - 1] ?? null, at: Date.now() };
+      return;
+    }
     else if ((e.key === "Backspace" || e.key === "Delete") && !disabled) {
       e.preventDefault();
       next.current = { key: shown[i + 1] ?? shown[i - 1] ?? null, at: Date.now() };
@@ -187,15 +205,27 @@ export function KeywordChips({ keywords, onRemove, ai, disabled = false, label, 
       {keywords.length === 0 && <span className="kw-none">{t("library.keywording.none")}</span>}
       {shown.map((k) => {
         const auto = !!ai?.has(k);
+        const c = counts?.get(k);
+        const mixed = !!c && c.n < c.total;
+        const pct = auto ? conf?.get(k) : undefined;
+        const actable = !disabled && ((mixed && !!onAddMixed) || (auto && !!onKeep));
+        const many = c && c.total > 1 ? c.n : 0;
+        const rm = many ? t("keywording.removeFrom", { keyword: path(k), n: many }) : t("library.keywording.remove", { keyword: path(k) });
+        const tip = [path(k), auto ? t("keywording.aiTip") : "", pct !== undefined ? t("keywording.sure", { pct }) : "",
+                     mixed ? t("keywording.onSome", { n: c!.n, total: c!.total }) : "",
+                     actable ? t(mixed ? "keywording.addAllTip" : "keywording.keepTip") : ""].filter(Boolean).join(" - ");
+        const name = auto ? t(pct !== undefined ? "keywording.autoChipSure" : "keywording.autoChip", { keyword: path(k), pct: pct ?? 0 })
+          : mixed ? t("keywording.onSomeName", { keyword: path(k), n: c!.n, total: c!.total }) : path(k);
         return (
-          <span key={k} role="listitem" className={`kw-chip${auto ? " ai" : ""}`} data-kw={k}
+          <span key={k} role="listitem" className={`kw-chip${auto ? " ai" : ""}${mixed ? " mixed" : ""}${actable ? " act" : ""}`} data-kw={k}
+                style={pct !== undefined ? { "--c": `${pct}%` } as React.CSSProperties : undefined}
                 tabIndex={k === tabKey ? 0 : -1} onFocus={() => setActive(k)} onKeyDown={(e) => onKey(e, k)}
-                aria-label={auto ? t("keywording.autoChip", { keyword: path(k) }) : path(k)}
-                title={auto ? `${path(k)} - ${t("keywording.aiTip")}` : path(k)}>
+                onClick={(e) => { if (!disabled && !(e.target as HTMLElement).closest("button")) act(k); }}
+                aria-label={name} title={tip}>
             {auto && <Sparkle className="kw-spark" />}
             <span className="kw-leaf">{leaf(k)}</span>
-            <button type="button" tabIndex={-1} disabled={disabled} title={t("library.keywording.remove", { keyword: path(k) })}
-                    aria-label={t("library.keywording.remove", { keyword: path(k) })} onClick={() => onRemove(k)}>×</button>
+            {mixed && <bdi dir="ltr" className="kw-n">{`${c!.n}/${c!.total}`}</bdi>}
+            <button type="button" tabIndex={-1} disabled={disabled} title={rm} aria-label={rm} onClick={() => onRemove(k)}>×</button>
           </span>
         );
       })}
@@ -253,13 +283,25 @@ function useAutoStatus(on: boolean): AutoInput {
   return s;
 }
 
-export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true, onToggle, photoPath, loading = false }: {
+type Row = { path: string; keywords: string[] };
+type Snap = { key: string; rows: Row[]; ai: Map<string, ReadonlyMap<string, number>>; analysed: boolean };
+const NO_CONF: ReadonlyMap<string, number> = new Map();
+const NO_STATES = new Map<string, ReadonlyMap<string, number>>();
+
+export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true, onToggle, photoPath, loading = false, selected, onChanged, onSetUp }: {
   keywords: string[] | null;     // the open photo's; null while there is none
-  // the open photo's file, to mark the keywords Auto-keywords added (none for a selection)
+  // the open photo's file, to mark the keywords Auto-keywords added (none for a plain list)
   photoPath?: string;
+  // several photos selected: their paths and keywords. The card then shows the keywords on all of them
+  // as chips, and the ones on only some dimmed with "n/m"; onAdd and onRemove act on every one of them
+  selected?: Row[];
   known: string[];               // every keyword ever used
   onAdd: (names: string[]) => void;
   onRemove: (name: string) => void;
+  // Keep, Remove all and removing an Auto-keywords chip change photos' keywords outside onAdd and
+  // onRemove: the page reads them again
+  onChanged?: () => void;
+  onSetUp?: () => void;          // the group menu's Auto-keywords settings
   open?: boolean;
   onToggle?: (alt: boolean) => void;
   // the next photo's keywords are not in yet: the card keeps its place with the
@@ -267,30 +309,60 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true,
   loading?: boolean;
 }) {
   const [recent, setRecent] = useState(loadRecent);
-  // The chips shown are the last whole read: the photo's keywords and which of them Auto-keywords added,
-  // swapped in together, so a photo change moves nothing until both are in. Edits to the same photo
-  // show at once; the card is read-only while it waits for the other.
-  const [snap, setSnap] = useState<{ path: string; keywords: string[]; ai: ReadonlySet<string> } | null>(null);
+  const rows: Row[] = selected && selected.length > 1 ? selected : photoPath && keywords ? [{ path: photoPath, keywords }] : [];
+  const key = rows.map((r) => r.path).join("\0"), kwKey = rows.map((r) => r.keywords.join("\u0001")).join("\0");
+  const [rev, setRev] = useState(0);     // bumped by Keep and removals, which change what Auto-keywords added
+  // The chips shown are the last whole read: the keywords and which of them Auto-keywords added (and how
+  // sure it was), swapped in together, so a photo change moves nothing until both are in. Edits to the same
+  // photos show at once; the card is read-only while it waits for the other.
+  const [snap, setSnap] = useState<Snap | null>(null);
   useEffect(() => {
-    if (!photoPath || !keywords || loading) return;
+    if (!rows.length || loading) return;
     let alive = true;
-    const done = (ai: ReadonlySet<string>) => { if (alive) setSnap({ path: photoPath, keywords, ai }); };
-    commands.keywordsAiOf(photoPath).then((l) => done(new Set(l)), () => done(NO_AI));
+    const done = (ai: Map<string, ReadonlyMap<string, number>>, analysed: boolean) => { if (alive) setSnap({ key, rows, ai, analysed }); };
+    commands.keywordsPhotoStates(rows.map((r) => r.path)).then((l) => {
+      done(new Map(l.map((s) => [s.path, new Map(s.keywords.map((k) => [k.name, Math.round((k.confidence ?? 0) * 100)]))])), l.some((s) => s.analysed));
+    }, () => done(new Map(), false));
     return () => { alive = false; };
-  }, [photoPath, keywords, loading]);
-  const fresh = !!photoPath && !loading && snap?.path === photoPath;
-  const view = !photoPath ? { keywords: keywords ?? [], ai: NO_AI } : fresh ? { keywords: keywords ?? [], ai: snap!.ai }
-    : { keywords: snap?.keywords ?? keywords ?? [], ai: snap?.ai ?? NO_AI };
-  const busy = loading || (!!photoPath && !fresh);
-  const attached = useMemo(() => new Set(view.keywords), [view.keywords]);
-  const { own, auto } = useMemo(() => splitKeywords(view.keywords, view.ai), [view.keywords, view.ai]);
-  const status = useAutoStatus(!!photoPath && !!keywords && (onToggle ? open : true));
-  const state = photoPath ? autoGroupState(status, auto.length) : null;
+  }, [key, kwKey, loading, rev]);
+  const fresh = rows.length > 0 && !loading && snap?.key === key;
+  const shownRows: Row[] = rows.length ? (fresh ? rows : snap?.rows ?? rows) : [];
+  const ai = snap?.ai ?? NO_STATES;
+  const busy = loading || (rows.length > 0 && !fresh);
+  const model = useMemo(() => {
+    if (!rows.length) return { own: (keywords ?? []).map((name) => ({ name, n: 1, total: 1 })), auto: [] as KeywordItem[], conf: NO_CONF };
+    const conf = new Map<string, number>();
+    const sums = new Map<string, { sum: number; n: number }>();
+    for (const r of shownRows) for (const [k, c] of ai.get(r.path) ?? NO_CONF) {
+      if (!r.keywords.includes(k)) continue;
+      const e = sums.get(k) ?? { sum: 0, n: 0 }; e.sum += c; e.n++; sums.set(k, e);
+    }
+    for (const [k, e] of sums) conf.set(k, Math.round(e.sum / e.n));
+    const g = groupRows(shownRows.map((r) => ({ keywords: r.keywords, ai: new Set([...(ai.get(r.path) ?? NO_CONF).keys()].filter((k) => r.keywords.includes(k))) })), (k) => conf.get(k) ?? 0);
+    return { ...g, conf };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snap, fresh, key, kwKey, keywords]);
+  const { own, auto } = model;
+  const counts = useMemo(() => new Map([...own, ...auto].map((k) => [k.name, k])), [own, auto]);
+  const autoSet = useMemo(() => new Set(auto.map((k) => k.name)), [auto]);
+  const multi = shownRows.length > 1;
+  // names on every photo: not suggested again, and what the Recent buttons toggle
+  const attached = useMemo(() => new Set(own.filter((k) => k.n === k.total).concat(auto).map((k) => k.name)), [own, auto]);
+  const status = useAutoStatus(rows.length > 0 && !!keywords && (onToggle ? open : true));
+  const state = rows.length ? autoGroupState(status, auto.length, snap?.analysed) : null;
   const headId = useId();
   // once a photo's group has had a body, it keeps it (taking off the last chip must not pull Recent up)
-  const bodyKept = useRef<{ path?: string; on: boolean }>({ on: false });
-  const showBody = auto.length > 0 || state === "analysing" || (bodyKept.current.path === photoPath && bodyKept.current.on);
-  bodyKept.current = { path: photoPath, on: showBody && !!state };
+  const bodyKept = useRef<{ key?: string; on: boolean }>({ on: false });
+  const showBody = auto.length > 0 || state === "analysing" || (bodyKept.current.key === key && bodyKept.current.on);
+  bodyKept.current = { key, on: showBody && !!state };
+
+  // the Auto-keywords actions run on the photos the card shows; none of them touches the user's own keywords
+  const paths = shownRows.map((r) => r.path);
+  const changed = () => { setRev((v) => v + 1); onChanged?.(); };
+  const act = (run: Promise<unknown>) => { void run.then(changed, changed); };
+  const keep = (names: string[]) => act(commands.keywordsAiKeep(paths, names));
+  const removeAuto = (names: string[]) => act(commands.keywordsAiRemovePhotos(paths, names));
+  const menu = useCardMenu(auto.length);
 
   const add = (names: string[]) => {
     const typed = [...new Set(names.map(parseKeyword).filter(Boolean))];
@@ -305,7 +377,8 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true,
   const content = (
     <div className={onToggle ? "kw-body" : "keyword-dialog-content"}>
       {(own.length > 0 || auto.length === 0) && (
-        <KeywordChips keywords={own} onRemove={onRemove} disabled={busy} label={t("library.keywording.title")} />
+        <KeywordChips keywords={own.map((k) => k.name)} onRemove={onRemove} disabled={busy} label={t("library.keywording.title")}
+                      counts={multi ? counts : undefined} onAddMixed={multi ? (k) => add([k]) : undefined} />
       )}
       <KeywordInput attached={attached} known={known} onAdd={add} disabled={busy} />
       {state && (
@@ -317,10 +390,29 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true,
               {state === "analysing" && <span className="kw-spin" aria-hidden="true" />}
               {state === "done" ? auto.length : t(`keywording.state.${state}`)}
             </span>
+            <span className="kw-auto-menu" ref={menu.box} style={{ visibility: auto.length ? "visible" : "hidden" }}>
+              <button type="button" className={`kw-auto-more${menu.at ? " on" : ""}`} aria-haspopup="menu" aria-expanded={!!menu.at} disabled={busy || !auto.length}
+                      tabIndex={auto.length ? 0 : -1} title={t("keywording.menu")} aria-label={t("keywording.menu")} onClick={(e) => { menu.toggle(e); }}>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
+              </button>
+              {menu.at && createPortal(
+                <div ref={menu.menu} className="context-menu module-menu" role="menu" onKeyDown={menuKeys} style={{ position: "fixed", left: menu.at.x, top: menu.at.y }}>
+                  <button type="button" role="menuitem" title={t("keywording.keepAllTip")} onClick={(e) => { e.stopPropagation(); menu.close(); keep([]); }}>
+                    <span className="name">{t("keywording.keepAll")}</span></button>
+                  <button type="button" role="menuitem" title={t("keywording.removeAllTip")} onClick={(e) => { e.stopPropagation(); menu.close(); removeAuto([]); }}>
+                    <span className="name">{multi ? t("keywording.removeAllMany", { n: paths.length }) : t("keywording.removeAll")}</span></button>
+                  {onSetUp && (
+                    <button type="button" role="menuitem" onClick={(e) => { e.stopPropagation(); menu.close(); onSetUp(); }}>
+                      <span className="name">{t("keywording.settings")}</span></button>)}
+                </div>, document.body)}
+            </span>
           </div>
           {showBody && (
             <div className="kw-auto-body">
-              {auto.length > 0 && <KeywordChips keywords={auto} ai={view.ai} onRemove={onRemove} disabled={busy} collapse />}
+              {auto.length > 0 && (
+                <KeywordChips keywords={auto.map((k) => k.name)} ai={autoSet} conf={model.conf} counts={multi ? counts : undefined}
+                              onKeep={(k) => keep([k])} onRemove={(k) => removeAuto([k])} disabled={busy} collapse />
+              )}
             </div>
           )}
         </div>
