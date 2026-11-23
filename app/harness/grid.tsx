@@ -17,7 +17,7 @@
 // long tasks. verify/large-grid.test.mjs reads them.
 import "./tauriShim";
 import { createRoot } from "react-dom/client";
-import { useEffect, useMemo, useState } from "react";
+import { Profiler, useEffect, useMemo, useState } from "react";
 import "../src/styles.css";
 import { BUILTIN_THEMES, THEME_TOKENS } from "../src/themes";
 import { Filmstrip } from "../src/Filmstrip";
@@ -52,6 +52,7 @@ const jpeg = (() => {
 })();
 const asked = new Set<number>();
 (window as unknown as { __TAURI_INTERNALS__: { invoke: unknown } }).__TAURI_INTERNALS__.invoke = (cmd: string) => {
+  counts.invokes++;
   if (cmd === "thumb_cached" || cmd === "thumbCached") return new Promise((r) => setTimeout(() => r(jpeg.slice(0)), LATENCY));
   return Promise.reject(new Error("harness: no Tauri"));
 };
@@ -61,7 +62,13 @@ new PerformanceObserver((l) => l.getEntries().forEach((e) => longTasks.push(Math
 
 const byId = new Map(entries.map((i) => [i.imgid, i]));
 const loader = new ThumbLoader((id) => byId.get(id), () => 512 * 1024 * 1024);
-const h = { loader, longTasks, select: (_: number) => {}, open: (_: number) => {}, scrollTo: (_: number) => {},
+// perf counters for benchmarking/grid-scroll.mjs: React commits and the loader's calls
+const counts = { commits: 0, commitMs: 0, request: 0, show: 0, retain: 0, invokes: 0 };
+for (const m of ["request", "show", "retain"] as const) {
+  const orig = loader[m].bind(loader) as (...a: unknown[]) => unknown;
+  (loader as unknown as Record<string, unknown>)[m] = (...a: unknown[]) => { counts[m]++; return orig(...a); };
+}
+const h = { loader, longTasks, counts, select: (_: number) => {}, open: (_: number) => {}, scrollTo: (_: number) => {},
   stats: () => ({ nodes: document.getElementsByTagName("*").length, cells: document.querySelectorAll(".thumb").length,
                   ...loader.progress(), asked: asked.size }) };
 (window as unknown as { __h: typeof h }).__h = h;
@@ -80,11 +87,13 @@ function Harness() {
   }, []);
   return (
     <div style={{ width: 1200, height: 800, display: "flex", flexDirection: "column" }}>
+      <Profiler id="grid" onRender={(_i, _p, d) => { counts.commits++; counts.commitMs += d; }}>
       <Filmstrip images={entries} partners={partners} pending={[]} empty="" current={current} loader={loader}
                  height={150} grid={GRID} gridSize={gridSize}
                  onGridZoom={(f) => setGridSize((g) => Math.max(100, Math.min(400, g * f)))} selection={selection} candidate={null}
                  onPick={() => {}} onDouble={() => {}} onOpenKnown={() => {}} onMenu={() => {}} onMeta={() => {}}
                  onBackMenu={() => {}} />
+      </Profiler>
     </div>
   );
 }

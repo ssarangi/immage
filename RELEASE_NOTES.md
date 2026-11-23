@@ -197,6 +197,10 @@ Performance
   photos took 20 seconds of page time to queue). The Catalog's background
   thumbnail job now waits while you click, type or scroll, and makes the photos
   on screen next.
+- **Smoother grid scrolling:** the grid and the filmstrip keep two rows of
+  photos beyond the screen instead of a screen's worth, while thumbnails are
+  still fetched a screen ahead, so scrolling a large folder gives the
+  compositor less to rebuild each frame (about 60% less in a 25,000-photo test).
 - **Indexing large folders:** storing photo metadata in the search index no
   longer slows down as the index grows. A batch of 20,000 photos took 9 seconds
   (30 seconds when many photos shared a fingerprint) and now takes 1.6 seconds.

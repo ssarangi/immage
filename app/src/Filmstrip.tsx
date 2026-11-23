@@ -19,6 +19,8 @@ import { useDecision } from "./cullStore";
 
 // the gaps between cells (styles.css, .filmstrip and .filmstrip.grid)
 const STRIP_GAP = 3, GRID_GAP = 6;
+// lines (rows of the grid, cells of the strip) drawn beyond the screen on each side
+const DRAW_OVER = 2;
 
 // the pair names (pairKey()) that have a raw among these files
 export const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPrimaryRaw(p)).map(pairKey));
@@ -68,10 +70,18 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
   const total = images.length + pending.length + (more ? 1 : 0);
   const lines = Math.ceil(total / cols);
   const seen = Math.ceil(vp.main / pitch) + 1;
-  const over = Math.max(2, seen);
-  const firstLine = Math.max(0, Math.min(lines - 1, vp.line) - over);
-  const lastLine = Math.min(lines - 1, vp.line + seen + over);
+  // the cells drawn reach two lines past the screen each way, the thumbnails wanted a screen: a cell
+  // costs style, layout and (the compositor's layerize, measured) paint in each frame it is drawn,
+  // and a thumbnail kept in the loader costs nothing until its cell is
+  const over = DRAW_OVER, ahead = Math.max(DRAW_OVER, seen);
+  const range = (n: number) => {
+    const a = Math.max(0, Math.min(lines - 1, vp.line) - n), b = Math.min(lines - 1, vp.line + seen + n);
+    return [a, b] as const;
+  };
+  const [firstLine, lastLine] = range(over);
   const first = firstLine * cols, last = Math.min(total, (lastLine + 1) * cols);
+  const [aheadFirst, aheadLast] = range(ahead);
+  const wantFirst = aheadFirst * cols, wantLast = Math.min(total, (aheadLast + 1) * cols);
   const geo = useRef({ cols, pitch, cellSize, track, gap, total, padStart: vp.padStart, padCross: vp.padCross });
   geo.current = { cols, pitch, cellSize, track, gap, total, padStart: vp.padStart, padCross: vp.padCross };
   // the strip's box and place, read again when either changes. the line a
@@ -117,8 +127,8 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
   useEffect(() => {
     const idOf = (k: number) => { const i = images[k]; return i ? ("imgid" in i ? i.imgid : knownKey(i)) : undefined; };
     const near = new Set<number | string>(), on = new Set<number | string>(), paths: string[] = [];
-    const stop = Math.min(images.length, last);
-    for (let k = first; k < stop; k++) {
+    const stop = Math.min(images.length, wantLast);
+    for (let k = wantFirst; k < stop; k++) {
       const id = idOf(k)!;
       near.add(id);
       if (k >= vp.line * cols && k < (vp.line + seen) * cols) {
@@ -136,7 +146,7 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
     loader.retain(near);
     // the Catalog's thumbnail job makes these next
     hintOnScreen(paths);
-  }, [images, loader, first, last, vp.line, seen, cols]);
+  }, [images, loader, wantFirst, wantLast, vp.line, seen, cols]);
   useEffect(() => () => { loader.show([...onScreen.current], false); onScreen.current = new Set(); }, [loader]);
   // keep the open image in view as the arrows step through the folder.
   // the strip alone scrolls: scrollIntoView would also scroll its
