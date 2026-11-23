@@ -387,8 +387,14 @@ views of the same photos: **Edit** (the open photo with its filmstrip),
 toolbar, in the grid, the **Loupe** (magnifier, or F) opens the photos large,
 and **Auto Cull...** starts [Auto cull](#auto-cull). The toolbar adapts to the
 width the panels leave it: labels turn to icons, then the label colors and
-the less used filters go into menus, then the undo, redo and compare buttons into a
-**...** menu. It never scrolls sideways.
+the less used filters go into menus, the slider shortens, the undo, redo,
+compare and pin buttons move into a **...** menu, then the star filter becomes
+one button and the Loupe and the Library and filmstrip toggles join the **...**
+menu. It does not scroll sideways down to a column about 650 pixels wide.
+The bar is one tab stop: Tab enters it, the left and right arrow keys, Home and
+End move along it (arrows in the view switch select a view), and Tab leaves; the
+sliders keep their own tab stop. Every button has a name for screen readers,
+including one per label color.
 
 Each thumbnail card has a thin ring around it, brighter under the pointer and
 for the open photo, and its picture a faint edge, so a dark photo does not

@@ -7,7 +7,8 @@ import { LABEL_COLORS } from "./library";
 import { Layout, PanelKey } from "./layoutPrefs";
 import { ChevronDown } from "lucide-react";
 import { keys } from "./keys";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { LabelsMenu, MoreFiltersMenu, OverflowMenu, StarsMenu } from "./ToolbarMenus";
 import { type Zoom } from "./zoom";
 import { formatNumber, t } from "./i18n";
 
@@ -144,25 +145,89 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
     onFind(clearAll(find), true);
     say(t("library.toolbar.filtersCleared"), e);
   };
-  const cycleRejected = (e: React.MouseEvent<HTMLButtonElement>) => {
+  const cycleRejected = (e?: React.MouseEvent<HTMLButtonElement>) => {
     const next = f.rejected === "all" ? "hide" : f.rejected === "hide" ? "only" : "all";
     onFind(withFilter(find, { ...f, rejected: next }), true);
-    say(t(next === "all" ? "library.toolbar.showAll" : next === "hide" ? "library.toolbar.hideRejected" : "library.toolbar.onlyRejected"), e);
+    if (e) say(t(next === "all" ? "library.toolbar.showAll" : next === "hide" ? "library.toolbar.hideRejected" : "library.toolbar.onlyRejected"), e);
   };
-  const cycleEdited = (e: React.MouseEvent<HTMLButtonElement>) => {
+  const cycleEdited = (e?: React.MouseEvent<HTMLButtonElement>) => {
     const next = f.edited === "all" ? "edited" : f.edited === "edited" ? "unedited" : "all";
     onFind(withFilter(find, { ...f, edited: next }), true);
-    say(t(next === "all" ? "library.toolbar.showAll" : next === "edited" ? "library.toolbar.onlyEdited" : "library.toolbar.onlyUnedited"), e);
+    if (e) say(t(next === "all" ? "library.toolbar.showAll" : next === "edited" ? "library.toolbar.onlyEdited" : "library.toolbar.onlyUnedited"), e);
   };
+  // one tab stop for the whole bar: the control last used, or the first, takes it, and the arrow
+  // keys move along the bar. Only what is laid out counts (a narrow column hides some controls), so
+  // it is worked out again when the bar's size changes. The zoom slider keeps its own tab stop: it
+  // needs the arrow keys itself
+  const bar = useRef<HTMLDivElement | null>(null);
+  const setRef = (el: HTMLDivElement | null) => { bar.current = el; if (typeof ref === "function") (ref as (e: HTMLDivElement | null) => void)(el); else if (ref) ref.current = el; };
+  const active = useRef<HTMLElement | null>(null);
+  const stops = () => [...(bar.current?.querySelectorAll<HTMLElement>("button:not(:disabled)") ?? [])].filter((e) => e.getClientRects().length > 0);
+  const apply = () => {
+    const all = stops();
+    if (!active.current || !all.includes(active.current)) active.current = all[0] ?? null;
+    for (const e of all) e.tabIndex = e === active.current ? 0 : -1;
+  };
+  useLayoutEffect(() => {
+    apply();
+    const el = bar.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
+  const onFocus = (e: React.FocusEvent) => {
+    const t = e.target as HTMLElement;
+    if (t instanceof HTMLButtonElement && bar.current?.contains(t) && t.tabIndex !== -2) { active.current = t; apply(); }
+  };
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const target = e.target as HTMLElement;
+    if (!bar.current?.contains(target) || !(target instanceof HTMLButtonElement)) return;   // portaled menus and the slider keep their keys
+    const rtl = getComputedStyle(bar.current).direction === "rtl";
+    const all = stops();
+    const i = all.indexOf(target);
+    let to = -1;
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") to = i + ((e.key === "ArrowRight") !== rtl ? 1 : -1);
+    else if (e.key === "Home") to = 0;
+    else if (e.key === "End") to = all.length - 1;
+    else return;
+    if (to < 0 || to >= all.length || i < 0) { e.preventDefault(); return; }
+    e.preventDefault();
+    const next = all[to];
+    next.focus();
+    // arrows inside the view switch select, as in any radio group
+    if (target.getAttribute("role") === "radio" && next.getAttribute("role") === "radio" && next.closest("[role=radiogroup]") === target.closest("[role=radiogroup]")
+        && next.getAttribute("aria-disabled") !== "true" && (e.key === "ArrowRight" || e.key === "ArrowLeft")) next.click();
+  };
+  const rejectTitle = t(f.rejected === "all" ? "library.toolbar.hideRejected" : f.rejected === "hide" ? "library.toolbar.rejectedHidden" : "library.toolbar.onlyRejected");
+  const editedTitle = t(f.edited === "all" ? "library.toolbar.onlyEdited" : f.edited === "edited" ? "library.toolbar.editedOnly" : "library.toolbar.onlyUnedited");
+  const toggleLabel = (k: number) => onFind(withFilter(find, { ...f, labels: f.labels ^ (1 << k) }), true);
+  const toggleUnlabeled = () => onFind(withFilter(find, { ...f, unlabeled: !f.unlabeled }), true);
+  const loupe = (
+        <button className="tool culling-open" title={t("library.toolbar.culling")} aria-label={t("library.toolbar.culling")}
+                aria-disabled={!grid || undefined}
+                onClick={() => { if (grid) window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: {} })); }}><MagnifierIcon /></button>
+  );
+  const leftToggle = (
+        <button className={`tool panel-left${layout.left ? " on" : ""}`} title={t("library.toolbar.libraryPanel")} aria-label={t("library.toolbar.libraryPanel")}
+                aria-pressed={layout.left} onClick={() => onLayout("left")}><PanelIcon side="left" /></button>
+  );
+  const stripToggle = (
+        <button className={`tool panel-strip${layout.strip ? " on" : ""}`} title={t("library.toolbar.filmstripLabel")} aria-label={t("library.toolbar.filmstripLabel")}
+                aria-pressed={layout.strip} onClick={() => onLayout("strip")}><PanelIcon side="bottom" /></button>
+  );
+  const hidden = (sel: string) => { const el = bar.current?.querySelector(sel); return !!el && el.getClientRects().length === 0; };
   const cullName = review ? t("cull.toolbar.reviewName", { count: review.count }) : t("cull.toolbar.title");
   return (
-    <div className="toolbar" ref={ref} role="toolbar" aria-label={t("library.toolbar.label")} aria-orientation="horizontal">
+    <div className="toolbar" ref={setRef} role="toolbar" aria-label={t("library.toolbar.label")} aria-orientation="horizontal"
+         onKeyDown={onKeyDown} onFocusCapture={onFocus}>
       <ViewSwitch view={view} onView={onView} canScenes={canScenes} />
       <span className="sep" role="separator" aria-orientation="vertical" />
       <div className={`tool-group filter${filtering ? " active" : ""}`}>
         <button className={`tool${filtering ? " on" : ""}`} aria-label={filtering ? t("library.toolbar.clearFilters") : t("library.toolbar.noFilters")}
                 title={filtering ? t("library.toolbar.clearFilters") : t("library.toolbar.noFilters")}
                 onClick={clearFilters}><FilterIcon /></button>
+        <span className="inline-stars">
         {[1, 2, 3, 4, 5].map((n) => (
           <button key={n} className="tool" title={t("library.toolbar.starsAndUp", { count: n })}
                   aria-label={t("library.toolbar.starsAndUp", { count: n })} aria-pressed={stars === n}
@@ -170,41 +235,40 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
             <StarIcon filled={stars >= n} />
           </button>
         ))}
+        </span>
+        <StarsMenu stars={stars} onStars={(n) => onFind(setStars(find, n), true)} />
         {!remote && <>
+        <span className="inline-more">
         <span className="sep" />
         {/* all, then without the rejected, then only them (to delete) */}
-        {(() => {
-          const title = t(f.rejected === "all" ? "library.toolbar.hideRejected" : f.rejected === "hide" ? "library.toolbar.rejectedHidden" : "library.toolbar.onlyRejected");
-          return (
-            <button className={`tool${f.rejected === "hide" ? " on" : f.rejected === "only" ? " on only-rejected" : ""}`}
-                    title={title} aria-label={title} aria-pressed={f.rejected !== "all"} onClick={cycleRejected}>
-              <BanIcon />
-              {note && <span className="filter-note" key={note.text} style={{ left: note.x, top: note.y }}>{note.text}</span>}
-            </button>
-          );
-        })()}
+        <button className={`tool${f.rejected === "hide" ? " on" : f.rejected === "only" ? " on only-rejected" : ""}`}
+                title={rejectTitle} aria-label={rejectTitle} aria-pressed={f.rejected !== "all"} onClick={cycleRejected}>
+          <BanIcon />
+          {note && <span className="filter-note" key={note.text} style={{ left: note.x, top: note.y }}>{note.text}</span>}
+        </button>
         {/* all, then the edited, then the ones still untouched */}
-        {(() => {
-          const title = t(f.edited === "all" ? "library.toolbar.onlyEdited" : f.edited === "edited" ? "library.toolbar.editedOnly" : "library.toolbar.onlyUnedited");
-          return (
-            <button className={`tool${f.edited === "edited" ? " on" : f.edited === "unedited" ? " on only-unedited" : ""}`}
-                    title={title} aria-label={title} aria-pressed={f.edited !== "all"} onClick={cycleEdited}>
-              <SlidersIcon />
-            </button>
-          );
-        })()}
+        <button className={`tool${f.edited === "edited" ? " on" : f.edited === "unedited" ? " on only-unedited" : ""}`}
+                title={editedTitle} aria-label={editedTitle} aria-pressed={f.edited !== "all"} onClick={cycleEdited}>
+          <SlidersIcon />
+        </button>
+        </span>
+        <span className="inline-labels">
         <span className="sep" />
         {LABEL_COLORS.map((c, k) => {
           const name = t("library.toolbar.labelNamed", { color: t(`library.menu.label-${LABEL_NAMES[k]}`) });
           return (
             <button key={c} className={`swatch${f.labels & (1 << k) ? " on" : ""}`} style={{ background: c }}
-                    title={name} aria-label={name} aria-pressed={!!(f.labels & (1 << k))}
-                    onClick={() => onFind(withFilter(find, { ...f, labels: f.labels ^ (1 << k) }), true)} />
+                    title={name} aria-label={name} aria-pressed={!!(f.labels & (1 << k))} onClick={() => toggleLabel(k)} />
           );
         })}
         <button className={`swatch${f.unlabeled ? " on" : ""}`} style={{ background: "#9ca3af" }}
                 title={t("library.toolbar.withoutLabel")} aria-label={t("library.toolbar.withoutLabel")} aria-pressed={f.unlabeled}
-                onClick={() => onFind(withFilter(find, { ...f, unlabeled: !f.unlabeled }), true)} />
+                onClick={toggleUnlabeled} />
+        </span>
+        {/* in a narrow column these stand in for the rows above (styles.css, @container center) */}
+        <MoreFiltersMenu rejected={f.rejected !== "all"} edited={f.edited !== "all"} rejectedTitle={rejectTitle} editedTitle={editedTitle}
+                         onRejected={() => cycleRejected()} onEdited={() => cycleEdited()} />
+        <LabelsMenu labels={f.labels} unlabeled={f.unlabeled} onLabel={toggleLabel} onUnlabeled={toggleUnlabeled} />
         </>}
         <span className="sep" />
         {/* Find and its saved filters, as a split button */}
@@ -226,13 +290,19 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
       <div className="tool-group view-tools">
         {viewTools}
       </div>
+      {/* in a narrow column the view tools and the pin move in here */}
+      <OverflowMenu render={() => <>
+        {hidden(".view-tools") && viewTools}
+        {hidden(".inline-pin > *") && pin}
+        {hidden(".panel-left") && leftToggle}
+        {hidden(".panel-strip") && stripToggle}
+        {hidden(".culling-open") && loupe}
+      </>} />
       <span className="sep" role="separator" aria-orientation="vertical" />
       {/* what the grid's photos are looked at and judged with. Laid out in Edit too, switched off, so the
           bar does not change when the view does */}
       <div className="tool-group review">
-        <button className="tool culling-open" title={t("library.toolbar.culling")} aria-label={t("library.toolbar.culling")}
-                aria-disabled={!grid || undefined}
-                onClick={() => { if (grid) window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: {} })); }}><MagnifierIcon /></button>
+        {loupe}
         {/* an action that opens a dialog, so a pill with an ellipsis: it is the Cull panel's review once a plan exists.
             Both labels are laid out, one hidden, so the pill keeps its width through the change */}
         <button className={`tool pill cull-open${review ? " review" : ""}${view === "scenes" ? " scenes" : ""}`}
@@ -244,15 +314,13 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
             <span className={review ? "off" : undefined} aria-hidden>{t("cull.toolbar.button")}</span>
             <span className={review ? undefined : "off"} aria-hidden>{t("cull.toolbar.review")}</span>
           </span>
-          <span className="pill-count" aria-hidden>{review ? formatNumber(review.count) : ""}</span>
+          <span className={`pill-count${review ? "" : " off"}`} aria-hidden>{formatNumber(review?.count ?? 0)}</span>
         </button>
       </div>
       <span className="sep" role="separator" aria-orientation="vertical" />
       <div className="tool-group panels">
-        <button className={`tool${layout.left ? " on" : ""}`} title={t("library.toolbar.libraryPanel")} aria-label={t("library.toolbar.libraryPanel")}
-                aria-pressed={layout.left} onClick={() => onLayout("left")}><PanelIcon side="left" /></button>
-        <button className={`tool${layout.strip ? " on" : ""}`} title={t("library.toolbar.filmstripLabel")} aria-label={t("library.toolbar.filmstripLabel")}
-                aria-pressed={layout.strip} onClick={() => onLayout("strip")}><PanelIcon side="bottom" /></button>
+        {leftToggle}
+        {stripToggle}
         <button className={`tool${layout[rightPanel] ? " on" : ""}`} data-panel-toggle={rightPanel}
                 title={t(rightPanel === "find" ? "library.toolbar.findPanel" : "library.toolbar.adjustmentsPanel")}
                 aria-label={t(rightPanel === "find" ? "library.toolbar.findPanel" : "library.toolbar.adjustmentsPanel")}
@@ -260,7 +328,7 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
           <PanelIcon side="right" />
         </button>
         {/* the filmstrip's pin, after the panel switches rather than among them */}
-        {pin}
+        <span className="inline-pin">{pin}</span>
       </div>
     </div>
   );
