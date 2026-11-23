@@ -1264,7 +1264,7 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
    the stage keeps the old section padding and the bar sets its own margin. A size container, so
    the bar can adapt to the width the panels leave it */
 .center {
-  position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto; padding: 0;
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; padding: 0;
   container-type: inline-size; container-name: center;
 }
 .center-stage { position: relative; display: flex; flex-direction: column; min-height: 0; min-width: 0; padding: 2px 14px 7px; }
