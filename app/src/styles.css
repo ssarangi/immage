@@ -652,16 +652,18 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  /* the center column is a <section>, which the global `section` rule pads by 14px a side: pulled
-     back so the bar is as wide as the grid surface above it (inset 8px from the column's edge) */
-  margin: 14px -6px 8px;
-  padding: 4px 6px;
+  /* the column is a two-row grid (.center) and pads nothing, so the bar's side margin is its own:
+     8px, the grid surface's inset. 4px above plus the surface's 8px is the 12px gap; 8px below */
+  grid-row: 2;
+  box-sizing: border-box;
+  height: 40px;
+  margin: 4px 8px 8px;
+  padding: 0 8px;
   /* a raised bar, a step lighter than the panel it sits on (the card color can equal the panel's in a
      theme) and the recessed grid above it, so it reads as one bar the width of the grid surface */
   background: color-mix(in srgb, var(--panel) 88%, white);
   box-shadow: inset 0 0 0 1px var(--border, var(--inset));
   border-radius: var(--radius-card);
-  overflow-x: auto;
 }
 .tool-group { display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 10px; }
 .tool-group.filter { background: var(--ui-window-161616, #161616); }
@@ -1257,10 +1259,18 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .window { overflow: hidden; }
 .panel-head .pin.on, .toolbar .pin.on { color: var(--accent); }
 /* the filmstrip, floating, rises from behind the toolbar over the photo */
-.center { position: relative; }
+/* the column is two rows: the stage (viewer, filmstrip, grid, status pills) and the toolbar, so the
+   browser takes the bar's height off the stage and nothing is measured in script. It pads nothing:
+   the stage keeps the old section padding and the bar sets its own margin. A size container, so
+   the bar can adapt to the width the panels leave it */
+.center {
+  position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto; padding: 0;
+  container-type: inline-size; container-name: center;
+}
+.center-stage { position: relative; display: flex; flex-direction: column; min-height: 0; min-width: 0; padding: 2px 14px 7px; }
 .toolbar { position: relative; z-index: 40; }
 .strip-slot.floating {
-  position: absolute; left: 0; right: 0; z-index: 30;
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 30;
   transform: translateY(calc(100% + 60px)); visibility: hidden;
   transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s 0.22s;
 }
@@ -1272,8 +1282,8 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 /* Lightroom's Grid: the filmstrip over the editing area, in rows */
 .strip-slot > div { position: relative; }
 /* under a revealed floating side panel (41), over the photo */
-/* ends above the toolbar (its height is set on .center by Toolbar.tsx), not behind it */
-.strip-slot.grid { position: absolute; left: 0; right: 0; top: 0; bottom: var(--toolbar-h, 0px); z-index: 25; grid-template-rows: 1fr; }
+/* fills the stage, which ends above the toolbar */
+.strip-slot.grid { position: absolute; inset: 0; z-index: 25; grid-template-rows: 1fr; }
 .strip-slot.grid > div { height: 100%; }
 /* as many columns as fit at the chosen size (--grid-column, from Filmstrip),
    each exactly that wide and the rows centered: stretched to fill the row,
@@ -1283,18 +1293,18 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   display: grid; grid-template-columns: repeat(auto-fill, var(--grid-column, 230px));
   justify-content: center;
   flex: 1; height: auto; align-content: start; gap: 6px;
-  margin: 8px 8px 18px; padding: 10px; border-radius: var(--radius-card); overflow-x: hidden; overflow-y: auto;
+  margin: 8px; padding: 10px; border-radius: var(--radius-card); overflow-x: hidden; overflow-y: auto;
 }
 /* the recessed surface is drawn on the slot, behind the scrolling photos; recessed below the
    window color so it separates from the panel behind it in every theme */
 .strip-slot.grid::before {
-  content: ""; position: absolute; inset: 8px 8px 18px; z-index: -1; border-radius: var(--radius-card); pointer-events: none;
+  content: ""; position: absolute; inset: 8px; z-index: -1; border-radius: var(--radius-card); pointer-events: none;
   background: color-mix(in srgb, var(--window) 72%, black);
 }
 /* the frame is drawn over the photos, not under them: a photo cut by the edge as it scrolls ends
    at a clean 1px line, like a viewport, instead of fading into or merging with the surface */
 .strip-slot.grid::after {
-  content: ""; position: absolute; inset: 8px 8px 18px; z-index: 1; border-radius: var(--radius-card); pointer-events: none;
+  content: ""; position: absolute; inset: 8px; z-index: 1; border-radius: var(--radius-card); pointer-events: none;
   box-shadow: inset 0 0 0 1px var(--border, var(--inset));
 }
 html[data-scheme="light"] .strip-slot.grid::before { background: color-mix(in srgb, var(--window) 94%, black); }
@@ -1959,7 +1969,7 @@ html[data-scheme="light"] .strip-slot.grid::before { background: color-mix(in sr
    bottom left of the photo, and over the grid (25), where merges are
    started from, under the floating panels */
 .activities {
-  position: absolute; bottom: calc(var(--toolbar-h, 0px) + 8px); left: 12px; z-index: 26; display: flex; flex-direction: column;
+  position: absolute; bottom: 8px; left: 12px; z-index: 26; display: flex; flex-direction: column;
   align-items: flex-start; gap: 6px; pointer-events: none;
 }
 .activity {

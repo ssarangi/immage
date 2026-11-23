@@ -130,20 +130,6 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
   // (fixed to the window: the toolbar scrolls, and would clip it)
   const [note, setNote] = useState<{ text: string; x: number; y: number } | null>(null);
   const noteTimer = useRef(0);
-  // the floating status pills (App's .activities) are placed above this bar: they are
-  // positioned in the same column, so without its height (and margins) they land on top of the bar
-  useEffect(() => {
-    const bar = ref.current;
-    if (!bar || typeof ResizeObserver === "undefined") return;
-    const set = () => {
-      const m = getComputedStyle(bar);
-      bar.parentElement?.style.setProperty("--toolbar-h", `${bar.offsetHeight + parseFloat(m.marginTop || "0") + parseFloat(m.marginBottom || "0")}px`);
-    };
-    set();
-    const ro = new ResizeObserver(set);
-    ro.observe(bar);
-    return () => ro.disconnect();
-  }, [ref]);
   useEffect(() => () => window.clearTimeout(noteTimer.current), []);
   const say = (text: string, e: React.MouseEvent<HTMLButtonElement>) => {
     const r = e.currentTarget.getBoundingClientRect();

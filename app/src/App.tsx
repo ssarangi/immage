@@ -542,15 +542,6 @@ export default function App() {
   const rail = useRef<HTMLElement>(null);
   const stripSlot = useRef<HTMLDivElement>(null);
   const toolbar = useRef<HTMLDivElement>(null);
-  // the floating filmstrip sits just above the toolbar
-  const [toolbarSpace, setToolbarSpace] = useState(44);
-  useEffect(() => {
-    const el = toolbar.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setToolbarSpace(el.offsetHeight + 8));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
   const floatingRef = useRef<Pins>({ left: false, right: false, strip: false });
   const pinButton = (side: keyof PanelPins) => autoHide && (
     <button className={`tool pin${pins[side] ? " on" : ""}`}
@@ -6841,6 +6832,7 @@ export default function App() {
       <Splitter axis="x" value={layout.leftWidth} min={220} max={560} hidden={!docked.left}
                 onChange={(v) => setLayout((l) => ({ ...l, leftWidth: v }))} />
       <section className="center">
+        <div className="center-stage">
         <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking || wbPicking ? " picking" : ""}${aiBusy ? " busy" : ""}${spaceHeld && current && zoom !== "fit" ? (spaceDragging ? " space-pan space-dragging" : " space-pan") : ""}${straightening || line || (shiftHeld && current && !grid && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
               onPointerDownCapture={(e) => { if (onSpacePanDown(e)) return; if (!(e.target as Element).closest(".checker-corner") && !onLoupePickDown(e)) onStraightenDown(e); }}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
@@ -7138,7 +7130,6 @@ export default function App() {
         </main>
         <div data-tour="filmstrip" ref={stripSlot}
              style={floating.strip || grid ? {
-               bottom: toolbarSpace,
                // the grid makes way for a floating side panel shown over it, which
                // would hide its first or last column (the panels' edges are the
                // viewer's, styles.css: auto-hide), and covers the photo in the gap
@@ -7182,6 +7173,7 @@ export default function App() {
             </div>
             {scenesOn && <div className="scenes-host"><ScenesView entries={shown} onMeta={(i, fields) => void setMeta(i.imgid, fields)} /></div>}
           </div>
+        </div>
         </div>
         <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findLocked && layout.find} rightPanel={rightPanel}
                  onToggleFind={toggleFind}

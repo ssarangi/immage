@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later
+     Copyright (C) 2026 the Immage authors -->
+<!-- Dev-only harness: the real Toolbar in the real center column markup (.center, .center-stage, grid
+     surface), in a plain browser (npm run dev, then /harness/toolbar.html?view=grid). Not an entry of the
+     production build. See toolbar.tsx for the parameters. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Toolbar harness</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <pre id="bar-report" hidden></pre>
+    <script type="module" src="/harness/toolbar.tsx"></script>
+  </body>
+</html>
