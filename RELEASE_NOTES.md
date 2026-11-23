@@ -220,6 +220,10 @@ Performance
 
 Bug fixes
 
+- **Opening a photo:** on a busy machine, the previous photo's full-resolution
+  copy, histogram, navigator and placement could still show over the new
+  photo for a second or two. They are now cleared the moment the next photo
+  begins to open, and late results from the old photo are dropped.
 - **Quick start guide:** Skip, Back and Next now work when clicked on a fresh
   profile, where they could do nothing while Esc worked, even with Don't show
   on startup ticked.

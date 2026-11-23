@@ -49,8 +49,8 @@ const copyCode=transformSync('copy.ts',source.slice(copyStart,copyEnd)).code;
 const createCopy=new Function('env',`with(env) { ${copyCode}; return s.onCopy; }`);
 function copyFixture() {
   const calls=[],pending=[];
-  const s={};
-  const env={s,session:ref(s),copyCanvas:ref({getContext(){return {drawImage(){calls.push('pixels');}};}}),
+  const s={},token={};
+  const env={s,token,frameOwner:ref(token),session:ref(s),copyCanvas:ref({getContext(){return {drawImage(){calls.push('pixels');}};}}),
     copyGen:ref(0),copyMeta:ref(null),placed:f=>f,placeLayers(){calls.push('place');},setCopyOn(on){calls.push(on);},
     ImageData:class {},createImageBitmap(){return new Promise(resolve=>pending.push(resolve));},
     perf:{begin(){calls.push('begin');return 1;},finish(){calls.push('finish');},

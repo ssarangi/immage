@@ -4205,7 +4205,21 @@ export default function App() {
   // photo until its first frame arrives; blank when it has none
   const showOpening = (id: number | null) => {
     resetCanvases();
-    for (const c of [baseCanvas.current, clipBase.current, copyCanvas.current, clipSharp.current]) if (c) c.width = 0;
+    for (const c of [baseCanvas.current, clipBase.current, copyCanvas.current, clipSharp.current, navThumb.current]) if (c) c.width = 0;
+    // the old photo's geometry goes with its pixels: until the old session
+    // is closed (it waits for a base or copy render, seconds on a slow
+    // machine) a resize or layout change would place this thumbnail by the
+    // old photo's frame, and its mask box and navigator would still draw
+    full.current = null;
+    viewZ.current = 0;
+    baseMeta.current = null;
+    sharpMeta.current = null;
+    copyMeta.current = null;
+    copyGen.current++;
+    setCopyOn(false);
+    overviewHash.current = null;
+    baseStale.current = true;
+    histograms.set(null);
     const thumb = id !== null ? loader.current?.get(id) : undefined, sc = canvas.current;
     if (!sc) return;
     sc.width = 0;
@@ -4243,6 +4257,7 @@ export default function App() {
     // the old photo's pixels go before the first await, and its late frames
     // are dropped: only the frames of this open may paint from here on
     const token = {}, previousOwner = frameOwner.current;
+    const keptView = { full: full.current, z: viewZ.current };
     frameOwner.current = token;
     if (!reload) showOpening(id);
     if (!(await commands.pathExists(path))) {
@@ -4250,6 +4265,8 @@ export default function App() {
       // layers cleared above are drawn afresh
       frameOwner.current = previousOwner;
       if (!reload && session.current) {
+        full.current = keptView.full;
+        viewZ.current = keptView.z;
         baseStale.current = true;
         overviewHash.current = null;
         session.current.requestRender();
@@ -4323,6 +4340,9 @@ export default function App() {
       };
       s.onWbAreaPick = () => { setWbPicking(true); setStatus(t("fields.module.wb.pickAreaHint")); };
       s.onCopy = (f) => {
+        // a copy finishing after another photo's open began is not drawn: it
+        // would bump the generation below and then pass for current
+        if (frameOwner.current !== token) return;
         const cc = copyCanvas.current, gen = ++copyGen.current;
         if (!f) {
           copyMeta.current = null;
@@ -4334,7 +4354,7 @@ export default function App() {
         const bitmapWork = perf.begin("copy.bitmap", { ...f.trace?.diagnostic });
         void createImageBitmap(new ImageData(f.pixels, f.width, f.height)).then((bmp) => {
           perf.finish(bitmapWork);
-          if (session.current !== s || gen !== copyGen.current || !cc) {
+          if (session.current !== s || frameOwner.current !== token || gen !== copyGen.current || !cc) {
             bmp.close(); perf.discard(f.trace, "copy-bitmap-obsolete"); return;
           }
           perf.drawStart(f.trace);

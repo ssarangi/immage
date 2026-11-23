@@ -149,6 +149,7 @@ jobs:
             verify/perf-tracing.test.mjs \
             verify/pixel-worker.test.mjs \
             verify/preview-handoff.test.mjs \
+            verify/open-stale.test.mjs \
             verify/saturation-curve.test.mjs \
             verify/secondary-click.test.mjs \
             verify/settings-store.test.mjs \
