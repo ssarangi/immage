@@ -50,11 +50,10 @@ const ASSETS: &[PackFile] = &[
 /// The Hugging Face address the files are fetched from today (WC-ECL's export at REVISION).
 const ORIGINAL_BASE: &str = "https://huggingface.co/WC-ECL/ram-plus-onnx/resolve/ce61dc6d6cc47769e69fc8b7ad7bfdfaf8c4e65b";
 /// The owner's GitHub release holding the same three files, named exactly as in ASSETS (the
-/// folder `{RELEASE_BASE}/{path}`), built and checked by scripts/models-release.sh. Stays `None`
-/// until the release exists; then set it to
-/// `Some("https://github.com/ssarangi/immage/releases/download/models-ram-plus-v1")`. The release is
+/// folder `{RELEASE_BASE}/{path}`), built and checked by scripts/models-release.sh. Published as
+/// release `models-ram-plus-v1`; set it back to `None` to fetch from ORIGINAL_BASE only. The release is
 /// tried first and ORIGINAL_BASE second, with the same size and SHA-256 pins either way.
-const RELEASE_BASE: Option<&str> = None;
+const RELEASE_BASE: Option<&str> = Some("https://github.com/ssarangi/immage/releases/download/models-ram-plus-v1");
 const PRIMARY_BASE: &str = match RELEASE_BASE {
     Some(release) => release,
     None => ORIGINAL_BASE,
