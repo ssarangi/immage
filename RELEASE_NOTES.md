@@ -223,6 +223,9 @@ Bug fixes
 - **Quick start guide:** Skip, Back and Next now work when clicked on a fresh
   profile, where they could do nothing while Esc worked, even with Don't show
   on startup ticked.
+- **Photo grid:** a mouse wheel now scrolls the grid in an eased glide instead of
+  a jump per notch. A trackpad, the keyboard, the
+  scrollbar and Reduce motion keep the system's own scrolling.
 
 ## 0.47.1
 

@@ -15,6 +15,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "rea
 import { open } from "@tauri-apps/plugin-dialog";
 import { t } from "./i18n";
 import { badgeOf } from "./cullModel";
+import { SmoothWheel } from "./smoothWheel";
 import { useDecision } from "./cullStore";
 
 // the gaps between cells (styles.css, .filmstrip and .filmstrip.grid)
@@ -204,8 +205,18 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
     // about 4% per wheel notch, as the photo's zoom; capped, as macOS wheel
     // acceleration can report several notches in one event. a plain wheel
     // scrolls
+    // a mouse notch is eased (smoothWheel.ts); a touchpad and the keys scroll natively
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const smooth = new SmoothWheel(root, {
+      now: () => performance.now(), raf: (cb) => requestAnimationFrame(cb), cancel: (id) => cancelAnimationFrame(id),
+      reduced: () => reduced.matches, dpr: () => window.devicePixelRatio || 1,
+    });
     const wheel = (e: WheelEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || !zoom.current) return;
+      if (!(e.ctrlKey || e.metaKey) || !zoom.current) {
+        if (smooth.handle(e)) e.preventDefault();
+        return;
+      }
+      smooth.cancel();
       e.preventDefault();
       const delta = Math.max(-50, Math.min(50, e.deltaY));
       takeAnchor(e.clientX, e.clientY);
@@ -219,6 +230,7 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
     root.addEventListener("wheel", wheel, { passive: false });
     root.addEventListener("scroll", scroll, { passive: true });
     return () => {
+      smooth.cancel();
       root.removeEventListener("wheel", wheel);
       root.removeEventListener("scroll", scroll);
     };

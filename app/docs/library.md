@@ -416,6 +416,10 @@ the pointer stays where it is. ⌘= and ⌘- make them larger or smaller in an
 eased step while the grid shows (in the editor they zoom the photo). The size
 is remembered.
 
+A mouse wheel scrolls the grid in a short eased glide rather than a jump per notch, ending exactly
+where the notches add up. A trackpad, the arrow and page keys and a scrollbar drag scroll as the system
+does, and so does a wheel when the system's Reduce motion setting is on.
+
 Drag the top edge of the filmstrip to make it taller or shorter.
 
 ![Grid view with ratings and labels showing](images/library-grid.png)
