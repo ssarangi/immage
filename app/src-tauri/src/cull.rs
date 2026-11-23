@@ -52,6 +52,10 @@ pub struct CullAnalysis {
     pub height: u32,
     /// the softest textured part of the frame (see `find_blurriest_region`)
     pub blurry_region: Option<CullBlurRegion>,
+    /// the crispest textured part of the frame (see `find_sharpest_region`); None in an
+    /// analysis cached before it was measured
+    #[serde(default)]
+    pub sharp_region: Option<CullBlurRegion>,
 }
 
 /// An analysis and the perceptual hash that groups it with look-alikes.
@@ -137,6 +141,49 @@ pub fn find_blurriest_region(image: &GrayImage) -> Option<CullBlurRegion> {
         y: f64::from(row * cell_h) / f64::from(height),
         width: f64::from(cell_w) / f64::from(width),
         height: f64::from(cell_h) / f64::from(height),
+    })
+}
+
+/// The part of the frame to look at for focus: the crispest cell of an 8x8 grid (the highest
+/// Laplacian variance, among cells with enough texture to judge), widened to the 3x3 cells around
+/// it and kept inside the frame, as a rectangle of fractions of the image. Ties go to the first
+/// cell in reading order, so the same pixels always give the same rectangle. `None` for images too
+/// small to grid, or where every cell is flat.
+pub fn find_sharpest_region(image: &GrayImage) -> Option<CullBlurRegion> {
+    const GRID: u32 = 8;
+    const SPAN: u32 = 3;
+    const MIN_TEXTURE_STDDEV: f64 = 4.0;
+    let (width, height) = image.dimensions();
+    if width < GRID * 4 || height < GRID * 4 {
+        return None;
+    }
+    let (cell_w, cell_h) = (width / GRID, height / GRID);
+    let mut sharpest: Option<(f64, u32, u32)> = None;
+    for row in 0..GRID {
+        for col in 0..GRID {
+            let (x, y) = (col * cell_w, row * cell_h);
+            let w = if col == GRID - 1 { width - x } else { cell_w };
+            let h = if row == GRID - 1 { height - y } else { cell_h };
+            let cell = imageops::crop_imm(image, x, y, w, h).to_image();
+            let pixels: Vec<f64> = cell.pixels().map(|p| f64::from(p[0])).collect();
+            if pixels.is_empty() || variance(&pixels).sqrt() < MIN_TEXTURE_STDDEV {
+                continue;
+            }
+            let crisp = laplacian_variance(&cell);
+            if sharpest.is_none_or(|(best, _, _)| crisp > best) {
+                sharpest = Some((crisp, col, row));
+            }
+        }
+    }
+    sharpest.map(|(_, col, row)| {
+        let left = col.saturating_sub(SPAN / 2).min(GRID - SPAN);
+        let top = row.saturating_sub(SPAN / 2).min(GRID - SPAN);
+        CullBlurRegion {
+            x: f64::from(left * cell_w) / f64::from(width),
+            y: f64::from(top * cell_h) / f64::from(height),
+            width: f64::from(SPAN * cell_w) / f64::from(width),
+            height: f64::from(SPAN * cell_h) / f64::from(height),
+        }
     })
 }
 
@@ -246,6 +293,7 @@ pub fn analyze(image: &RgbImage) -> Analysed {
     let sharpness_metric = laplacian_variance(&gray);
     let exposure = exposure_metric(&gray);
     let blurry_region = find_blurriest_region(&gray);
+    let sharp_region = find_sharpest_region(&gray);
     let (tw, th) = gray.dimensions();
     let center = imageops::crop_imm(&gray, tw / 4, th / 4, tw / 2, th / 2).to_image();
     let center_focus_metric = laplacian_variance(&center);
@@ -269,6 +317,7 @@ pub fn analyze(image: &RgbImage) -> Analysed {
             width: tw,
             height: th,
             blurry_region,
+            sharp_region,
         },
     }
 }
@@ -378,6 +427,32 @@ pub(crate) mod tests {
         assert!(region.x < 0.5);
         assert!(find_blurriest_region(&GrayImage::from_pixel(160, 160, Luma([128]))).is_none());
         assert!(find_blurriest_region(&GrayImage::new(8, 8)).is_none());
+    }
+
+    #[test]
+    fn sharpest_region_finds_the_crisp_corner_and_stays_inside_the_frame() {
+        // a soft frame (blurred checkerboard) with one crisp patch in the lower right
+        let mut image = imageops::blur(&GrayImage::from_fn(320, 320, |x, y| Luma([if (x / 3 + y / 3) % 2 == 0 { 40 } else { 215 }])), 3.0);
+        for y in 230..310 {
+            for x in 230..310 {
+                image.put_pixel(x, y, Luma([if (x / 2 + y / 2) % 2 == 0 { 0 } else { 255 }]));
+            }
+        }
+        let region = find_sharpest_region(&image).unwrap();
+        assert!(region.x + region.width / 2.0 > 0.6 && region.y + region.height / 2.0 > 0.6, "{region:?}");
+        assert!(region.x >= 0.0 && region.y >= 0.0 && region.x + region.width <= 1.0001 && region.y + region.height <= 1.0001);
+        // the same pixels give the same rectangle
+        let again = find_sharpest_region(&image).unwrap();
+        assert_eq!((region.x, region.y, region.width, region.height), (again.x, again.y, again.width, again.height));
+        // negative controls: a flat frame and a frame too small to grid have none
+        assert!(find_sharpest_region(&GrayImage::from_pixel(160, 160, Luma([128]))).is_none());
+        assert!(find_sharpest_region(&GrayImage::new(16, 16)).is_none());
+    }
+
+    #[test]
+    fn an_analysis_cached_before_the_sharp_region_still_decodes() {
+        let old = r#"{"qualityScore":0.5,"sharpnessMetric":1.0,"centerFocusMetric":1.0,"subjectFocusMetric":null,"subjectCompositionMetric":null,"subjectEdgeContactRatio":null,"exposureMetric":1.0,"width":10,"height":10,"blurryRegion":null}"#;
+        assert!(serde_json::from_str::<CullAnalysis>(old).unwrap().sharp_region.is_none());
     }
 
     #[test]

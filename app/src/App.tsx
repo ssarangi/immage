@@ -133,6 +133,7 @@ import { PerfHud } from "./PerfHud";
 import { GridCullingWithScenes } from "./SceneLightbox";
 import "./scenes.css";
 import { ScenesView } from "./ScenesView";
+import { SceneRules } from "./SceneRules";
 import { scenesState, setScenesOn, useScenesOn } from "./scenesStore";
 import { KeywordingPanel } from "./Keywording";
 import { useCardHold } from "./cardHold";
@@ -7309,7 +7310,7 @@ export default function App() {
       <div className={`slot right-slot${rightPanelOpen ? "" : " closed"}${floating.right ? " floating" : ""}`
                       + `${floating.right && revealed.right ? " revealed" : ""}`}>
       <aside className="right" ref={rightAside} style={{ width: rightWidth }}>
-        {findLocked && (culling ? renderCull() : renderFind())}
+        {findLocked && (culling ? renderCull() : scenesOn ? <SceneRules entries={shown} onChanges={applyCullChanges} /> : renderFind())}
         {/* stays mounted under Find, as the zoom bar's photo does in the grid */}
         <div style={{ display: findLocked ? "none" : "contents" }}>
         <div className="panel-head"><h1>{cropping ? t("app.panel.crop") : RIGHT_TITLES[rightMode]}</h1>

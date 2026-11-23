@@ -16,7 +16,7 @@ use std::path::Path;
 
 /// Bumped when the analysis changes what it stores, so cached numbers from an
 /// older build are measured again.
-pub const FEATURE_SET_VERSION: &str = "culling-v1-immage";
+pub const FEATURE_SET_VERSION: &str = "culling-v2-immage";
 
 /// How many frames of each duplicate set stay: More keeps the top 35 %
 /// (at least one), Moderate the top 20 %, Less only the best.
@@ -139,6 +139,8 @@ pub enum CullReason {
     Blurry,
     /// a lower-ranked frame of a set (`bestPath` names the frame it lost to)
     DuplicateOf,
+    /// a frame under the quality a Scenes rule asks for
+    LowQuality,
 }
 
 impl CullReason {
@@ -149,6 +151,7 @@ impl CullReason {
             CullReason::KeptInGroup => "keptInGroup",
             CullReason::Blurry => "blurry",
             CullReason::DuplicateOf => "duplicateOf",
+            CullReason::LowQuality => "lowQuality",
         }
     }
     pub fn parse(text: &str) -> Option<Self> {
@@ -158,6 +161,7 @@ impl CullReason {
             "keptInGroup" => CullReason::KeptInGroup,
             "blurry" => CullReason::Blurry,
             "duplicateOf" => CullReason::DuplicateOf,
+            "lowQuality" => CullReason::LowQuality,
             _ => return None,
         })
     }

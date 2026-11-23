@@ -6,6 +6,8 @@
 // changes size with the picture. Bitmaps are kept in a small LRU, so scrolling back
 // does not decode again; the box shows --inset until the picture is there.
 import { useEffect, useRef } from "react";
+import type { CullBlurRegion } from "./bindings";
+import { clampRegion } from "./scenes";
 import { fetchCachedThumb, fetchThumb, type ImageEntry } from "./library";
 
 const KEEP = 160;
@@ -50,4 +52,39 @@ export function SceneThumb({ entry, className }: { entry: ImageEntry | undefined
     return () => { stale = true; };
   }, [id]);   // eslint-disable-line react-hooks/exhaustive-deps
   return <canvas ref={canvas} className={className ?? "scene-img"} aria-hidden="true" />;
+}
+
+// the picture the sharpest-region crop is cut from: the 1024 px preview the grid and the lightbox share
+// (the harness supplies one too)
+async function loadLarge(entry: ImageEntry): Promise<ImageBitmap | null> {
+  try { return override ? await override(entry) : (await fetchCachedThumb(entry, 1024)) ?? await fetchThumb(entry.imgid, 1024, entry); } catch { return null; }
+}
+
+// The sharpest region of a frame, cut from its preview and drawn into a box of one fixed size (the picture is
+// fitted inside it, as a thumbnail is), so the box never changes with the picture or while it loads
+export function SharpCrop({ entry, region }: { entry: ImageEntry | undefined; region: CullBlurRegion | null | undefined }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const id = entry ? `${entry.version ?? 0}:${entry.path}` : "";
+  const r = region ? `${region.x},${region.y},${region.width},${region.height}` : "";
+  useEffect(() => {
+    const el = canvas.current;
+    if (!el) return;
+    el.width = 1; el.height = 1;
+    const c = clampRegion(region);
+    if (!entry || !c) return;
+    let stale = false;
+    void loadLarge(entry).then((bitmap) => {
+      if (stale || !bitmap || !canvas.current) return;
+      try {
+        const sx = Math.round(c.x * bitmap.width), sy = Math.round(c.y * bitmap.height);
+        const sw = Math.max(1, Math.min(bitmap.width - sx, Math.round(c.w * bitmap.width)));
+        const sh = Math.max(1, Math.min(bitmap.height - sy, Math.round(c.h * bitmap.height)));
+        canvas.current.width = sw; canvas.current.height = sh;
+        canvas.current.getContext("2d")?.drawImage(bitmap, sx, sy, sw, sh, 0, 0, sw, sh);
+      } catch { /* a bitmap freed under a fast change: the box stays empty */ }
+      bitmap.close();
+    });
+    return () => { stale = true; };
+  }, [id, r]);   // eslint-disable-line react-hooks/exhaustive-deps
+  return <canvas ref={canvas} className="scene-crop-img" aria-hidden="true" />;
 }

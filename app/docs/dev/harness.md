@@ -10,7 +10,7 @@ nothing in the app or the user guide links to them.
 | Page | Mounts | Fixture data | Checked by |
 |---|---|---|---|
 | [critique.html](../../harness/critique.html) | the culling preview's `CullLightbox`, `CullSide` and `CullOverlay` (Critique and Cull tabs) | in [critique.tsx](../../harness/critique.tsx) | [critique-shift.test.mjs](../../../verify/critique-shift.test.mjs) |
-| [scenes.html](../../harness/scenes.html) | the Scenes timeline, scene cards and the scene view (`ScenesView`, `SceneLightbox`, `CullLightbox`, `CullSide`) | synthetic photos drawn in the page (`setThumbSource`), fake paths, a fixture store ([scenes.tsx](../../harness/scenes.tsx)) | [scenes-shift.test.mjs](../../../verify/scenes-shift.test.mjs) |
+| [scenes.html](../../harness/scenes.html) | the Scenes timeline, scene cards, scene view with the sharpest-region box, the rules panel and the piles review (`ScenesView`, `SceneLightbox`, `SceneRules`, `ScenePiles`, `CullLightbox`, `CullSide`) | synthetic photos drawn in the page (`setThumbSource`), fake paths, a fixture store ([scenes.tsx](../../harness/scenes.tsx)) | [scenes-shift.test.mjs](../../../verify/scenes-shift.test.mjs) |
 | [toolbar.html](../../harness/toolbar.html) | the real bottom `Toolbar` in the real `.center` column markup over a grid surface (`?view=edit\|grid\|scenes&w=1280&cull=pending&theme=light&dir=rtl`; the language follows Chrome's `--accept-lang`) | none: a handful of buttons and thumbnails ([toolbar.tsx](../../harness/toolbar.tsx)); [toolbarTest.ts](../../harness/toolbarTest.ts) measures the bar | [toolbar-shift.test.mjs](../../../verify/toolbar-shift.test.mjs) |
 | [statistics.html](../../harness/statistics.html) | the whole `Statistics` view | recorded replies of the real backend, [statsMock.ts](../../harness/statsMock.ts) | [stats-shift.test.mjs](../../../verify/stats-shift.test.mjs) |
 | [models.html](../../harness/models.html) | `AiModelsView`, the AI models group of Preferences > General | [modelsFixtures.ts](../../harness/modelsFixtures.ts) | [models-shift.test.mjs](../../../verify/models-shift.test.mjs) |
@@ -47,7 +47,7 @@ the top of each page's `.tsx` is the complete list; the main ones:
   `frame=mat|flush`, `hover=row<N>|badge<N>`, `pin=<N>`, `elapsed=<seconds>` (for
   `loading`), and `break=1`. `#motion-report` reports how many animations run
   1.5 seconds after load, to check reduced motion.
-- **scenes.html**: `view=timeline|scene` (with `scene=<n>`), `state=ready|loading|updating|empty|error|notime|scoring|unscored`,
+- **scenes.html**: `view=timeline|scene|rules|piles` (with `scene=<n>`; `rules` and `piles` add the rules panel, `piles` with the review open), `state=ready|loading|updating|empty|error|notime|scoring|unscored`,
   `size=small|big` (400 or 20,000 synthetic photos), `dir=ltr|rtl`, `scroll=<px>`, `fold=<block>`
   and `break=1`. `--accept-lang=fr` (a Chrome flag) shows the French strings.
 - **statistics.html**: `state=ready|loading|empty|error|firstrun`,

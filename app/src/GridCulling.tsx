@@ -15,6 +15,7 @@ import { KeywordingPanel, parseKeyword } from "./Keywording";
 import { ZoomBar } from "./Toolbar";
 import { formatNumber, t } from "./i18n";
 import type { SceneLightbox } from "./SceneLightbox";
+import { regionCentre } from "./scenes";
 
 export function GridCulling({ images: gridImages, allImages, selection, anchor, thumbnail, activeEditorId, prepare, onEdit, onMeta, onKeywords, onCullChanges, onOpenCullPrefs, scene }: {
   images: ImageEntry[]; allImages: ImageEntry[]; selection: Set<number>; anchor: number | null;
@@ -217,7 +218,16 @@ export function GridCulling({ images: gridImages, allImages, selection, anchor, 
         case "closeLightbox": if (sel.pinned !== null) setSel({ ...sel, pinned: null }); else setPhoto(null); break;
         case "toggleLightbox": direction.current = 1; setPhoto(photo ? null : target?.imgid ?? null); break;
         case "keywords": void keywords(current ? [current] : keywordTargets(allImages, selection, target?.imgid)); break;
-        case "toggleZoom": zoomAnchor.current = null; setZoom(zoomRef.current === null ? 1 : null); break;
+        case "toggleZoom": {
+          // in the scene view Z centres the 100% view on the frame's sharpest region; a second press returns to Fit
+          const centre = action.sharp && scene && zoomRef.current === null ? regionCentre(scene.sharpRegion(current!)) : null;
+          const box = viewport.current;
+          zoomAnchor.current = centre && box ? { ix: centre.ix, iy: centre.iy, sx: box.clientWidth / 2, sy: box.clientHeight / 2 } : null;
+          setZoom(zoomRef.current === null ? 1 : null);
+          break;
+        }
+        case "split": scene?.split(current!); break;
+        case "merge": scene?.merge(current!); break;
         case "step": {
           direction.current = action.by;
           const next = images[images.indexOf(current!) + direction.current];
@@ -458,6 +468,7 @@ export function GridCulling({ images: gridImages, allImages, selection, anchor, 
           <div style={{ minWidth: "100%", minHeight: "100%", width: "max-content", height: "max-content", display: "grid", placeItems: "center" }}>
             <div className="culling-photo" style={{ position: "relative", width: "max-content", height: "max-content" }}>
               <canvas ref={canvas} style={{ maxWidth: "none", flexShrink: 0, display: "block" }} />
+              {scene && !detailed && scene.overlay(current)}
               <CullOverlay critique={crit.critique} sel={sel} onSel={setSel} decision={decision}
                 loading={crit.phase === "loading" && tab === "critique"} />
             </div>

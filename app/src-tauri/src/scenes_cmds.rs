@@ -12,7 +12,10 @@
 //! second: `{ job, stage: "reading" | "scoring", done, total }`.
 use crate::cache::{Caches, DiskCache};
 use crate::cull_cmds;
-use crate::cull_store::{CullTarget, Store as CullStore};
+use crate::cull::CullBlurRegion;
+use crate::cull_cmds::CullPlan;
+use crate::cull_store::{CullFailure, CullTarget, Store as CullStore};
+use crate::scenes_rules::{self, RuleCounts, Known, RuleScene, Rules, Verdict};
 use crate::scenes::{self, Block, Frame, Override, SceneItem, SceneParams};
 use crate::scenes_store::{SceneAccepted, Store};
 use crate::AppState;
@@ -82,6 +85,8 @@ pub struct ScenesBuild {
     pub blocks: Vec<SceneBlock>,
     /// each item's cached quality (0-1), in the request's order, None while unscored
     pub quality: Vec<Option<f64>>,
+    /// each item's cached sharpest region, in the request's order, None while unscored
+    pub regions: Vec<Option<CullBlurRegion>>,
     /// the photos are on a network volume
     pub network: bool,
     pub hashed: u32,
@@ -96,6 +101,7 @@ pub struct SceneScore {
     pub path: String,
     pub version: i64,
     pub quality: Option<f64>,
+    pub sharp_region: Option<CullBlurRegion>,
     pub error: Option<String>,
 }
 
@@ -183,17 +189,20 @@ pub fn build(
             SceneBlock { start_ms: times.iter().min().copied(), end_ms: times.iter().max().copied(), no_time: block.no_time, approx, scenes }
         })
         .collect();
-    let quality = match cull_path.and_then(|p| CullStore::open(p).ok()) {
+    let analyses = match cull_path.and_then(|p| CullStore::open(p).ok()) {
         Some(store) => {
             let keys: Vec<(&str, i64)> = items.iter().map(|i| (i.path.as_str(), i.version)).collect();
-            store.qualities(&keys)
+            store.analyses(&keys)
         }
         None => vec![None; total],
     };
+    let quality = analyses.iter().map(|a| a.as_ref().map(|a| a.quality_score)).collect();
+    let regions = analyses.iter().map(|a| a.as_ref().and_then(|a| a.sharp_region)).collect();
     let network = items.first().is_some_and(|i| crate::volumes::on_network(Path::new(&i.path)));
     Ok(Some(ScenesBuild {
         blocks,
         quality,
+        regions,
         network,
         hashed: (total as u32).saturating_sub(unhashed_total.min(total as u32)),
         unhashed: unhashed_total,
@@ -298,17 +307,17 @@ pub(crate) async fn scenes_score(app: AppHandle, job: u64, items: Vec<CullTarget
                                 Some(store) => cull_cmds::analyse_target(&app, store, target, size, modified)?,
                                 None => return Err("the cull store could not be opened".to_string()),
                             };
-                            Ok::<_, String>(analysed.result.quality_score)
+                            Ok::<_, String>((analysed.result.quality_score, analysed.result.sharp_region))
                         })();
-                        let (quality, error) = match outcome {
-                            Ok(q) => (Some(q), None),
-                            Err(e) => (None, Some(e)),
+                        let (quality, sharp_region, error) = match outcome {
+                            Ok((q, region)) => (Some(q), region, None),
+                            Err(e) => (None, None, Some(e)),
                         };
                         let finished = done.fetch_add(1, Ordering::SeqCst) + 1;
                         if throttle.due(finished, total) {
                             emit(&app, job, "scoring", finished, total);
                         }
-                        out.lock().unwrap_or_else(|e| e.into_inner()).push((i, SceneScore { path: target.path.clone(), version: target.version, quality, error }));
+                        out.lock().unwrap_or_else(|e| e.into_inner()).push((i, SceneScore { path: target.path.clone(), version: target.version, quality, sharp_region, error }));
                     }
                 });
             }
@@ -316,6 +325,81 @@ pub(crate) async fn scenes_score(app: AppHandle, job: u64, items: Vec<CullTarget
         let mut all = out.into_inner().unwrap_or_else(|e| e.into_inner());
         all.sort_by_key(|(i, _)| *i);
         Ok(all.into_iter().map(|(_, s)| s).collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Remembers a split or a merge the user made, so every later grouping replays it. `action` is
+/// "split" (a scene starts at this frame) or "merge" (the frame's scene joins the next scene of its
+/// block). The page builds the scenes again afterwards.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn scenes_override(state: State<'_, AppState>, path: String, version: Option<i64>, action: String) -> Result<(), String> {
+    if action != "split" && action != "merge" {
+        return Err(format!("unknown scene action {action}"));
+    }
+    let store = scenes_path(&state);
+    tauri::async_runtime::spawn_blocking(move || Store::open(&store)?.override_put(&path, version.unwrap_or(0), &action))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RulesRequest {
+    pub scenes: Vec<RuleScene>,
+    pub rules: Rules,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RulesPreview {
+    pub counts: RuleCounts,
+    /// every frame's verdict, in the request's scene and frame order
+    pub verdicts: Vec<Vec<Verdict>>,
+}
+
+/// What the keep rules would do to the scenes, without writing anything.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn scenes_rules_preview(request: RulesRequest) -> Result<RulesPreview, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let verdicts = scenes_rules::evaluate(&request.scenes, &request.rules);
+        RulesPreview { counts: scenes_rules::counts(&verdicts), verdicts }
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Records what the keep rules would do as a planned cull session (the same shape as Auto Cull's), changing no
+/// photo: `cull_apply` writes it and `cull_undo` takes it back. Frames whose file is gone are listed in the
+/// session's failed photos. Nothing is recorded when the rules leave nothing to do.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn scenes_rules_plan(app: AppHandle, label: String, request: RulesRequest) -> Result<CullPlan, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let verdicts = scenes_rules::evaluate(&request.scenes, &request.rules);
+        let state = app.state::<AppState>();
+        let mut store = CullStore::open(&cull_cmds::store_path(&state))?;
+        let keys: Vec<(&str, i64)> = request.scenes.iter().flat_map(|s| &s.frames).map(|f| (f.path.as_str(), f.version)).collect();
+        let mut cached: HashMap<(String, i64), crate::cull::CullAnalysis> = HashMap::new();
+        for ((path, version), analysis) in keys.iter().zip(store.analyses(&keys)) {
+            if let Some(a) = analysis {
+                cached.insert((path.to_string(), *version), a);
+            }
+        }
+        let known = |frame: &scenes_rules::RuleFrame| {
+            let (size, modified_ms) = crate::cull_apply::file_identity(Path::new(&frame.path))?;
+            Some(Known { analysis: cached.get(&(frame.path.clone(), frame.version)).cloned(), size, modified_ms })
+        };
+        let (items, failed) = scenes_rules::plan_items(&request.scenes, &verdicts, &known);
+        if items.is_empty() {
+            return Err("the rules leave nothing to keep or reject".to_string());
+        }
+        let failed: Vec<CullFailure> = failed.into_iter().map(|(path, error)| CullFailure { path, error }).collect();
+        let (session, decisions) = store.create_session(&label, &crate::cull_plan::CullSettings::default(), items, failed)?;
+        Ok(CullPlan { session, decisions })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -369,6 +453,27 @@ mod tests {
     }
 
     #[test]
+    fn a_split_then_a_merge_replays_in_the_order_they_were_made() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = dir.path().join("scenes.sqlite");
+        let items = vec![item("a", "07:10:00"), item("b", "07:10:02"), item("c", "07:10:04"), item("d", "07:10:06")];
+        let seeds: HashMap<String, u32> = ["a", "b", "c", "d"].iter().map(|n| (n.to_string(), 1)).collect();
+        let request = ScenesRequest { items, params: None };
+        let groups = |store: &Path| {
+            let got = build(&request, &reader(seeds.clone()), store, None, 1, &AtomicBool::new(false), &|_, _| {}).unwrap().unwrap();
+            got.blocks[0].scenes.iter().map(|s| s.frames.clone()).collect::<Vec<_>>()
+        };
+        assert_eq!(groups(&store), vec![vec![0, 1, 2, 3]]);
+        let overrides = Store::open(&store).unwrap();
+        overrides.override_put("/fake/c", 0, "split").unwrap();
+        assert_eq!(groups(&store), vec![vec![0, 1], vec![2, 3]]);
+        // joining them again, made a moment later, undoes the split
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        overrides.override_put("/fake/a", 0, "merge").unwrap();
+        assert_eq!(groups(&store), vec![vec![0, 1, 2, 3]]);
+    }
+
+    #[test]
     fn a_cancelled_build_returns_nothing() {
         let dir = tempfile::tempdir().unwrap();
         let request = ScenesRequest { items: vec![item("a", "07:10:00")], params: None };
@@ -398,11 +503,14 @@ mod tests {
         let analysis = CullAnalysis {
             quality_score: 0.84, sharpness_metric: 1.0, center_focus_metric: 1.0, subject_focus_metric: None, subject_composition_metric: None,
             subject_edge_contact_ratio: None, exposure_metric: 1.0, width: 10, height: 10, blurry_region: None,
+            sharp_region: Some(CullBlurRegion { x: 0.5, y: 0.25, width: 0.375, height: 0.375 }),
         };
         cull.cache_put(&CullTarget { path: "/fake/a".into(), version: 0 }, 1, 1, "h", &analysis).unwrap();
         let request = ScenesRequest { items: vec![item("a", "07:10:00"), item("b", "07:10:01")], params: None };
         let got = build(&request, &reader(HashMap::new()), &dir.path().join("s.sqlite"), Some(&cull_path), 1, &AtomicBool::new(false), &|_, _| {}).unwrap().unwrap();
         assert_eq!(got.quality, vec![Some(0.84), None]);
+        assert_eq!(got.regions[0].map(|r| (r.x, r.y)), Some((0.5, 0.25)));
+        assert!(got.regions[1].is_none());
     }
 
     /// 20,000 photos with cached thumbnails: cold (every thumbnail decoded and hashed) and warm (hashes

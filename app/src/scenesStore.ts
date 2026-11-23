@@ -11,8 +11,10 @@ import { useSyncExternalStore } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { commands } from "./commands";
 import { settings } from "./settings";
+import type { CullBlurRegion, Force, RulesPreview, Rules } from "./bindings";
 import {
-  buildModel, frameKey, listSignature, requestItems, type SceneModel, type SceneSource,
+  DEFAULT_RULES, buildModel, clampRules, frameKey, listSignature, requestItems, rulesScenes, sceneOfFrame, type Ctx, type Flags,
+  type SceneModel, type SceneSource,
 } from "./scenes";
 
 export type ScenesStatus = "idle" | "building" | "ready" | "error";
@@ -26,6 +28,7 @@ export type ScenesState = {
   items: ReturnType<typeof requestItems>;             // the build's photos, by index
   model: SceneModel | null;
   quality: (number | null)[];
+  regions: (CullBlurRegion | null)[];                 // each frame's sharpest region, once scored
   accepted: ReadonlySet<string>;
   network: boolean;
   hashed: number;
@@ -35,12 +38,21 @@ export type ScenesState = {
   hideSingles: boolean;
   collapsed: ReadonlySet<number>;
   focus: number;                                      // the scene the keyboard is on
+  rules: Rules;                                       // the keep rules
+  preview: RulesPreview | null;                       // what the rules would do, as last asked for
+  previewStale: boolean;                              // the rules, scores or piles changed since
+  previewBusy: boolean;
+  forced: ReadonlyMap<string, Force>;                 // frames moved to a pile by hand in the review
+  piles: boolean;                                     // the piles review is open
+  ruleSession: { id: number; state: "planned" | "applied" | "undone" } | null;
+  ruleNote: { text: string; error: boolean } | null;
 };
 
 const EMPTY: ScenesState = {
-  on: false, status: "idle", updating: false, progress: null, error: "", signature: "", items: [], model: null, quality: [],
+  on: false, status: "idle", updating: false, progress: null, error: "", signature: "", items: [], model: null, quality: [], regions: [],
   accepted: new Set(), network: false, hashed: 0, unhashed: 0, open: null, scoring: null, hideSingles: false,
-  collapsed: new Set(), focus: 0,
+  collapsed: new Set(), focus: 0, rules: DEFAULT_RULES, preview: null, previewStale: false, previewBusy: false,
+  forced: new Map(), piles: false, ruleSession: null, ruleNote: null,
 };
 
 let state: ScenesState = EMPTY;
@@ -79,6 +91,7 @@ let jobs = 1_000_000;
 let current = 0;                 // the build that counts
 let scoreRun = 0;                // the scoring run that counts
 let listening: Promise<unknown> | null = null;
+let lastEntries: readonly SceneSource[] = [];   // the photos of the last build, for a rebuild after a split or merge
 let onProgress: (e: { job: number; stage: string; done: number; total: number }) => void = () => {};
 
 function ensureListener() {
@@ -88,8 +101,9 @@ function ensureListener() {
 
 // Builds the timeline of `entries` unless it is the one already built. The timeline
 // on screen stays until the new one is ready
-export async function buildScenes(entries: readonly SceneSource[], force = false): Promise<void> {
+export async function buildScenes(entries: readonly SceneSource[], force = false, reopen?: string): Promise<void> {
   const local = entries.filter((e) => !e.remote);
+  lastEntries = entries;
   const signature = listSignature(local);
   if (!force && signature === state.signature && state.status !== "error") return;
   const job = ++jobs;
@@ -105,10 +119,15 @@ export async function buildScenes(entries: readonly SceneSource[], force = false
     const [build, accepted] = await Promise.all([commands.scenesBuild(job, { items, params: null }), commands.scenesAccepted().catch(() => [])]);
     if (job !== current) return;
     const quality = build.quality as (number | null)[];
+    const model = buildModel(build);
+    // after a split or merge the scene holding the frame the user was on stays open
+    const at = reopen ? items.findIndex((it) => frameKey(it.path, it.version) === reopen) : -1;
+    const kept = at >= 0 ? sceneOfFrame(model, at) : -1;
     setScenes({
-      status: "ready", updating: false, progress: null, items, model: buildModel(build), quality,
+      status: "ready", updating: false, progress: null, items, model, quality, regions: build.regions as (CullBlurRegion | null)[],
       accepted: new Set(accepted.map((a) => frameKey(a.path, a.version))), network: build.network,
-      hashed: build.hashed, unhashed: build.unhashed, open: null, focus: 0, collapsed: new Set(),
+      hashed: build.hashed, unhashed: build.unhashed, open: kept >= 0 ? kept : null, focus: kept >= 0 ? kept : 0, collapsed: new Set(),
+      preview: null, previewStale: false, forced: new Map(), piles: false,
     });
     if (scoresInBackground(loadScoringMode(), build.network)) void scoreAll();
   } catch (e) {
@@ -127,14 +146,17 @@ export function stopScenes() {
 }
 
 // ---- scoring ----
-function applyScores(scores: { path: string; version: number; quality: number | null }[]) {
+function applyScores(scores: { path: string; version: number; quality: number | null; sharpRegion?: CullBlurRegion | null }[]) {
   const index = new Map(state.items.map((it, i) => [frameKey(it.path, it.version), i]));
   const quality = state.quality.slice();
+  const regions = state.regions.slice();
   for (const s of scores) {
     const i = index.get(frameKey(s.path, s.version));
-    if (i !== undefined && s.quality !== null) quality[i] = s.quality;
+    if (i === undefined || s.quality === null) continue;
+    quality[i] = s.quality;
+    regions[i] = s.sharpRegion ?? null;
   }
-  setScenes({ quality });
+  setScenes({ quality, regions, previewStale: state.preview !== null });
 }
 
 // Scores a scene's unscored frames (the open scene first: under two seconds on a local disk)
@@ -185,9 +207,47 @@ export function rememberAccepted(path: string, version: number | undefined, acce
 // ---- the view ----
 export const openScene = (scene: number) => setScenes({ open: scene, focus: scene });
 export const closeScene = () => setScenes({ open: null });
-export const setScenesOn = (on: boolean) => setScenes(on ? { on } : { on, open: null });
+export const setScenesOn = (on: boolean) => setScenes(on ? { on } : { on, open: null, piles: false });
 export function toggleBlock(block: number) {
   const next = new Set(state.collapsed);
   if (next.has(block)) next.delete(block); else next.add(block);
   setScenes({ collapsed: next });
+}
+
+// ---- split and merge ----
+// Remembers the user's cut or join (replayed after every grouping) and builds the timeline again; the
+// hashes are kept, so the rebuild decodes nothing. The scene holding `frame` stays open
+export async function overrideScene(action: "split" | "merge", frame: number): Promise<void> {
+  const it = state.items[frame];
+  if (!it) return;
+  await commands.scenesOverride(it.path, it.version, action);
+  await buildScenes(lastEntries, true, frameKey(it.path, it.version));
+}
+
+// ---- the keep rules ----
+export function setRules(patch: Partial<Rules>) {
+  setScenes({ rules: clampRules({ ...state.rules, ...patch }), previewStale: state.preview !== null, ruleNote: null });
+}
+export const resetRules = () => setScenes({ rules: DEFAULT_RULES, previewStale: state.preview !== null, ruleNote: null });
+
+// asks Rust what the rules would do; nothing is written. A later answer to an earlier question is dropped
+let previewRun = 0;
+export async function previewRules(ctx: Ctx<Flags>): Promise<void> {
+  const model = state.model;
+  if (!model) return;
+  const run = ++previewRun;
+  setScenes({ previewBusy: true });
+  try {
+    const preview = await commands.scenesRulesPreview({ scenes: rulesScenes(model, state.items, ctx, state.forced), rules: state.rules });
+    if (run === previewRun) setScenes({ preview, previewStale: false, previewBusy: false });
+  } catch (e) {
+    if (run === previewRun) setScenes({ previewBusy: false, ruleNote: { text: String(e), error: true } });
+  }
+}
+
+// a frame, or every frame of a scene, moved to the Keep or Reject pile by hand (null clears)
+export function forceFrames(keys: readonly string[], force: Force | null) {
+  const next = new Map(state.forced);
+  for (const k of keys) { if (force) next.set(k, force); else next.delete(k); }
+  setScenes({ forced: next, previewStale: state.preview !== null });
 }

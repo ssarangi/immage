@@ -303,6 +303,20 @@ export const commands = {
 	 *  be read has an `error`. Stopped by `scenes_cancel`, keeping what it measured.
 	 */
 	scenesScore: (job: number, items: CullTarget[]) => __TAURI_INVOKE<SceneScore[]>("scenes_score", { job, items }),
+	/**
+	 *  Remembers a split or a merge the user made, so every later grouping replays it. `action` is
+	 *  "split" (a scene starts at this frame) or "merge" (the frame's scene joins the next scene of its
+	 *  block). The page builds the scenes again afterwards.
+	 */
+	scenesOverride: (path: string, version: number | null, action: string) => __TAURI_INVOKE<null>("scenes_override", { path, version, action }),
+	/**  What the keep rules would do to the scenes, without writing anything. */
+	scenesRulesPreview: (request: RulesRequest) => __TAURI_INVOKE<RulesPreview>("scenes_rules_preview", { request }),
+	/**
+	 *  Records what the keep rules would do as a planned cull session (the same shape as Auto Cull's), changing no
+	 *  photo: `cull_apply` writes it and `cull_undo` takes it back. Frames whose file is gone are listed in the
+	 *  session's failed photos. Nothing is recorded when the rules leave nothing to do.
+	 */
+	scenesRulesPlan: (label: string, request: RulesRequest) => __TAURI_INVOKE<CullPlan>("scenes_rules_plan", { label, request }),
 	folderMovePlan: (job: number, req: FolderMoveRequest) => __TAURI_INVOKE<FolderMovePlan>("folder_move_plan", { job, req }),
 	folderMove: (job: number, req: FolderMoveRequest, copy: boolean, overwrite: FolderConflict[]) => __TAURI_INVOKE<FolderMoveSummary>("folder_move", { job, req, copy, overwrite }),
 	renamePreview: (items: RenameItem[]) => __TAURI_INVOKE<RenameResult>("rename_preview", { items }),
@@ -831,6 +845,11 @@ export type CullAnalysis = {
 	height: number,
 	/**  the softest textured part of the frame (see `find_blurriest_region`) */
 	blurryRegion: CullBlurRegion | null,
+	/**
+	 *  the crispest textured part of the frame (see `find_sharpest_region`); None in an
+	 *  analysis cached before it was measured
+	 */
+	sharpRegion?: CullBlurRegion | null,
 };
 
 export type CullApplyOptions = {
@@ -952,7 +971,9 @@ export type CullReason =
 /**  a single frame under the sharpness threshold */
 "blurry" | 
 /**  a lower-ranked frame of a set (`bestPath` names the frame it lost to) */
-"duplicateOf";
+"duplicateOf" | 
+/**  a frame under the quality a Scenes rule asks for */
+"lowQuality";
 
 export type CullScope = {
 	/**  shown in the History list: a folder's name, "Selection" */
@@ -1235,6 +1256,9 @@ export type FontFamily = {
 	name: string,
 	faces: FontFace[],
 };
+
+/**  A hand-made call on one frame, from the piles review. */
+export type Force = "keep" | "reject";
 
 export type FoundPreset = {
 	name: string,
@@ -2330,6 +2354,51 @@ export type RootStatus = {
 	error: string | null,
 };
 
+export type RuleCounts = {
+	keep: number,
+	reject: number,
+	undecided: number,
+};
+
+export type RuleFrame = {
+	path: string,
+	version?: number,
+	/**  the cached quality, 0-1; None while unscored */
+	quality?: number | null,
+	rating?: number,
+	rejected?: boolean,
+	/**  Scenes accepted it */
+	accepted?: boolean,
+	force?: Force | null,
+};
+
+export type RuleScene = {
+	frames: RuleFrame[],
+};
+
+export type Rules = {
+	/**  frames kept per scene, best first; 0 keeps every frame (no cap) */
+	keepBest: number,
+	/**  frames scoring under this (0-100) are rejected; 0 is off */
+	minQuality: number,
+	/**  frames rated at least `rated_at_least` are always kept */
+	alwaysKeep: boolean,
+	ratedAtLeast: number,
+	/**  a scene of one frame is kept (else left undecided) */
+	singlesKeep: boolean,
+};
+
+export type RulesPreview = {
+	counts: RuleCounts,
+	/**  every frame's verdict, in the request's scene and frame order */
+	verdicts: Verdict[][],
+};
+
+export type RulesRequest = {
+	scenes: RuleScene[],
+	rules: Rules,
+};
+
 export type SampleReply = {
 	luminance: number,
 	ev: number,
@@ -2394,6 +2463,7 @@ export type SceneScore = {
 	path: string,
 	version: number,
 	quality: number | null,
+	sharpRegion: CullBlurRegion | null,
 	error: string | null,
 };
 
@@ -2401,6 +2471,8 @@ export type ScenesBuild = {
 	blocks: SceneBlock[],
 	/**  each item's cached quality (0-1), in the request's order, None while unscored */
 	quality: (number | null)[],
+	/**  each item's cached sharpest region, in the request's order, None while unscored */
+	regions: (CullBlurRegion | null)[],
 	/**  the photos are on a network volume */
 	network: boolean,
 	hashed: number,
@@ -2781,6 +2853,26 @@ export type UprightReply = {
 };
 
 export type Value = null | boolean | number | string | Value[] | { [key in string]: Value };
+
+export type Verdict = 
+/**  the scene's best frame */
+"keepBest" | 
+/**  ranked high enough to stay */
+"keepKept" | 
+/**  accepted in Scenes, rated high enough, or put in the Keep pile */
+"keepProtected" | 
+/**  the only frame of its scene, and singles are kept */
+"keepSingle" | 
+/**  ranked below the keep-best number */
+"rejectDuplicate" | "rejectLowQuality" | 
+/**  put in the Reject pile by hand */
+"rejectManual" | 
+/**  already rejected in the library */
+"rejectedAlready" | 
+/**  some frame of the scene has no score yet */
+"undecidedUnscored" | 
+/**  the only frame of its scene, and singles are skipped */
+"undecidedSingle";
 
 export type Volume = {
 	path: string,

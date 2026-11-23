@@ -75,7 +75,7 @@ export function scopeFor(
 export const scopeOf = (label: string, items: CullScopeItem[]): CullScope => ({ label, items });
 
 // how the decision reads: an override that flipped the verdict is its own reason
-export type ReasonKey = "unique" | "bestInGroup" | "keptInGroup" | "blurry" | "duplicateOf" | "keepOverride" | "rejectOverride";
+export type ReasonKey = "unique" | "bestInGroup" | "keptInGroup" | "blurry" | "duplicateOf" | "lowQuality" | "keepOverride" | "rejectOverride";
 export function reasonOf(d: CullDecision): ReasonKey {
   if (d.finalStatus && d.finalStatus !== d.proposed) return d.finalStatus === "keep" ? "keepOverride" : "rejectOverride";
   return d.reason;
@@ -101,7 +101,7 @@ export function chipCounts(ds: CullDecision[]): Record<CullChip, number> {
 export function rejectionReasons(ds: CullDecision[]): { reason: ReasonKey; count: number }[] {
   const counts = new Map<ReasonKey, number>();
   for (const d of ds) if (d.status === "reject") counts.set(reasonOf(d), (counts.get(reasonOf(d)) ?? 0) + 1);
-  const order: ReasonKey[] = ["blurry", "duplicateOf", "rejectOverride", "unique", "bestInGroup", "keptInGroup", "keepOverride"];
+  const order: ReasonKey[] = ["blurry", "duplicateOf", "lowQuality", "rejectOverride", "unique", "bestInGroup", "keptInGroup", "keepOverride"];
   return [...counts].map(([reason, count]) => ({ reason, count }))
     .sort((a, b) => b.count - a.count || order.indexOf(a.reason) - order.indexOf(b.reason));
 }

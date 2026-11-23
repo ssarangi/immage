@@ -143,4 +143,48 @@ html[dir="rtl"] .scene-fold[aria-expanded="false"] svg, .scenes-view[dir="rtl"] 
 .scene-info-note[role="status"] { height: 22px; margin-block-start: 4px; }
 .scene-nav { display: flex; gap: 8px; margin-block-start: 12px; }
 
+.scene-edit { margin-block-start: 8px; }
+.scene-nav .cull-btn { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* the sharpest region: a head row and one box of a fixed size, whatever the picture or its state */
+.scene-crop { margin-block-end: 12px; }
+.scene-crop-head { height: 20px; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--text-2); font-size: var(--fs-small); font-weight: 600; }
+.scene-crop-hint { flex: none; font: 600 11px var(--scene-mono, monospace); color: var(--text-3, var(--text-2)); white-space: nowrap; cursor: help; }
+.scene-crop-box { position: relative; height: 112px; margin-block-start: 4px; overflow: hidden; border-radius: 8px; background: var(--inset); box-shadow: 0 0 0 1px var(--inset); }
+.scene-crop-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
+.scene-crop-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 8px; text-align: center; color: var(--text-2); font-size: var(--fs-small); }
+/* the crop's outline on the stage photo: it only paints, the photo's box is untouched */
+.scene-sharp-rect { position: absolute; box-sizing: border-box; pointer-events: none; outline: 2px solid var(--accent); outline-offset: -1px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .55); }
+
+/* the rules panel: every row has one height, so a preview arriving only changes text */
+.scene-rules .cull-session-row { min-height: 30px; align-items: center; }
+.scene-rules .scene-num { width: 64px; flex: none; }
+.scene-rules .scene-rating { flex: none; width: 110px; }
+.scene-rules .scene-range { flex: 1 1 auto; min-width: 0; }
+.scene-rule-label { flex: none; }
+.scene-rule-unit { color: var(--text-2); font-size: var(--fs-small); white-space: nowrap; }
+.scene-rule-value { flex: none; width: 4ch; text-align: end; font: 600 12px var(--scene-mono, monospace); font-variant-numeric: tabular-nums; }
+.scene-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+.scene-rule-counts { display: flex; gap: 12px; height: 22px; align-items: center; margin: 0; font: 600 12px var(--scene-mono, monospace); font-variant-numeric: tabular-nums; }
+.scene-rule-counts[data-stale] { opacity: .55; }
+.scene-rule-state { height: 52px; margin: 4px 0 8px; overflow: hidden; }
+.scene-rule-notes { height: 52px; overflow: hidden; }
+
+/* the piles review covers the timeline; its rows are all PILE_ROW_H (120px) high */
+.scene-piles { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; background: var(--window); }
+.scene-piles-bar { flex: none; height: 40px; display: flex; align-items: center; gap: 16px; padding-inline: 16px; border-block-end: 1px solid var(--inset); font-size: var(--fs-small); }
+.scene-piles-close { margin-inline-start: auto; }
+.scene-piles-scroll { flex: 1; min-height: 0; overflow-y: scroll; overflow-x: hidden; }
+.scene-piles-canvas { position: relative; width: 100%; }
+.scene-pile-row { position: absolute; inset-inline: 0; box-sizing: border-box; display: grid; grid-template-columns: 112px minmax(0, 1fr) minmax(0, 1fr); gap: 12px; padding: 8px 16px; border-block-end: 1px solid var(--inset); }
+.scene-pile-title { align-self: start; font: 600 12px var(--scene-mono, monospace); font-variant-numeric: tabular-nums; color: var(--text-2); }
+.scene-pile { min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 4px 8px; border-radius: 8px; background: var(--inset); }
+.scene-pile-head { flex: none; height: 24px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--fs-small); font-weight: 600; }
+.scene-pile.keep .scene-pile-head > span { color: var(--scene-ok, var(--cat-ok)); }
+.scene-pile.reject .scene-pile-head > span { color: var(--scene-no, var(--cat-error)); }
+.scene-pile-strip { flex: 1; min-height: 0; display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; }
+.scene-pile-tile { flex: none; position: relative; width: 64px; height: 48px; padding: 0; overflow: hidden; border: 1px solid transparent; border-radius: 6px; background: var(--card); box-shadow: 0 0 0 1px var(--inset); cursor: pointer; }
+.scene-pile-tile:hover { box-shadow: 0 0 0 1px var(--text-2); }
+.scene-pile-tile:disabled { opacity: .5; cursor: default; }
+
 @media (prefers-reduced-motion: reduce) { .scene-skel-card { animation: none; } .scene-fold svg { transition: none; } }

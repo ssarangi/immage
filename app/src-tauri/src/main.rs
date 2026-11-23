@@ -94,6 +94,7 @@ mod cull_cmds;
 mod scenes;
 mod scenes_store;
 mod scenes_cmds;
+mod scenes_rules;
 mod gemini;
 mod gemini_cmds;
 mod immich_cmds;

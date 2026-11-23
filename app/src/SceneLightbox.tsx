@@ -7,16 +7,17 @@
 // it the scene's frames and the two pieces of chrome, as a SceneLightbox.
 import { Check, Ban, Minus } from "lucide-react";
 import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } from "react";
+import type { CullBlurRegion } from "./bindings";
 import { GridCulling } from "./GridCulling";
 import { StarIcon } from "./icons";
 import type { ImageEntry } from "./library";
 import {
-  captureText, apertureText, focalText, filmstripOrder, frameState, isoText, scoreText, sceneStats, shutterText,
+  captureText, apertureText, canMerge, canSplit, focalText, filmstripOrder, frameState, isoText, regionStyle, scoreText, sceneStats, shutterText,
   type FrameState,
 } from "./scenes";
 import { preciseClock, clockText } from "./scenesFormat";
-import { closeScene, openScene, scoreScene, useScenes } from "./scenesStore";
-import { SceneThumb } from "./SceneThumb";
+import { closeScene, openScene, overrideScene, scoreScene, useScenes } from "./scenesStore";
+import { SceneThumb, SharpCrop } from "./SceneThumb";
 import { decide, parseClock, stateText, StateBadge, useCtx } from "./ScenesView";
 import { formatNumber, t } from "./i18n";
 
@@ -30,6 +31,13 @@ export type SceneLightbox = {
   onClose: () => void;
   onScene: (by: 1 | -1) => void;
   decide: (current: ImageEntry, state: FrameState) => void;
+  /** the frame's sharpest region, as fractions of the image; null until it is scored */
+  sharpRegion: (current: ImageEntry) => CullBlurRegion | null;
+  /** start a new scene at this frame / join this scene to the next one */
+  split: (current: ImageEntry) => void;
+  merge: (current: ImageEntry) => void;
+  /** the crop's outline over the stage photo */
+  overlay: (current: ImageEntry) => ReactNode;
   strip: (current: ImageEntry, onPick: (id: number) => void) => ReactNode;
   panel: (current: ImageEntry) => ReactNode;
 };
@@ -68,6 +76,7 @@ export function useSceneLightbox(all: ImageEntry[], onMeta: (e: ImageEntry, f: P
   const range = block.noTime || !first || !last ? t("cull.scenes.noTime")
     : from === to ? t("cull.scenes.blockOne", { from }) : t("cull.scenes.block", { from, to });
   const flagsOf = (e: ImageEntry) => frameState(e, ctx.accepted);
+  const indexOf = (e: ImageEntry) => s.items.findIndex((it) => it.path === e.path && it.version === (e.version ?? 0));
 
   return {
     key: String(open),
@@ -79,6 +88,13 @@ export function useSceneLightbox(all: ImageEntry[], onMeta: (e: ImageEntry, f: P
     onClose: closeScene,
     onScene: (by) => { const to = open + by; if (to >= 0 && to < model.scenes.length) openScene(to); },
     decide: (current, state) => decide([current], state, ctx, onMeta),
+    sharpRegion: (current) => s.regions[indexOf(current)] ?? null,
+    split: (current) => { const f = indexOf(current); if (canSplit(model, open, f)) void overrideScene("split", f).catch(() => {}); },
+    merge: () => { if (canMerge(model, open)) void overrideScene("merge", scene.frames[0]).catch(() => {}); },
+    overlay: (current) => {
+      const style = regionStyle(s.regions[indexOf(current)]);
+      return style ? <div className="scene-sharp-rect" style={style} aria-hidden="true" /> : null;
+    },
     strip: (current, onPick) => <div className="scene-strip">
       <div className="scene-decide" role="radiogroup" aria-label={t("cull.scenes.decision.label")}>
         {STATES.map((st) => {
@@ -124,7 +140,19 @@ export function useSceneLightbox(all: ImageEntry[], onMeta: (e: ImageEntry, f: P
         ["iso", isoText(current.exif.iso).replace("ISO ", "") || dash],
         ["time", cap.takenAt ? preciseClock(cap.takenAt, ms) + (cap.fromFile ? " ~" : "") : dash],
       ];
+      const region = s.regions[idx] ?? null;
+      const frameIndex = scene.frames.indexOf(idx);
       return <>
+        <div className="scene-crop">
+          <div className="scene-crop-head">
+            <span>{t("cull.scenes.view.sharpest")}</span>
+            <span className="scene-crop-hint" title={t("cull.scenes.view.sharpestHint")}>{t("cull.scenes.view.zoom100")}</span>
+          </div>
+          <div className="scene-crop-box">
+            <SharpCrop entry={current} region={region} />
+            {!region && <span className="scene-crop-empty">{t(q === null ? "cull.scenes.card.unscored" : "cull.scenes.view.noRegion")}</span>}
+          </div>
+        </div>
         <h2 className="scene-info-title">{t("cull.scenes.view.title", { n: formatNumber(scene.n), total: formatNumber(model.scenes.length) })}</h2>
         <p className="scene-info-sub">{range} · {t("cull.scenes.card.frames", { n: scene.frames.length, count: formatNumber(scene.frames.length) })}</p>
         <dl className="scene-info">
@@ -144,6 +172,12 @@ export function useSceneLightbox(all: ImageEntry[], onMeta: (e: ImageEntry, f: P
         <div className="scene-nav">
           <button type="button" className="cull-btn" disabled={open === 0} onClick={() => openScene(open - 1)}>{t("cull.scenes.view.previous")}</button>
           <button type="button" className="cull-btn" disabled={open + 1 >= model.scenes.length} onClick={() => openScene(open + 1)}>{t("cull.scenes.view.next")}</button>
+        </div>
+        <div className="scene-nav scene-edit">
+          <button type="button" className="cull-btn" disabled={!canSplit(model, open, idx) || frameIndex < 1} title={t("cull.scenes.view.splitHint")}
+            onClick={() => void overrideScene("split", idx).catch(() => {})}>{t("cull.scenes.view.split")}</button>
+          <button type="button" className="cull-btn" disabled={!canMerge(model, open)} title={t("cull.scenes.view.mergeHint")}
+            onClick={() => void overrideScene("merge", scene.frames[0]).catch(() => {})}>{t("cull.scenes.view.merge")}</button>
         </div>
       </>;
     },

@@ -115,3 +115,47 @@ test('scene view: the shift test fails on a style that moves things (negative co
   const r = report(dump('shift=1&view=scene&scene=1&break=1&breakview=1'));
   assert.equal(r.ok, false);
 });
+
+test('scene view: the sharpest-region box, split and merge buttons and the crop outline exist and keep their size', { skip }, () => {
+  const t = text(dump('view=scene&scene=1', 1440, 900, [], 8000));
+  for (const word of ['Sharpest region', 'Z: 100%', 'Split here', 'Merge with next']) assert.match(t, new RegExp(word));
+  assert.match(text(dump('view=scene&scene=1', 1440, 900, ['--accept-lang=fr'], 8000)), /Zone la plus nette/);
+  const dom = dump('view=scene&scene=1', 1440, 900, [], 8000);
+  assert.match(dom, /class="scene-sharp-rect"/, 'the crop outline is not on the stage photo');
+});
+
+for (const [theme, dir, lang] of [['dark', 'ltr', []], ['light', 'ltr', []], ['dark', 'rtl', []], ['dark', 'ltr', ['--accept-lang=fr']]]) {
+  for (const view of ['rules', 'piles']) {
+    test(`${view}: nothing moves on a preview, rule change, apply, undo, note, pile move or scroll: ${theme} ${dir} ${lang.join('') || 'en'}`, { skip }, () => {
+      const r = report(dump(`shift=1&view=${view}&theme=${theme}&dir=${dir}`, 1440, 900, lang));
+      assert.equal(r.error, undefined, r.error);
+      assert.deepEqual(r.failures, []);
+      assert.ok(r.compared > 300, `only ${r.compared} measurements`);
+      assert.equal(r.maxDelta, 0);
+      assert.ok(r.log.length >= 14);
+      assert.equal(r.ok, true);
+    });
+  }
+}
+
+test('rules: the shift test fails on a style that moves things (negative control)', { skip }, () => {
+  assert.equal(report(dump('shift=1&view=rules&break=1')).ok, false);
+  assert.equal(report(dump('shift=1&view=piles&break=1')).ok, false);
+  assert.equal(report(dump('shift=1&view=scene&scene=1&break=1')).ok, false, 'the crop box growing when there is no region must be caught');
+});
+
+test('rules panel texts: the panel, its preview counts and the piles review say what they do (en and fr)', { skip }, () => {
+  const en = text(dump('view=piles', 1440, 900, [], 8000));
+  for (const word of ['Scene rules', 'Keep best', 'per scene', 'Minimum quality', 'Single frames', 'Preview rules', 'Preview \\(nothing written yet\\)', 'Review piles', 'Apply', 'Undo', 'Keep all', 'Reject all']) assert.match(en, new RegExp(word));
+  const fr = text(dump('view=piles', 1440, 900, ['--accept-lang=fr'], 8000));
+  for (const word of ['Règles de scène', 'Garder les meilleures', 'Qualité minimale', 'Aperçu des règles', 'Revoir les piles', 'Appliquer', 'Tout garder', 'Tout rejeter']) assert.match(fr, new RegExp(word));
+});
+
+test('20,000 photos: the piles review mounts a bounded number of rows however far it is scrolled', { skip }, () => {
+  const r = report(dump('shift=1&size=big&view=piles&theme=dark', 1440, 900, [], 170000));
+  assert.equal(r.error, undefined, r.error);
+  assert.ok(r.piles.scenes > 4000, `${r.piles.scenes} scenes`);
+  assert.ok(r.piles.total > 400000, `piles height ${r.piles.total}`);
+  assert.ok(r.piles.maxRows <= 14, `${r.piles.maxRows} rows mounted`);
+  assert.equal(r.maxDelta, 0);
+});

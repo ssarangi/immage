@@ -21,6 +21,7 @@ import {
   buildScenes, closeScene, loadAcceptStar, openScene, pauseScoring, rememberAccepted, setScenes, setScenesOn, toggleBlock, useScenes,
 } from "./scenesStore";
 import { SceneThumb } from "./SceneThumb";
+import { ScenePiles } from "./ScenePiles";
 import { formatNumber, t } from "./i18n";
 import { keys } from "./keys";
 import { EditViewIcon, GridViewIcon, ScenesViewIcon } from "./icons";
@@ -207,6 +208,7 @@ export function ScenesView({ entries, onMeta, autoBuild = true }: {
     const action = timelineKey(e.key, e.shiftKey, onHeader, rtl);
     if (action.type === "none") return;
     e.preventDefault(); e.stopPropagation();
+    if (s.piles) { if (action.type === "back") setScenes({ piles: false }); return; }
     if (action.type === "move") {
       const next = moveFocus(lay.visible, model, s.focus, e.key, lay.columns, rtl);
       setScenes({ focus: next }); focusRow(next);
@@ -282,6 +284,7 @@ export function ScenesView({ entries, onMeta, autoBuild = true }: {
           })}
         </div>
       </div>}
+      {s.piles && <ScenePiles entries={entries} />}
     </div>
   </div>;
 }

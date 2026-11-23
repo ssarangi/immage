@@ -25,6 +25,19 @@ Improvements
   measurements and are filled in as you open scenes; Preferences > Culling can
   score every scene in the background (on local drives by default) and make
   Accept also give one star.
+- **Scenes, part two:** the scene view shows each frame's **sharpest region** in
+  a box at the top of the Scene tab, outlined on the photo; **Z** zooms to it at
+  100% and back. **Split here** (S) and **Merge with next** (M) fix a burst the
+  grouping cut or joined wrongly, and are remembered so a new scan never undoes
+  them. A **Scene rules** panel in the right-hand column keeps the best N frames
+  of every scene, rejects frames under a minimum quality, always keeps frames
+  rated at least a chosen number of stars and the ones you accepted, and keeps
+  or skips single frames. **Preview rules** counts what would be kept, rejected
+  and left alone, **Review piles** shows a Keep and a Reject pile per scene
+  where you can move frames, and **Apply** flags the rejects in place as one
+  undoable cull session (nothing is moved or deleted). Photos' cached quality
+  scores from earlier versions are measured again once, to find their sharpest
+  region.
 - **Bottom toolbar:** one **Edit | Grid | Scenes** switch replaces the separate
   Grid button and the Grid | Scenes switch, and Grid or Scenes opens straight
   from Edit. **Auto Cull...** is an outlined button beside the Loupe at the

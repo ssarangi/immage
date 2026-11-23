@@ -7,7 +7,7 @@
 // so verify/scenes.test.mjs runs it under Node. Rust (scenes.rs) cuts scenes and
 // blocks; everything here is derived from those cuts, the library's flags and the
 // scores, so a rating or a score arriving never regroups anything.
-import type { ScenesBuild } from "./bindings";
+import type { CullBlurRegion, Force, RuleScene, Rules, ScenesBuild, Verdict } from "./bindings";
 
 // ---- layout constants: every height is known before a thumbnail loads ----
 export const CARD_W = 220;
@@ -317,4 +317,86 @@ export function cameraLine(c: CameraBits, room = 4): string[] {
   const exposure = [focalText(c.focal_length), apertureText(c.aperture), shutterText(c.exposure)].filter(Boolean).join(" ");
   const parts = [c.model?.trim() ?? "", exposure, isoText(c.iso), c.lens?.trim() ?? ""].filter(Boolean);
   return parts.slice(0, Math.max(1, room));
+}
+
+// ---- the sharpest region (P2) ----
+// the region clamped to the frame (fractions of the image), so a bad value never draws outside it; null when
+// there is none or it has no area (a number may come as null, as every f64 does)
+export function clampRegion(r: CullBlurRegion | null | undefined): { x: number; y: number; w: number; h: number } | null {
+  if (!r) return null;
+  const x = Math.max(0, Math.min(1, r.x ?? 0)), y = Math.max(0, Math.min(1, r.y ?? 0));
+  const w = Math.min(r.width ?? 0, 1 - x), h = Math.min(r.height ?? 0, 1 - y);
+  return w > 0 && h > 0 ? { x, y, w, h } : null;
+}
+
+// the crop's place over the stage photo, in percent
+export function regionStyle(r: CullBlurRegion | null | undefined): { left: string; top: string; width: string; height: string } | null {
+  const c = clampRegion(r);
+  if (!c) return null;
+  const pct = (v: number) => `${Math.round(v * 10000) / 100}%`;
+  return { left: pct(c.x), top: pct(c.y), width: pct(c.w), height: pct(c.h) };
+}
+
+// the point of the frame Z centres the 100% view on (fractions of the image), or null with no region
+export function regionCentre(r: CullBlurRegion | null | undefined): { ix: number; iy: number } | null {
+  const c = clampRegion(r);
+  return c ? { ix: c.x + c.w / 2, iy: c.y + c.h / 2 } : null;
+}
+
+// ---- split and merge (P2) ----
+// where a frame stands in its scene: Split starts a new scene at it, so it cannot be the first; Merge joins the
+// scene to the next one of its block, so the last scene of a block has nothing to join
+export function canSplit(model: SceneModel, scene: number, frame: number): boolean {
+  const info = model.scenes[scene];
+  return !!info && info.frames.indexOf(frame) > 0;
+}
+export function canMerge(model: SceneModel, scene: number): boolean {
+  const info = model.scenes[scene], next = model.scenes[scene + 1];
+  return !!info && !!next && next.block === info.block;
+}
+// the scene holding a frame (by request index), after a rebuild
+export const sceneOfFrame = (model: SceneModel, frame: number) => model.scenes.findIndex((s) => s.frames.includes(frame));
+
+// ---- the keep rules (P2) ----
+export const DEFAULT_RULES: Rules = { keepBest: 2, minQuality: 0, alwaysKeep: true, ratedAtLeast: 3, singlesKeep: false };
+export const clampRules = (r: Rules): Rules => ({
+  keepBest: Math.max(0, Math.min(9, Math.round(r.keepBest) || 0)),
+  minQuality: Math.max(0, Math.min(100, Math.round(r.minQuality) || 0)),
+  alwaysKeep: !!r.alwaysKeep,
+  ratedAtLeast: Math.max(1, Math.min(5, Math.round(r.ratedAtLeast) || 1)),
+  singlesKeep: !!r.singlesKeep,
+});
+
+export type Pile = "keep" | "reject" | "undecided";
+export const pileOf = (v: Verdict): Pile => v.startsWith("keep") ? "keep" : v.startsWith("reject") ? "reject" : "undecided";
+export type Forced = ReadonlyMap<string, Force>;
+
+// what the page tells Rust about each scene's frames: the library's rating and flag, Scenes' accepts, the
+// scores, and the piles review's hand-made calls
+export function rulesScenes<E extends Flags>(model: SceneModel, items: ReadonlyArray<{ path: string; version: number }>, ctx: Ctx<E>, forced: Forced): RuleScene[] {
+  return model.scenes.map((scene) => ({
+    frames: scene.frames.map((f) => {
+      const it = items[f], e = ctx.entries[f];
+      const key = frameKey(it.path, it.version);
+      return {
+        path: it.path, version: it.version, quality: ctx.quality[f] ?? null, rating: e?.rating ?? 0, rejected: !!e?.rejected,
+        accepted: ctx.accepted.has(key), force: forced.get(key) ?? null,
+      };
+    }),
+  }));
+}
+
+// the scenes with something to review: at least one frame the rules keep or reject
+export function pileScenes(verdicts: ReadonlyArray<ReadonlyArray<Verdict>>): number[] {
+  const out: number[] = [];
+  verdicts.forEach((v, i) => { if (v.some((x) => pileOf(x) !== "undecided")) out.push(i); });
+  return out;
+}
+
+// the piles review's rows are one fixed height, so the list's size follows from the count alone
+export const PILE_ROW_H = 120;
+export function pileWindow(count: number, scrollTop: number, viewport: number, overscan = 2): [number, number] {
+  const first = Math.min(count, Math.max(0, Math.floor(scrollTop / PILE_ROW_H) - overscan));
+  const last = Math.min(count, Math.ceil((scrollTop + viewport) / PILE_ROW_H) + overscan);
+  return [first, Math.max(first, last)];
 }

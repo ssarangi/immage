@@ -763,6 +763,13 @@ frames, sharpest first (or in capture order), with each frame's name, stars,
 score and state, and the three decision buttons **Accept**, **Undecided** and
 **Reject**.
 
+At the top of the Scene tab is the frame's **sharpest region**: the crispest
+part of the frame, cut from its preview and shown in a box of one fixed size, with
+its outline drawn on the photo. It appears once the frame is scored (the box says
+"Not scored yet" until then, or "No sharp region found" for a frame with no
+textured area). Press **Z** to see the frame at 100% centered on that region, and
+**Z** again to return to Fit; **Shift+Z** zooms at the center as in the Loupe.
+
 - **Accept** gives the frame the green color label (and remembers that Scenes
   did, so a green label you set yourself is not treated as an accept). With
   **Accept also gives one star** on in Preferences > Culling, an unrated frame
@@ -772,6 +779,49 @@ score and state, and the three decision buttons **Accept**, **Undecided** and
 
 Each decision is written at once, one photo at a time, and shows in the grid and
 in the sidecar like any rating you set by hand.
+
+### Split and merge scenes
+
+When the automatic grouping cuts a burst in two, or joins two bursts, fix it in
+the scene view. **Split here** (**S**) starts a new scene at the frame shown, so
+that frame and every later frame of the scene become a new scene; it is not
+available on a scene's first frame. **Merge with next** (**M**) joins the scene to
+the next scene of its time block; it is not available on the last scene of a
+block. Splits and merges are remembered by photo, so they are replayed every
+time Scenes groups the folder again and a new scan never undoes them. The scene
+you were on stays open after the change. Joining two scenes you split earlier
+(merge the first with the next) takes the split back.
+
+### Scene rules
+
+While Scenes shows, the right-hand column is the **Scene rules** panel. The
+rules choose which frames of every scene to keep and which to reject, and nothing
+is written until you press **Apply**:
+
+- **Keep best** N **per scene**: the N best frames by quality are kept, the others
+  are rejected as lower-ranked frames of their scene. **0** keeps every frame.
+- **Minimum quality**: frames scoring below it (0 to 100) are rejected. A scene's
+  best frame is never rejected for its score, so a scene does not disappear by a
+  rule. **Off** at 0.
+- **Always keep rated**: frames rated at least the chosen number of stars are
+  kept. They, and the frames you accepted in Scenes, count toward the Keep best
+  number.
+- **Single frames**: a scene of one frame is kept, or skipped (left as it is).
+
+Frames already rejected stay as they are. A scene with a frame that has not been
+scored yet is left undecided until it is scored (open it, or let Scenes score in
+the background), so the rules never guess. Manual decisions always win.
+
+**Preview rules** shows how many frames would be kept, rejected and left
+undecided, without writing anything; the numbers dim when a rule, a score or a
+choice has changed since. **Review piles** opens a review in the grid's place:
+one row per scene with a **Keep** pile and a **Reject** pile side by side.
+Click a frame to move it to the other pile, or use **Keep all** and **Reject all**
+for a scene; your calls win over the rules. **Apply** writes the previewed
+decisions, as one Auto cull session: rejects are flagged in place with the
+ordinary reject flag, rating set to 0, and no file is moved or deleted.
+**Undo** puts every photo back as it was, and the session appears in the Cull
+panel's history like any other.
 
 ### Keys
 
@@ -785,13 +835,15 @@ and unfold the block.
 
 In the scene view: **Left** and **Right** change frame, **N** and
 **Shift+N** the next and previous scene, **A**, **X** and **U** decide the
-frame, **0** to **5** rate it, and **Esc** returns to the timeline. The other
-Loupe keys work as before.
+frame, **0** to **5** rate it, **Z** zooms to the sharpest region (**Shift+Z**
+at the center), **S** splits the scene at the frame and **M** merges it with the
+next scene, and **Esc** returns to the timeline. The other Loupe keys work as
+before.
 
 Scenes works with [Auto cull](#auto-cull): its scores are shared, and a scene's
-frames can be looked at in either. Rules that keep the best N frames of every
-scene, review piles, splitting and merging scenes, and a zoom on each frame's
-sharpest part are not part of this version.
+frames can be looked at in either. Scenes' scores also keep each frame's
+sharpest region; scores measured by an earlier version of Immage are measured
+again once, the first time they are needed.
 
 ## AI critique and natural-language search
 

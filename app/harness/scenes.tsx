@@ -6,7 +6,7 @@
 //
 //   /harness/scenes.html?state=ready&theme=dark&dir=ltr&view=timeline
 //
-//   view    timeline (default) | scene
+//   view    timeline (default) | scene | rules (the rules panel beside the timeline) | piles (rules with the piles review open)
 //   state   ready | loading | updating | empty | error | notime | scoring | unscored
 //   size    small (default, 400 photos) | big (20,000 photos in about 2,500 scenes)
 //   theme   a built-in theme id (dark, light, ...)
@@ -24,11 +24,12 @@ import type { ImageEntry } from "../src/library";
 import { CullLightbox, LightboxHead, StageArrows } from "../src/CullLightbox";
 import { CullSide, NO_SEL, type Crit, type Tab } from "../src/CullInspector";
 import { ViewSwitch, ScenesView } from "../src/ScenesView";
+import { SceneRules } from "../src/SceneRules";
 import { useSceneLightbox } from "../src/SceneLightbox";
 import { setThumbSource } from "../src/SceneThumb";
 import { buildModel, frameKey, GREEN, layout } from "../src/scenes";
 import { openScene, scenesState, setScenes } from "../src/scenesStore";
-import { runSceneViewShift, runScenesShift } from "./scenesShift";
+import { runRulesShift, runSceneViewShift, runScenesShift } from "./scenesShift";
 import "../src/scenes.css";
 
 const q = new URLSearchParams(location.search);
@@ -42,7 +43,8 @@ document.body.style.background = "var(--window)";
 if (q.get("break") === "1") {   // a deliberately bad style: the shift test must catch it (negative control)
   const st = document.createElement("style");
   st.textContent = `.scene-card:hover, .scene-card.active, .scene-card[aria-selected="true"] { margin: 5px; border-width: 4px; } .scene-badge { width: 30px; }
-    .scene-decide button[aria-checked="true"] { height: 40px; } .scene-tile[aria-current="true"] { width: 130px; }`;
+    .scene-decide button[aria-checked="true"] { height: 40px; } .scene-tile[aria-current="true"] { width: 130px; }
+    .scene-crop-box:has(.scene-crop-empty) { height: 160px; } .scene-rule-counts[data-stale] { height: 40px; } .scene-pile-tile:hover { margin: 4px; }`;
   document.head.append(st);
 }
 
@@ -128,7 +130,9 @@ function seed() {
     if (i % 11 === 1) { e.labels |= GREEN; accepted.add(frameKey(e.path, 0)); }
     if (i % 13 === 2) e.rejected = true;
   });
-  const base = { on: true, items, model, quality, accepted, status: "ready" as const, network: false, hashed: items.length, unhashed: state === "scoring" ? 12 : 0 };
+  // the sharpest regions: most frames have one, every third has none (as an unscored frame)
+  const regions = data.entries.map((_, i) => (i % 3 === 1 ? null : { x: 0.5 + (i % 4) * 0.05, y: 0.25 + (i % 3) * 0.1, width: 0.3, height: 0.3 }));
+  const base = { on: true, items, model, quality, regions, accepted, status: "ready" as const, network: false, hashed: items.length, unhashed: state === "scoring" ? 12 : 0 };
   if (state === "loading") setScenes({ on: true, status: "building", model: null, progress: { done: 7200, total: 20400 } });
   else if (state === "empty") setScenes({ ...base, items: [], model: buildModel({ blocks: [] }), quality: [] });
   else if (state === "error") setScenes({ on: true, status: "error", model: null, error: "scenes build failed: the cached thumbnails could not be read (synthetic harness error)" });
@@ -144,6 +148,19 @@ seed();
 const noop = () => {};
 const CRIT: Crit = { phase: "idle", critique: null, run: noop, cancel: noop };
 
+// what the rules would propose, without Rust: a scene's first frame is kept as its best, the second kept, the rest rejected
+function fakeVerdicts() {
+  const model = scenesState().model!;
+  return model.scenes.map((sc) => sc.frames.map((_, k) => (sc.frames.length === 1 ? "undecidedSingle" : k === 0 ? "keepBest" : k === 1 ? "keepKept" : "rejectDuplicate")));
+}
+function fakePreview() {
+  const verdicts = fakeVerdicts();
+  const flat = verdicts.flat();
+  const n = (p: string) => flat.filter((v) => v.startsWith(p)).length;
+  return { counts: { keep: n("keep"), reject: n("reject"), undecided: n("undecided") }, verdicts } as never;
+}
+(window as unknown as { __fake: unknown }).__fake = { fakeVerdicts, fakePreview };
+
 function SceneView({ entries, onMeta }: { entries: ImageEntry[]; onMeta: (e: ImageEntry, f: Partial<ImageEntry>) => void }) {
   const scene = useSceneLightbox(entries, onMeta);
   const [photo, setPhoto] = useState<number | null>(null);
@@ -158,6 +175,7 @@ function SceneView({ entries, onMeta }: { entries: ImageEntry[]; onMeta: (e: Ima
         <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "grid", placeItems: "center", containerType: "size" }}>
           <div className="culling-photo" style={{ position: "relative", width: "min(100cqw, 100cqh * 1.5)", aspectRatio: "1.5" }}>
             <div style={{ width: "100%", height: "100%", background: "linear-gradient(135deg, #3a6ea5, #d98b4a)", borderRadius: 3 }} />
+            {scene.overlay(current)}
           </div>
         </div>
         <StageArrows hasPrevious={scene.hasPrevious} hasNext={scene.hasNext} onStep={(d) => scene.onScene(d)} />
@@ -184,7 +202,8 @@ function Harness() {
       if (row) scroller.scrollTop = row.top - 40;
     }
     if (view === "scene") openScene(Number(q.get("scene") ?? 1));
-    if (q.get("shift") === "1") void (view === "scene" ? runSceneViewShift() : runScenesShift()).then((r) => r, (e) => ({ ok: false, error: String(e?.stack ?? e) }))
+    if (view === "rules" || view === "piles") setScenes({ preview: fakePreview(), previewStale: false, piles: view === "piles" });
+    if (q.get("shift") === "1") void (view === "scene" ? runSceneViewShift() : view === "rules" || view === "piles" ? runRulesShift(view === "piles") : runScenesShift()).then((r) => r, (e) => ({ ok: false, error: String(e?.stack ?? e) }))
       .then((r) => { const el = document.getElementById("shift-report")!; el.textContent = JSON.stringify(r); el.dataset.done = "1"; });
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   return <>
@@ -196,6 +215,8 @@ function Harness() {
         <div style={{ position: "relative", height: "100%" }}>
           <div className="scenes-host"><ScenesView entries={shown} onMeta={onMeta} autoBuild={false} /></div>
         </div>
+        {(view === "rules" || view === "piles") && <aside className="right" style={{ position: "absolute", insetBlock: 0, insetInlineEnd: 0, width: 340, display: "flex", flexDirection: "column", background: "var(--panel)", zIndex: 5 }}>
+          <SceneRules entries={shown} onChanges={noop} /></aside>}
       </div>
     </div>
     {view === "scene" && <SceneView entries={shown} onMeta={onMeta} />}

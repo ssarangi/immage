@@ -65,6 +65,8 @@ In full screen preview, Z, ⌘= ⌘-, Y, X, I, L, \, 0-9 and ← → still work.
 | ⇧S | In the grid: show the photos as Scenes (a timeline of bursts), or go back to the grid |
 | A X U | In Scenes: accept, reject or clear the scene's best frame (⇧ for the whole scene); in a scene's preview, the frame shown |
 | N ⇧N | In a scene's preview: the next or previous scene |
+| Z | In a scene's preview: 100% on the frame's sharpest region, and back to Fit (⇧Z: 100% at the center) |
+| S M | In a scene's preview: split the scene at this frame, or merge it with the next scene |
 | P R B | In the Loupe of a reviewed Auto cull: keep the photo, reject it, or make it the best of its set (the preview of a photo in the review) |
 | ⌘-click | In the filmstrip: add a photo to the selection, or take it out |
 | ⇧-click | In the filmstrip: select the run from the last clicked photo |

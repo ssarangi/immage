@@ -4,6 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  DEFAULT_RULES, PILE_ROW_H, canMerge, canSplit, clampRegion, clampRules, pileOf, pileScenes, pileWindow, regionCentre, regionStyle, rulesScenes, sceneOfFrame,
   CARD_H, DAY_H, BLOCK_H, GAP, GREEN, ROW_H, apertureText, buildModel, captureText, cameraLine, columnsFor, dayOf, decisionPatch,
   filmstripOrder, frameKey, frameState, layout, listSignature, moveFocus, requestItems, rowOfScene, sceneState, sceneStats, scoreText,
   shutterText, timelineKey, visibleSceneIndexes, windowRows,
@@ -202,4 +203,66 @@ test('the camera line collapses by priority and formats exposure', () => {
   assert.deepEqual(cameraLine({ iso: 100 }), ['ISO 100']);
   assert.equal(shutterText(2), '2 s'); assert.equal(shutterText(0.5), '0.5 s'); assert.equal(shutterText(1 / 60), '1/60'); assert.equal(shutterText(0), '');
   assert.equal(apertureText(5.6), 'f/5.6'); assert.equal(apertureText(0), '');
+});
+
+// ---- P2: the sharpest region, split and merge, the keep rules ----
+test('the sharpest region is clamped to the frame and has a centre only when it has an area', () => {
+  assert.deepEqual(regionStyle({ x: 0.5, y: 0.25, width: 0.375, height: 0.375 }), { left: '50%', top: '25%', width: '37.5%', height: '37.5%' });
+  // a rectangle running off the frame is cut at its edge, and a number that arrived as null counts as nothing
+  assert.deepEqual(clampRegion({ x: 0.8, y: -1, width: 0.5, height: 2 }), { x: 0.8, y: 0, w: 0.19999999999999996, h: 1 });
+  assert.equal(regionStyle({ x: 0.1, y: 0.1, width: null, height: 0.2 }), null);
+  assert.equal(regionStyle({ x: 1, y: 0, width: 0.3, height: 0.3 }), null);
+  assert.equal(regionStyle(null), null);
+  assert.deepEqual(regionCentre({ x: 0.5, y: 0.25, width: 0.3, height: 0.3 }), { ix: 0.65, iy: 0.4 });
+  assert.equal(regionCentre(undefined), null);
+});
+
+test('a frame can be split off unless it starts its scene, and a scene merges unless it ends its block', () => {
+  const m = build([[[0, 1, 2], [3], [4, 5]], [[6, 7]]]);
+  assert.equal(canSplit(m, 0, 0), false);   // the first frame already starts the scene
+  assert.equal(canSplit(m, 0, 1), true);
+  assert.equal(canSplit(m, 0, 5), false);   // frame 5 is not in scene 0
+  assert.equal(canSplit(m, 1, 3), false);   // a single has nothing to split
+  assert.equal(canMerge(m, 0), true);
+  assert.equal(canMerge(m, 2), false);      // the last scene of its block: the next scene is in another block
+  assert.equal(canMerge(m, 3), false);      // the last scene of all
+  assert.equal(sceneOfFrame(m, 5), 2);
+  assert.equal(sceneOfFrame(m, 99), -1);
+});
+
+test('the rules are clamped to what the panel allows', () => {
+  assert.deepEqual(clampRules({ keepBest: 14, minQuality: -3, alwaysKeep: true, ratedAtLeast: 9, singlesKeep: false }), { keepBest: 9, minQuality: 0, alwaysKeep: true, ratedAtLeast: 5, singlesKeep: false });
+  assert.deepEqual(clampRules({ keepBest: NaN, minQuality: 55.6, alwaysKeep: false, ratedAtLeast: 0, singlesKeep: true }), { keepBest: 0, minQuality: 56, alwaysKeep: false, ratedAtLeast: 1, singlesKeep: true });
+  assert.deepEqual(clampRules(DEFAULT_RULES), DEFAULT_RULES);
+});
+
+test('the rules request carries each frame\'s score, rating, flags, accept and hand-made call', () => {
+  const m = build([[[0, 1]]]);
+  const items = [{ path: '/a', version: 0 }, { path: '/b', version: 2 }];
+  const ctx = { entries: [flags('/a', { rating: 4 }), flags('/b', { rejected: true, version: 2 })], quality: [0.5, null], accepted: new Set([frameKey('/a', 0)]) };
+  const forced = new Map([[frameKey('/b', 2), 'reject']]);
+  assert.deepEqual(rulesScenes(m, items, ctx, forced), [{ frames: [
+    { path: '/a', version: 0, quality: 0.5, rating: 4, rejected: false, accepted: true, force: null },
+    { path: '/b', version: 2, quality: null, rating: 0, rejected: true, accepted: false, force: 'reject' },
+  ] }]);
+});
+
+test('the piles review lists only scenes the rules decide, in rows of one fixed height', () => {
+  const verdicts = [['keepBest', 'rejectDuplicate'], ['undecidedUnscored', 'undecidedUnscored'], ['undecidedSingle'], ['rejectedAlready']];
+  assert.deepEqual(pileScenes(verdicts), [0, 3]);
+  assert.equal(pileOf('keepProtected'), 'keep'); assert.equal(pileOf('rejectManual'), 'reject'); assert.equal(pileOf('undecidedSingle'), 'undecided');
+  assert.deepEqual(pileWindow(1000, 0, 600), [0, Math.ceil(600 / PILE_ROW_H) + 2]);
+  const [from, to] = pileWindow(1000, 60 * PILE_ROW_H, 600);
+  assert.equal(from, 58); assert.ok(to - from <= 10, `${to - from} rows`);
+  assert.deepEqual(pileWindow(3, 5000, 600), [3, 3]);
+});
+
+test('keyboard: S and M exist only in the scene view, Z asks for the sharp region only there and without Shift', () => {
+  const base = { photo: 1, keywordsOpen: false, writing: false, blocked: false, modalOpen: false, hasTarget: true, hasCurrent: true };
+  assert.deepEqual(cullingKey('s', { ...base, scene: true }).action, { type: 'split' });
+  assert.deepEqual(cullingKey('m', { ...base, scene: true }).action, { type: 'merge' });
+  assert.equal(cullingKey('s', base).kind, 'swallow');
+  assert.deepEqual(cullingKey('z', { ...base, scene: true }).action, { type: 'toggleZoom', sharp: true });
+  assert.deepEqual(cullingKey('z', { ...base, scene: true, shift: true }).action, { type: 'toggleZoom', sharp: false });
+  assert.deepEqual(cullingKey('z', base).action, { type: 'toggleZoom', sharp: false });
 });

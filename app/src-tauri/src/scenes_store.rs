@@ -30,6 +30,11 @@ fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
 }
 
+/// milliseconds, so two overrides made in the same second replay in the order they were made
+fn now_ms() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64)
+}
+
 impl Store {
     pub fn open(path: &Path) -> Result<Self, String> {
         let db = Connection::open(path).map_err(|e| format!("scenes store: {e}"))?;
@@ -126,10 +131,9 @@ impl Store {
         Ok(rows)
     }
 
-    #[allow(dead_code)]
     pub fn override_put(&self, path: &str, version: i64, action: &str) -> Result<(), String> {
         self.db
-            .execute("INSERT OR REPLACE INTO scene_overrides(path, version, action, created_at) VALUES(?1, ?2, ?3, ?4)", params![path, version, action, now()])
+            .execute("INSERT OR REPLACE INTO scene_overrides(path, version, action, created_at) VALUES(?1, ?2, ?3, ?4)", params![path, version, action, now_ms()])
             .map(|_| ())
             .map_err(|e| e.to_string())
     }

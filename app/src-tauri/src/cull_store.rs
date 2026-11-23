@@ -246,11 +246,9 @@ impl Store {
             .and_then(|(analysis, hash)| serde_json::from_str(&analysis).ok().map(|a| (a, hash)))
     }
 
-    /// The quality (0-1) of each photo's cached measurement, in the order asked, by
-    /// path and version alone: no file is looked at, so on a network share this is
-    /// free. A photo changed since it was measured shows its old score until it is
-    /// scored again; the Scenes timeline only displays it.
-    pub fn qualities(&self, items: &[(&str, i64)]) -> Vec<Option<f64>> {
+    /// The cached measurement of each photo, in the order asked, by path and version alone: what the Scenes timeline shows (a photo changed since it was measured shows its old score until it is
+    /// scored again) and what a rules plan records. No file is looked at, so on a network share this is free.
+    pub fn analyses(&self, items: &[(&str, i64)]) -> Vec<Option<CullAnalysis>> {
         let Ok(mut stmt) = self.db.prepare_cached(
             "SELECT analysis_json FROM cull_analysis_cache WHERE path = ?1 AND version = ?2 AND feature_set_version = ?3",
         ) else {
@@ -260,7 +258,7 @@ impl Store {
             .iter()
             .map(|(path, version)| {
                 let text: Option<String> = stmt.query_row(params![path, version, FEATURE_SET_VERSION], |row| row.get(0)).optional().ok().flatten();
-                text.and_then(|t| serde_json::from_str::<CullAnalysis>(&t).ok()).map(|a| a.quality_score)
+                text.and_then(|t| serde_json::from_str::<CullAnalysis>(&t).ok())
             })
             .collect()
     }

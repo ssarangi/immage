@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { regionCentre } from '../app/src/scenes.ts';
 import { cullingKey, pickCullingTarget, fallbackPhoto, fitLightbox, keywordTargets, previewNeighbors, PreviewQueue } from '../app/src/culling.ts';
 
 test('keyword selection wins over hover, including filtered-out selections', () => {
@@ -48,13 +49,13 @@ function fixture(overrides = {}) {
   const images = [{ imgid: 1, labels: 0 }, { imgid: 2, labels: 0 }, { imgid: 3, labels: 0 }];
   const env = { writing: false, targets: [], photo: null, current: null, images, allImages: images, scene: null,
     selection: new Set([1,2]), anchor: 2, keywordTargets, cullingKey, pickCullingTarget, direction: {current:1},
-    zoomRef: {current:null}, zoomAnchor: {current:null},
+    zoomRef: {current:null}, zoomAnchor: {current:null}, viewport: {current: null}, regionCentre,
     document: { querySelector: selector => selector.includes(':hover') ? {getAttribute: () => '3'} : null },
     setTargets: v => calls.push(['targets', v]), keywordGeneration: { current: 0 }, space: {current:false}, setSpaceHeld() {},
     setPhoto: v => calls.push(['photo', v]), keywords: v => calls.push(['keywords', v.map(i => i.imgid)]),
     setZoom: v => calls.push(['zoom', v]),
     onMeta: (i, v) => calls.push(['meta', i.imgid, v]), ...overrides };
-  const press = (key, target = {}) => createHandler(env)({key, target: {closest: () => false, ...target},
+  const press = (key, target = {}, shiftKey = false) => createHandler(env)({key, shiftKey, target: {closest: () => false, ...target},
     preventDefault() {}, stopImmediatePropagation() {}});
   return { env, calls, press };
 }
@@ -83,6 +84,43 @@ test('Z toggles Fit and 100% on the displayed photo', () => {
   const f = fixture({photo:2, current:{imgid:2}});
   f.press('z');
   assert.deepEqual(f.calls, [['zoom',1]]);
+});
+
+test('scene view: Z centres the 100% view on the sharpest region, Shift+Z and a frame with no region do not', () => {
+  const region = { x: 0.5, y: 0.25, width: 0.3, height: 0.3 };
+  const viewport = { current: { clientWidth: 800, clientHeight: 600 } };
+  const f = fixture({ photo: 2, current: { imgid: 2 }, viewport, scene: { sharpRegion: () => region } });
+  f.press('z');
+  assert.deepEqual(f.calls, [['zoom', 1]]);
+  assert.deepEqual(f.env.zoomAnchor.current, { ix: 0.65, iy: 0.4, sx: 400, sy: 300 });
+  // a second press returns to Fit and forgets the anchor
+  f.env.zoomRef.current = 1;
+  f.press('z');
+  assert.deepEqual(f.calls.at(-1), ['zoom', null]);
+  assert.equal(f.env.zoomAnchor.current, null);
+  // Shift+Z is the plain 100% (no region anchor)
+  f.env.zoomRef.current = null; f.env.zoomAnchor.current = { ix: 0, iy: 0, sx: 0, sy: 0 };
+  f.press('z', {}, true);
+  assert.equal(f.env.zoomAnchor.current, null);
+  // negative control: no region yet (unscored) zooms at the centre, not at a stale point
+  const none = fixture({ photo: 2, current: { imgid: 2 }, viewport, scene: { sharpRegion: () => null } });
+  none.press('z');
+  assert.equal(none.env.zoomAnchor.current, null);
+  assert.deepEqual(none.calls, [['zoom', 1]]);
+  // outside the scene view Z never reads a region
+  const plain = fixture({ photo: 2, current: { imgid: 2 }, viewport });
+  plain.press('z');
+  assert.equal(plain.env.zoomAnchor.current, null);
+});
+test('scene view: S splits and M merges, only in the scene view', () => {
+  const log = [];
+  const scene = { sharpRegion: () => null, split: (c) => log.push(['split', c.imgid]), merge: (c) => log.push(['merge', c.imgid]), decide() {}, onScene() {} };
+  const f = fixture({ photo: 2, current: { imgid: 2 }, scene });
+  f.press('s'); f.press('m');
+  assert.deepEqual(log, [['split', 2], ['merge', 2]]);
+  const plain = fixture({ photo: 2, current: { imgid: 2 } });
+  plain.press('s'); plain.press('m');
+  assert.deepEqual(log.length, 2);
 });
 
 test('first paint borrows the exact virtual-copy thumbnail without closing it', () => {

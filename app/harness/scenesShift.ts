@@ -8,7 +8,7 @@
 // or places a box. A PerformanceObserver counts the browser's own layout-shift entries as a second check.
 // verify/scenes-shift.test.mjs runs it in headless Chrome and asserts zero; the break=1 style is the
 // negative control. The 20,000-photo run scrolls the whole timeline and reports the most cards mounted.
-import { scenesState, setScenes } from "../src/scenesStore";
+import { forceFrames, scenesState, setRules, setScenes } from "../src/scenesStore";
 
 type R = { x: number; y: number; w: number; h: number };
 type Hooks = { setEntries: (f: (e: unknown[]) => unknown[]) => void; onMeta: (e: unknown, f: unknown) => void; data: { entries: unknown[] } };
@@ -198,9 +198,9 @@ export async function runScenesShift() {
 // The scene view: the stage, header, tabs, side panel, decision buttons, filmstrip and bottom bar stay where
 // they are when another frame is picked, a decision is made, scores arrive or another scene is opened. What
 // changes by design (the texts and the picture) is left out; every other element is compared.
-const SCENE_SKIP = ".scene-img, canvas, bdi, .scene-info-sub, .scene-info-title, .culling-filename, .culling-photo-count, .scene-info-note, .scene-tile-cap span, .scene-tile, .scene-info-stars";
+const SCENE_SKIP = ".scene-img, canvas, bdi, .scene-info-sub, .scene-info-title, .culling-filename, .culling-photo-count, .scene-info-note, .scene-tile-cap span, .scene-tile, .scene-info-stars, .scene-sharp-rect, .scene-crop-img";
 const fixedSelectors = [".culling-lightbox", ".culling-toolbar", ".culling-stage", ".culling-stage-inner", ".cull-side", ".cull-tabs", ".cull-pane", ".scene-strip", ".scene-decide",
-  ".scene-decide button", ".scene-tiles", ".scene-tile-list", ".scene-tiles-head", ".scene-info", ".scene-nav", ".culling-bottom-bar"];
+  ".scene-decide button", ".scene-tiles", ".scene-tile-list", ".scene-tiles-head", ".scene-info", ".scene-nav", ".scene-edit", ".scene-edit button", ".scene-crop", ".scene-crop-head", ".scene-crop-box", ".culling-bottom-bar"];
 
 export async function runSceneViewShift() {
   const out: Record<string, unknown> = { failures: [] as string[] };
@@ -222,6 +222,8 @@ export async function runSceneViewShift() {
     ["sort by time", () => click(".scene-sort")],
     ["scores go", () => setScenes({ quality: scenesState().quality.map(() => null) })],
     ["scores arrive", () => setScenes({ quality: scenesState().quality.map((_, i) => ((i * 53) % 100) / 100) })],
+    ["regions go", () => setScenes({ regions: scenesState().regions.map(() => null) })],
+    ["regions arrive", () => setScenes({ regions: scenesState().regions.map((_, i) => ({ x: 0.2 + (i % 5) * 0.1, y: 0.3, width: 0.25, height: 0.3 })) })],
     ["scoring status", () => setScenes({ scoring: { done: 5, total: 100, paused: false } })],
     ["next scene", () => click(".scene-nav button", 1)],
     ["previous scene", () => click(".scene-nav button", 0)],
@@ -246,6 +248,84 @@ export async function runSceneViewShift() {
     maxDelta = Math.max(maxDelta, d.max);
     if (d.max > 0) fail(`${name}: ${d.worst} moved by ${d.max}`);
     before = after; fixedBefore = f;
+  }
+  out.log = log; out.maxDelta = maxDelta; out.compared = compared;
+  out.styleOffenders = auditStyles();
+  if ((out.styleOffenders as string[]).length) fail("state rules touch a size");
+  out.ok = (out.failures as string[]).length === 0 && maxDelta === 0;
+  return out;
+}
+
+// The rules panel and the piles review: a preview arriving, the rules changing (the preview goes stale), Apply and
+// Undo and their notes, a frame moved to the other pile, and scrolling the piles move nothing but text and the
+// tiles themselves. The panel, the toolbar, the timeline and the piles' rows, heads and columns are compared.
+const RULES_SKIP = ".scene-img, canvas, bdi, .scene-rule-counts span, .scene-rule-state, .scene-rule-notes p, .scene-pile-tile, .scene-pile-strip *, .scene-pile-head > span, .scene-pile-title, .scene-rule-value, .scene-piles-bar .scenes-summary";
+export async function runRulesShift(piles: boolean) {
+  const out: Record<string, unknown> = { failures: [] as string[] };
+  const fail = (m: string) => (out.failures as string[]).push(m);
+  await frames(4);
+  const root = document.querySelector(".harness-app")!;
+  // scrolling moves the scrolled content by definition, and a preview going or arriving empties or fills the list, so those steps leave the list's own rows out; their
+  // height is the one fixed PILE_ROW_H, which the 20,000-photo run checks through the list's total height
+  let scrolling = false;
+  const snap = () => {
+    const m = new Map<Element, R>();
+    for (const el of [root, ...root.querySelectorAll("*")]) {
+      if (el.closest(RULES_SKIP) || el.matches(RULES_SKIP)) continue;
+      if (scrolling && el.closest(".scene-piles-scroll")) continue;
+      m.set(el, rect(el.getBoundingClientRect()));
+    }
+    return m;
+  };
+  const fake = (window as unknown as { __fake: { fakePreview: () => never } }).__fake;
+  const keysOf = (n: number) => (scenesState().model!.scenes[n].frames.map((f) => { const it = scenesState().items[f]; return `${it.version}:${it.path}`; }));
+  const steps: [string, () => void][] = [
+    ["preview goes", () => setScenes({ preview: null, previewStale: false })],
+    ["preview arrives", () => setScenes({ preview: fake.fakePreview(), previewStale: false })],
+    ["keep best changes", () => setRules({ keepBest: 3 })],
+    ["minimum quality", () => setRules({ minQuality: 60 })],
+    ["always keep off", () => setRules({ alwaysKeep: false })],
+    ["singles are kept", () => setRules({ singlesKeep: true })],
+    ["preview again", () => setScenes({ preview: fake.fakePreview(), previewStale: false })],
+    ["applied", () => setScenes({ ruleSession: { id: 1, state: "applied" }, ruleNote: { text: "Applied: 1,204 photos rejected.", error: false } })],
+    ["a long error note", () => setScenes({ ruleNote: { text: "Cull failed: " + "the file changed after it was analysed. ".repeat(12), error: true } })],
+    ["undone", () => setScenes({ ruleSession: { id: 1, state: "undone" }, ruleNote: { text: "Undone: 1,204 photos put back as they were.", error: false } })],
+    ["busy", () => setScenes({ previewBusy: true })],
+    ["not busy", () => setScenes({ previewBusy: false })],
+  ];
+  if (!piles) steps.push(["piles open", () => setScenes({ piles: true })]);
+  steps.push(
+    ["a frame moves to the other pile", () => { forceFrames([keysOf(1)[2]], "keep"); setScenes({ preview: fake.fakePreview() }); }],
+    ["a scene is rejected", () => { forceFrames(keysOf(2), "reject"); setScenes({ preview: fake.fakePreview() }); }],
+    ["scroll the piles", () => { const el = document.querySelector<HTMLElement>(".scene-piles-scroll"); if (el) el.scrollTop = 1500; }],
+    ["scroll back", () => { const el = document.querySelector<HTMLElement>(".scene-piles-scroll"); if (el) el.scrollTop = 0; }],
+  );
+  let before = snap(), maxDelta = 0, compared = 0, maxRows = 0;
+  const log: { step: string; max: number; worst: string }[] = [];
+  for (const [name, act] of steps) {
+    scrolling = name.startsWith("scroll") || name.startsWith("preview");
+    before = snap();
+    act();
+    await frames(4);
+    maxRows = Math.max(maxRows, document.querySelectorAll(".scene-pile-row").length);
+    const after = snap();
+    const d = diff(before, after);
+    log.push({ step: name, max: d.max, worst: d.worst });
+    compared += d.compared;
+    maxDelta = Math.max(maxDelta, d.max);
+    if (d.max > 0) fail(`${name}: ${d.worst} moved by ${d.max}`);
+    before = after;
+  }
+  // the piles list: scroll the whole of it and count the rows mounted
+  const scroller = document.querySelector<HTMLElement>(".scene-piles-scroll");
+  if (scroller) {
+    const total = scroller.scrollHeight;
+    for (let y = 0; y < total; y += Math.max(400, Math.floor(total / 60))) {
+      scroller.scrollTop = y;
+      await frames(1);
+      maxRows = Math.max(maxRows, document.querySelectorAll(".scene-pile-row").length);
+    }
+    out.piles = { total, maxRows, scenes: scenesState().preview?.verdicts.length };
   }
   out.log = log; out.maxDelta = maxDelta; out.compared = compared;
   out.styleOffenders = auditStyles();
