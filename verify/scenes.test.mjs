@@ -266,3 +266,21 @@ test('keyboard: S and M exist only in the scene view, Z asks for the sharp regio
   assert.deepEqual(cullingKey('z', { ...base, scene: true, shift: true }).action, { type: 'toggleZoom', sharp: false });
   assert.deepEqual(cullingKey('z', base).action, { type: 'toggleZoom', sharp: false });
 });
+
+test('a stalled or failing rules apply leaves its busy state with an error, and progress feeds the watchdog', async () => {
+  const { watched, applyProgress } = await import('../app/src/rulesApply.ts');
+  // never answers: rejected with the message after the stall time
+  await assert.rejects(watched(30, () => new Promise(() => {}), 'stalled'), /stalled/);
+  // a failure passes through
+  await assert.rejects(watched(1000, async () => { throw new Error('boom'); }, 'stalled'), /boom/);
+  // signs of life keep a slow run alive; it resolves
+  const slow = await watched(60, (w) => new Promise((ok) => {
+    let n = 0; const t = setInterval(() => { w.ping(); if (++n === 5) { clearInterval(t); ok('done'); } }, 30);
+  }), 'stalled');
+  assert.equal(slow, 'done');
+  // a late answer after the stall is ignored
+  await assert.rejects(watched(20, () => new Promise((ok) => setTimeout(() => ok(1), 80)), 'stalled'), /stalled/);
+  assert.deepEqual(applyProgress({ job: 7, stage: 'apply', done: 3, total: 9 }, 7), { done: 3, total: 9 });
+  assert.equal(applyProgress({ job: 8, stage: 'apply', done: 3, total: 9 }, 7), null);
+  assert.equal(applyProgress({ job: 7, stage: 'measure', done: 3, total: 9 }, 7), null);
+});

@@ -6242,6 +6242,8 @@
   "cull.scenes.rules.alreadyRejected_one": "{count} image est déjà rejetée et reste telle quelle.",
   "cull.scenes.rules.alreadyRejected_other": "{count} images sont déjà rejetées et restent telles quelles.",
   "cull.scenes.rules.review": "Revoir les piles",
+  "cull.scenes.rules.applying": "Application : {done} sur {total}",
+  "cull.scenes.rules.stalled": "Le moteur n'a pas répondu pendant 45 secondes ; l'application a cessé d'attendre. Les photos déjà modifiées peuvent être annulées.",
   "cull.scenes.rules.apply": "Appliquer",
   "cull.scenes.rules.undo": "Annuler",
   "cull.scenes.rules.applied_one": "Appliqué : {count} photo rejetée.",

@@ -102,6 +102,17 @@ fn wanted(before: CullLibraryState, decision: &CullDecision, status: CullStatus,
     after
 }
 
+/// whether `wanted` could differ from the photo's state, whatever that state is
+fn can_change(decision: &CullDecision, options: &CullApplyOptions) -> bool {
+    match decision.status {
+        CullStatus::Reject => options.reject,
+        CullStatus::Keep => {
+            decision.highlight
+                && (options.highlight_rating.is_some_and(|s| (1..=5).contains(&s)) || options.highlight_label.is_some_and(|b| b != 0 && b < 32))
+        }
+    }
+}
+
 /// Writes one decision's effect, returning what it recorded. A changed file
 /// is refused: the verdict was for a different picture.
 fn apply_decision(
@@ -113,6 +124,11 @@ fn apply_decision(
 ) -> Result<Vec<CullApplied>, String> {
     if check_file && file_identity(Path::new(&decision.path)).is_some_and(|now| now != (decision.file_size, decision.file_modified_ms)) {
         return Err("the file changed after it was analysed".into());
+    }
+    // a decision that cannot change a photo (a plain keep) must not touch the library: each read imports
+    // the photo into the engine, which made a 400-keep Scenes Apply take minutes for no change
+    if !can_change(decision, options) {
+        return Ok(Vec::new());
     }
     let mut records: Vec<CullApplied> = Vec::new();
     for target in targets(decision) {
@@ -139,12 +155,26 @@ fn change_list(records: impl IntoIterator<Item = (CullTarget, CullLibraryState)>
 /// Applies a session's decisions. A session applies once; use `override_applied`
 /// for later changes and `undo_session` to take it back.
 pub fn apply_session(store: &Store, session_id: i64, options: &CullApplyOptions, library: &dyn Library) -> Result<CullApplyResult, String> {
+    apply_session_with(store, session_id, options, library, &|_, _| {})
+}
+
+/// `apply_session`, calling `progress(done, total)` after each decision.
+pub fn apply_session_with(
+    store: &Store,
+    session_id: i64,
+    options: &CullApplyOptions,
+    library: &dyn Library,
+    progress: &dyn Fn(usize, usize),
+) -> Result<CullApplyResult, String> {
     let session = store.session(session_id)?.ok_or("no such cull session")?;
     if session.state == CullSessionState::Applied {
         return Err("this cull is already applied; undo it first".into());
     }
     let (mut changes, mut skipped, mut rejected, mut highlighted) = (Vec::new(), Vec::new(), 0, 0);
-    for decision in store.decisions(session_id)? {
+    let all = store.decisions(session_id)?;
+    let total = all.len();
+    for (n, decision) in all.into_iter().enumerate() {
+        progress(n, total);
         match apply_decision(store, &decision, options, library, true) {
             Ok(records) => {
                 for record in &records {
@@ -159,6 +189,7 @@ pub fn apply_session(store: &Store, session_id: i64, options: &CullApplyOptions,
             Err(error) => skipped.push(CullFailure { path: decision.path.clone(), error }),
         }
     }
+    progress(total, total);
     store.set_state(session_id, CullSessionState::Applied)?;
     Ok(CullApplyResult { session: store.session(session_id)?.ok_or("session vanished")?, changes, skipped, rejected, highlighted })
 }
@@ -330,6 +361,35 @@ pub(crate) mod tests {
         f.library.0.lock().unwrap().insert(f.sharp.clone(), state(5, false, 0));
         apply_session(&f.store, f.session, &options, &f.library).unwrap();
         assert_eq!(lib(&f, &f.sharp).rating, 5);
+    }
+
+    /// a library that fails the test if it is touched
+    struct Untouchable;
+    impl Library for Untouchable {
+        fn read(&self, t: &CullTarget) -> Result<CullLibraryState, String> {
+            panic!("a keep with nothing to write read {}", t.path)
+        }
+        fn write(&self, t: &CullTarget, _: &CullLibraryState) -> Result<(), String> {
+            panic!("a keep with nothing to write wrote {}", t.path)
+        }
+    }
+
+    #[test]
+    fn plain_keeps_never_touch_the_library_and_progress_reaches_the_total() {
+        let f = fixture();
+        let keep_only = f.store.decisions(f.session).unwrap().into_iter().filter(|d| d.status == CullStatus::Keep).count();
+        assert!(keep_only >= 1);
+        // reject = false and no highlight: every decision is a no-op
+        let options = CullApplyOptions { reject: false, highlight_rating: None, highlight_label: None };
+        let seen = Mutex::new(Vec::new());
+        let result = apply_session_with(&f.store, f.session, &options, &Untouchable, &|d, t| seen.lock().unwrap().push((d, t))).unwrap();
+        assert_eq!((result.rejected, result.highlighted, result.changes.len(), result.skipped.len()), (0, 0, 0, 0));
+        let seen = seen.into_inner().unwrap();
+        let total = f.store.decisions(f.session).unwrap().len();
+        assert_eq!(seen.last(), Some(&(total, total)));
+        assert_eq!(f.store.session(f.session).unwrap().unwrap().state, CullSessionState::Applied);
+        // an applied session can be undone, and undoing touches nothing either
+        undo_session(&f.store, f.session, &Untouchable).unwrap();
     }
 
     #[test]

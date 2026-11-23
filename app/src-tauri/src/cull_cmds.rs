@@ -319,7 +319,17 @@ pub(crate) async fn cull_override(app: AppHandle, decision_id: i64, status: Cull
 pub(crate) async fn cull_apply(app: AppHandle, session_id: i64, options: Option<CullApplyOptions>) -> Result<CullApplyResult, String> {
     blocking(move || {
         let store = Store::open(&store_path(&app.state::<AppState>()))?;
-        cull_apply::apply_session(&store, session_id, &options.unwrap_or_default(), &EngineLibrary { app })
+        let events = app.clone();
+        let last = std::sync::Mutex::new(std::time::Instant::now() - std::time::Duration::from_secs(1));
+        // the page shows "n of m" and treats a long silence as a stall, so it hears every 100 ms at most
+        let report = move |done: usize, total: usize| {
+            let mut at = last.lock().unwrap();
+            if done == total || at.elapsed() >= std::time::Duration::from_millis(100) {
+                *at = std::time::Instant::now();
+                progress(&events, session_id as u64, "apply", done, total, "");
+            }
+        };
+        cull_apply::apply_session_with(&store, session_id, &options.unwrap_or_default(), &EngineLibrary { app }, &report)
     })
     .await
 }

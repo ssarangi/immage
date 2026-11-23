@@ -7,7 +7,9 @@
 // scene, and Apply records it as a cull session and applies it with the same cull_apply as Auto Cull, so Undo,
 // the history and the photos' badges are the ones Auto Cull has. Every box is the same size before and after a
 // preview, so numbers arriving move nothing.
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { applyProgress, watched, type ApplyProgress, type Watch } from "./rulesApply";
 import { commands, type CullChange } from "./bindings";
 import type { ImageEntry } from "./library";
 import { rulesScenes } from "./scenes";
@@ -15,10 +17,24 @@ import { previewRules, resetRules, setRules, setScenes, useScenes } from "./scen
 import { useCtx } from "./ScenesView";
 import { formatNumber, t } from "./i18n";
 
+// no plan, photo or progress report for this long means the engine is stuck
+const APPLY_STALL_MS = 45_000;
+
 export function SceneRules({ entries, onChanges }: { entries: ImageEntry[]; onChanges: (changes: CullChange[]) => void }) {
   const s = useScenes();
   const { ctx } = useCtx(entries);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<ApplyProgress | null>(null);
+  // the session being applied and the watchdog to feed, so cull-progress events count as signs of life
+  const live = useRef<{ session: number; watch: Watch } | null>(null);
+  useEffect(() => {
+    const off = listen<{ job: number; stage: string; done: number; total: number }>("cull-progress", (e) => {
+      const now = live.current;
+      const p = now ? applyProgress(e.payload, now.session) : null;
+      if (now && p) { now.watch.ping(); setProgress(p); }
+    });
+    return () => { void off.then((un) => un()).catch(() => {}); };
+  }, []);
   const r = s.rules;
   const ready = s.model !== null && s.status === "ready" && s.model.frameCount > 0;
   const fresh = s.preview !== null && !s.previewStale;
@@ -32,15 +48,25 @@ export function SceneRules({ entries, onChanges }: { entries: ImageEntry[]; onCh
   async function apply() {
     if (!s.model || !fresh || busy || applied || nothingToDo) return;
     setBusy(true); setScenes({ ruleNote: null });
+    setProgress(null);
     try {
-      const plan = await commands.scenesRulesPlan(t("cull.scenes.rules.sessionLabel", { folder }),
-        { scenes: rulesScenes(s.model, s.items, ctx, s.forced), rules: s.rules });
-      const done = await commands.cullApply(plan.session.id, { reject: true, highlightRating: null, highlightLabel: null });
-      onChanges(done.changes);
+      const done = await watched(APPLY_STALL_MS, async (watch) => {
+        const plan = await commands.scenesRulesPlan(t("cull.scenes.rules.sessionLabel", { folder }),
+          { scenes: rulesScenes(s.model!, s.items, ctx, s.forced), rules: s.rules });
+        watch.ping();
+        live.current = { session: plan.session.id, watch };
+        const r = await commands.cullApply(plan.session.id, { reject: true, highlightRating: null, highlightLabel: null });
+        // an apply that answers after the page gave up still leaves Undo available
+        setScenes({ ruleSession: { id: plan.session.id, state: "applied" } });
+        return { plan, r };
+      }, t("cull.scenes.rules.stalled"));
+      live.current = null;
+      const { plan, r: result } = done;
+      onChanges(result.changes);
       setScenes({ ruleSession: { id: plan.session.id, state: "applied" }, previewStale: true,
-        ruleNote: { text: t("cull.scenes.rules.applied", { n: done.rejected, count: formatNumber(done.rejected) }), error: false } });
-    } catch (e) { setScenes({ ruleNote: { text: t("cull.panel.failed", { error: String(e) }), error: true } }); }
-    finally { setBusy(false); }
+        ruleNote: { text: t("cull.scenes.rules.applied", { n: result.rejected, count: formatNumber(result.rejected) }), error: false } });
+    } catch (e) { setScenes({ ruleNote: { text: t("cull.panel.failed", { error: String(e instanceof Error ? e.message : e) }), error: true } }); }
+    finally { live.current = null; setProgress(null); setBusy(false); }
   }
   async function undo() {
     if (!session || !applied || busy) return;
@@ -109,7 +135,7 @@ export function SceneRules({ entries, onChanges }: { entries: ImageEntry[]; onCh
         </div>
       </div>
       <div className="cull-block scene-rule-notes" role="status">
-        <p className={`note-plain${s.ruleNote?.error ? " warn" : ""}`}>{s.ruleNote?.text ?? ""}</p>
+        <p className={`note-plain${s.ruleNote?.error ? " warn" : ""}`}>{busy && progress ? t("cull.scenes.rules.applying", { done: formatNumber(progress.done), total: formatNumber(progress.total) }) : (s.ruleNote?.text ?? "")}</p>
       </div>
     </div>
   </div>;

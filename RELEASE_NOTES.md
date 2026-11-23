@@ -42,7 +42,9 @@ Improvements
   and left alone (frames already rejected are noted, not counted),
   **Review piles** shows a Keep and a Reject pile per scene
   where you can move frames, and **Apply** flags the rejects in place as one
-  undoable cull session (nothing is moved or deleted). Photos' cached quality
+  undoable cull session (nothing is moved or deleted), showing "n of m" while it
+  works and stopping with an error, rather than waiting forever, if the engine
+  stops answering; frames that are only kept are not touched. Photos' cached quality
   scores from earlier versions are measured again once, to find their sharpest
   region.
 - **Bottom toolbar:** one **Edit | Grid | Scenes** switch replaces the separate

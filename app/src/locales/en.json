@@ -6243,6 +6243,8 @@
   "cull.scenes.rules.alreadyRejected_one": "{count} frame is already rejected and stays as it is.",
   "cull.scenes.rules.alreadyRejected_other": "{count} frames are already rejected and stay as they are.",
   "cull.scenes.rules.review": "Review piles",
+  "cull.scenes.rules.applying": "Applying: {done} of {total}",
+  "cull.scenes.rules.stalled": "The engine did not answer for 45 seconds, so Apply stopped waiting. Photos already changed can be undone.",
   "cull.scenes.rules.apply": "Apply",
   "cull.scenes.rules.undo": "Undo",
   "cull.scenes.rules.applied_one": "Applied: {count} photo rejected.",
