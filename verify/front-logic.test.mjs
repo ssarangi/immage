@@ -346,15 +346,17 @@ test('keywordGroup: the Auto-keywords group state follows the analysis and what 
   assert.equal(KG.autoGroupState(null, 3), 'done');
   assert.equal(KG.autoGroupState({ ...on, enabled: false }, 0), null, 'off with nothing added: no group');
   assert.equal(KG.autoGroupState({ ...on, enabled: false }, 2), 'done', 'off, but the photo has some');
-  assert.equal(KG.autoGroupState(on, 0), 'none');
+  assert.equal(KG.autoGroupState(on, 0, true), 'none', 'analysed, nothing found');
+  assert.equal(KG.autoGroupState(on, 0), null, 'not analysed and the queue idle: no group');
   assert.equal(KG.autoGroupState({ ...on, busy: true }, 0), 'analysing');
+  assert.equal(KG.autoGroupState({ ...on, busy: true }, 0, true), 'none');
   assert.equal(KG.autoGroupState({ ...on, busy: true }, 4), 'done', 'chips win over the queue');
   assert.equal(KG.autoGroupState({ ...on, paused: true }, 0), 'paused');
   assert.equal(KG.autoGroupState({ ...on, blocked: true, paused: true }, 4), 'blocked');
 });
 
 test('keywordGroup: own keywords keep their order, Auto-keywords are sorted apart', () => {
-  const r = KG.splitKeywords(['zebra', 'sky', 'family', 'beach', 'Places|Paris'], new Set(['sky', 'beach', 'gone']));
-  assert.deepEqual(r.own, ['zebra', 'family', 'Places|Paris']);
-  assert.deepEqual(r.auto, ['beach', 'sky']);
+  const r = KG.groupRows([{ keywords: ['zebra', 'sky', 'family', 'beach', 'Places|Paris'], ai: new Set(['sky', 'beach', 'gone']) }]);
+  assert.deepEqual(r.own.map((k) => k.name), ['zebra', 'family', 'Places|Paris']);
+  assert.deepEqual(r.auto.map((k) => k.name), ['beach', 'sky']);
 });
