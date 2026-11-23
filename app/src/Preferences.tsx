@@ -4,7 +4,7 @@ import { useAgxProfiles } from "./agxProfiles";
 
 // the app's preferences, behind the rail's gear (⌘,): settings that belong
 // to the app rather than to any photo, a tab per subject
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { currentMemoryBudget, refreshMemoryBudget } from "./memoryBudget";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { keys } from "./keys";
@@ -546,16 +546,66 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
 }) {
   useAgxProfiles();
   const [tab, setTab] = useState<Tab>(focus ?? "general");
+  const scroller = useRef<HTMLDivElement>(null);
+  const well = useRef<HTMLDivElement>(null);
+  const memory = useRef<Partial<Record<Tab, number>>>({});   // each page's scroll position, kept while the window is open
+  const opener = useRef<Element | null>(document.activeElement);
+  // the only scroller is the well's; a card's top goes 16 px (the well's padding) under the well's edge, and
+  // scrollIntoView is not used because it could also scroll the modal
+  const scrollToCard = (name?: string) => {
+    const box = scroller.current;
+    if (!box) return;
+    const el = name ? box.querySelector<HTMLElement>(`[data-pref-card="${name}"]`) : null;
+    box.scrollTop = el ? el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - 16 : 0;
+  };
+  useLayoutEffect(() => {
+    if (scroller.current) scroller.current.scrollTop = memory.current[tab] ?? 0;
+  }, [tab]);
   useEffect(() => {
     if (!card) return;
-    const frame = requestAnimationFrame(() => document.querySelector(`[data-pref-card="${card}"]`)?.scrollIntoView({ block: "start" }));
+    const frame = requestAnimationFrame(() => scrollToCard(card));
     return () => cancelAnimationFrame(frame);
   }, []);
+  // fades at the well's edges that can still scroll
+  useEffect(() => {
+    const box = scroller.current, frame = well.current;
+    if (!box || !frame) return;
+    const update = () => {
+      const top = box.scrollTop > 0, bottom = box.scrollTop + box.clientHeight < box.scrollHeight - 1;
+      frame.dataset.edge = top && bottom ? "both" : top ? "top" : bottom ? "bottom" : "none";
+    };
+    update();
+    box.addEventListener("scroll", update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(box);
+    if (box.firstElementChild) observer.observe(box.firstElementChild);
+    return () => { box.removeEventListener("scroll", update); observer.disconnect(); };
+  }, [tab]);
+  useEffect(() => () => { const o = opener.current; if (o instanceof HTMLElement && o.isConnected) o.focus(); }, []);
   // a link between Preferences pages (AI models <-> Culling): the page, then its card scrolled into view
   const goTo = (to: Tab, to_card?: string) => {
     setTab(to);
-    requestAnimationFrame(() => requestAnimationFrame(() =>
-      document.querySelector(to_card ? `[data-pref-card="${to_card}"]` : ".prefs-scroll")?.scrollIntoView({ block: "start" })));
+    requestAnimationFrame(() => requestAnimationFrame(() => scrollToCard(to_card)));
+  };
+  // arrows, Home and End move between the pages, as a vertical tab list does
+  const tabKeys = (e: React.KeyboardEvent) => {
+    const at = TABS.findIndex(([id]) => id === tab);
+    const to = e.key === "ArrowDown" ? at + 1 : e.key === "ArrowUp" ? at - 1 : e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : null;
+    if (to === null) return;
+    e.preventDefault();
+    const next = TABS[(to + TABS.length) % TABS.length][0];
+    setTab(next);
+    requestAnimationFrame(() => document.getElementById(`prefs-tab-${next}`)?.focus());
+  };
+  // Tab stays inside the window
+  const trap = (e: React.KeyboardEvent<HTMLElement>) => {
+    if (e.key !== "Tab") return;
+    const all = [...e.currentTarget.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((n) => !n.hasAttribute("disabled") && n.offsetParent !== null);
+    if (!all.length) return;
+    const first = all[0], last = all[all.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   };
   const [chosenLanguage, setChosenLanguage] = useState(loadLanguage);
   const [languageBusy, setLanguageBusy] = useState(false);
@@ -680,7 +730,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   useEffect(() => {
     // a dialog opened over this one takes its own Escape
     const esc = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && document.querySelectorAll(".modal-backdrop").length === 1) onClose();
+      if (e.key === "Escape" && !e.defaultPrevented && document.querySelectorAll(".modal-backdrop").length === 1) onClose();
     };
     window.addEventListener("keydown", esc);
     return () => window.removeEventListener("keydown", esc);
@@ -688,12 +738,15 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
 
   return (
     <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal prefs">
+      <div className="modal prefs" role="dialog" aria-modal="true" aria-labelledby="prefs-title" onKeyDown={trap}>
         <nav className="prefs-tabs">
-          <h2>{t("prefs.title")}</h2>
-          {TABS.map(([id, label, icon]) => (
-            <button key={id} className={tab === id ? "on" : ""} onClick={() => setTab(id)}>{icon}{label}</button>
-          ))}
+          <h2 id="prefs-title">{t("prefs.title")}</h2>
+          <div className="prefs-tablist" role="tablist" aria-orientation="vertical" aria-labelledby="prefs-title" onKeyDown={tabKeys}>
+            {TABS.map(([id, label, icon]) => (
+              <button key={id} id={`prefs-tab-${id}`} role="tab" aria-selected={tab === id} aria-controls="prefs-panel" title={label} aria-label={label}
+                      tabIndex={tab === id ? 0 : -1} className={tab === id ? "on" : ""} onClick={() => setTab(id)}>{icon}<span className="prefs-tab-label">{label}</span></button>
+            ))}
+          </div>
           {about && (
             <div className="prefs-about" title={`darktable ${about.darktable}`}>
               <span>Immage {about.app}</span>
@@ -707,8 +760,15 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
             </div>
           )}
         </nav>
-        <div className="prefs-pane">
-          <div className="prefs-scroll">
+        <div className="prefs-pane" role="tabpanel" id="prefs-panel" aria-labelledby={`prefs-tab-${tab}`}>
+          <header className="prefs-head">
+            <h3>{TABS.find(([id]) => id === tab)?.[1]}</h3>
+            <p>{t(`prefs.section.${tab}.desc`)}</p>
+          </header>
+          <div className="prefs-well" ref={well} data-edge="none">
+          <div className="prefs-scroll" ref={scroller} tabIndex={0} aria-label={TABS.find(([id]) => id === tab)?.[1]}
+               onScroll={(e) => { memory.current[tab] = e.currentTarget.scrollTop; }}>
+          <div className="prefs-body">
             {tab === "photos" && (
               <>
                 <p className="prefs-lead">{t("prefs.photos.lead")}</p>
@@ -1199,6 +1259,8 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 </PrefCard>
               </>
             )}
+          </div>
+          </div>
           </div>
           <div className="prefs-foot">
             <span className="prefs-note">{t("prefs.note")}</span>

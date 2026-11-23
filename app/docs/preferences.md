@@ -3,6 +3,13 @@
 Open **Preferences** with ⌘, or the gear at the bottom of the rail. Changes
 apply as you make them; **Done** closes the window.
 
+The page list is on the left (an icon rail in a window narrower than 900
+pixels; hover an icon for its name). Each page has a fixed title and
+description, then its settings in their own scrolling area, then the footer
+with **Done**; only the settings scroll. Up, Down, Home and End move between
+pages when the list has focus, and Tab stays inside the window. The window is
+80% of the app window, never smaller than 720 by 520.
+
 Rows use short descriptions. Hover over the **?** beside a setting or focus it
 with Tab for the full explanation. Escape dismisses the help without closing
 Preferences. Warnings, current values and restart notices stay visible.

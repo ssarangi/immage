@@ -236,6 +236,13 @@ Performance
 
 Bug fixes
 
+- **Preferences:** the settings now scroll inside their own framed area, under a
+  fixed header that names the page and says what it holds, above a fixed footer,
+  instead of running through the window's top edge. The window is 80% of the
+  app window (at least 720 by 520), turns its page list into an icon rail
+  below 900 pixels, and works from the keyboard: Up, Down, Home and End move
+  between pages, Tab stays inside the window, and Escape closes only the
+  topmost dialog.
 - **Auto-keywords:** when the model cannot run (the AI runtime is missing, the
   model's files are damaged, or the helper cannot start), Immage no longer
   retries the same photos forever and respawns its helper. It waits 5 seconds,
