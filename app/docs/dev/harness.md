@@ -1,6 +1,6 @@
 # Dev-only harness pages
 
-[`app/harness/`](../../harness) holds four pages that mount a real piece of the
+[`app/harness/`](../../harness) holds pages that mount a real piece of the
 interface on fixture data in a plain browser, with no Tauri, no engine and no
 library. They exist to look at states that are hard to reach in the app (a
 critique that has been loading for 65 seconds, a download that stopped, a
@@ -11,6 +11,7 @@ nothing in the app or the user guide links to them.
 |---|---|---|---|
 | [critique.html](../../harness/critique.html) | the culling preview's `CullLightbox`, `CullSide` and `CullOverlay` (Critique and Cull tabs) | in [critique.tsx](../../harness/critique.tsx) | [critique-shift.test.mjs](../../../verify/critique-shift.test.mjs) |
 | [scenes.html](../../harness/scenes.html) | the Scenes timeline, scene cards and the scene view (`ScenesView`, `SceneLightbox`, `CullLightbox`, `CullSide`) | synthetic photos drawn in the page (`setThumbSource`), fake paths, a fixture store ([scenes.tsx](../../harness/scenes.tsx)) | [scenes-shift.test.mjs](../../../verify/scenes-shift.test.mjs) |
+| [toolbar.html](../../harness/toolbar.html) | the real bottom `Toolbar` in the real `.center` column markup over a grid surface (`?view=edit\|grid\|scenes&w=1280&cull=pending&theme=light&dir=rtl`; the language follows Chrome's `--accept-lang`) | none: a handful of buttons and thumbnails ([toolbar.tsx](../../harness/toolbar.tsx)); [toolbarTest.ts](../../harness/toolbarTest.ts) measures the bar | [toolbar-shift.test.mjs](../../../verify/toolbar-shift.test.mjs) |
 | [statistics.html](../../harness/statistics.html) | the whole `Statistics` view | recorded replies of the real backend, [statsMock.ts](../../harness/statsMock.ts) | [stats-shift.test.mjs](../../../verify/stats-shift.test.mjs) |
 | [models.html](../../harness/models.html) | `AiModelsView`, the AI models group of Preferences > General | [modelsFixtures.ts](../../harness/modelsFixtures.ts) | [models-shift.test.mjs](../../../verify/models-shift.test.mjs) |
 | [grid.html](../../harness/grid.html) | the real `Filmstrip` (grid or strip) and `ThumbLoader` over `n` synthetic photos (`mode=`, `preload=1`, `check=1`) | generated in [grid.tsx](../../harness/grid.tsx) | [large-grid.test.mjs](../../../verify/large-grid.test.mjs) |

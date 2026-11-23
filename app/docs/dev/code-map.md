@@ -284,4 +284,8 @@ Bottom toolbar: [Toolbar.tsx](../../src/Toolbar.tsx) is the second row of the `.
 styles.css (the first is `.center-stage`: viewer, filmstrip, grid, status pills), so no height is
 measured in script; `.center` is a size container and the bar adapts with `@container center` rules.
 `ViewSwitch` (Edit | Grid | Scenes) is in [ScenesView.tsx](../../src/ScenesView.tsx); the page
-[harness/toolbar.html](../../harness/toolbar.html) shows the real bar in the real column.
+[harness/toolbar.html](../../harness/toolbar.html) shows the real bar in the real column, and
+[toolbar-shift.test.mjs](../../../verify/toolbar-shift.test.mjs) checks it: geometry against the grid surface,
+no sideways scroll from 680px, no movement when the view or state changes, one tab stop, names. The
+narrow-column menus (labels, more filters, rating, overflow) are in [ToolbarMenus.tsx](../../src/ToolbarMenus.tsx);
+`Toolbar` keeps one tab stop and moves it with the arrow keys.
