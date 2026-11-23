@@ -13,6 +13,7 @@ mod analysis_queue;
 mod analysis_image;
 mod ram_models;
 mod tags_cmds;
+mod tags_health;
 mod tags_service;
 mod tags_store;
 mod search_reconcile;

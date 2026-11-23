@@ -145,6 +145,11 @@ export const commands = {
 	 *  takes that photo's tags instead of being analysed itself.
 	 */
 	keywordsBurstSet: (on: boolean) => __TAURI_INVOKE<boolean>("keywords_burst_set", { on }),
+	/**
+	 *  Retry after Auto-keywords stopped on a failure: forgets the failures and tries again at once.
+	 *  Fixing the cause (the AI runtime, the model's files via Check files) is the user's.
+	 */
+	keywordsRetry: () => __TAURI_INVOKE<void>("keywords_retry"),
 	/**  The keywords the analysis attached, most used first: the review list and Find's AI tags. */
 	keywordsAiList: (limit: number) => __TAURI_INVOKE<TagCount[]>("keywords_ai_list", { limit }),
 	/**  The keywords the analysis attached to one photo (Keywording marks them AI). */
@@ -1409,6 +1414,23 @@ export type KeywordsSummary = {
 	 *  or "free" (too little memory is free now).
 	 */
 	blocked: string | null,
+	/**
+	 *  Whether analysis works: "ok", "retrying" (a failure, waiting to try again) or "blocked"
+	 *  (it failed repeatedly and stays stopped until Retry).
+	 */
+	health: string,
+	/**
+	 *  Why, once not ok: "model" (the model or the AI runtime cannot load), "engine" (the helper
+	 *  cannot start), "nocpu" (this build has no CPU AI support), "crash" (the helper keeps
+	 *  stopping) or "other".
+	 */
+	failure: string | null,
+	/**  Seconds until the next try while retrying. */
+	retry_in_s: number | null,
+	/**  The engine's own words for the failure, for a tooltip. */
+	failure_detail: string | null,
+	/**  Photos left alone after failing on their own (unreadable pictures). */
+	failed: number,
 };
 
 export type LabelCounts = {

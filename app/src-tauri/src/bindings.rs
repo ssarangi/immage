@@ -74,6 +74,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::tags_cmds::keywords_summary,
         crate::tags_cmds::keywords_threshold_set,
         crate::tags_cmds::keywords_burst_set,
+        crate::tags_cmds::keywords_retry,
         crate::tags_cmds::keywords_ai_list,
         crate::tags_cmds::keywords_ai_of,
         crate::tags_cmds::keywords_ai_remove,

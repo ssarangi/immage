@@ -36,6 +36,19 @@ pub struct KeywordsSummary {
     /// Why photos wait without being analysed: "level" (the Memory level cannot hold the model)
     /// or "free" (too little memory is free now).
     pub blocked: Option<String>,
+    /// Whether analysis works: "ok", "retrying" (a failure, waiting to try again) or "blocked"
+    /// (it failed repeatedly and stays stopped until Retry).
+    pub health: String,
+    /// Why, once not ok: "model" (the model or the AI runtime cannot load), "engine" (the helper
+    /// cannot start), "nocpu" (this build has no CPU AI support), "crash" (the helper keeps
+    /// stopping) or "other".
+    pub failure: Option<String>,
+    /// Seconds until the next try while retrying.
+    pub retry_in_s: Option<u32>,
+    /// The engine's own words for the failure, for a tooltip.
+    pub failure_detail: Option<String>,
+    /// Photos left alone after failing on their own (unreadable pictures).
+    pub failed: u32,
 }
 
 #[tauri::command]
@@ -43,6 +56,7 @@ pub struct KeywordsSummary {
 pub fn keywords_summary(ai: State<'_, AiState>) -> Result<KeywordsSummary, String> {
     let totals = ai.tags.totals()?;
     let (infer_ms, kb) = ai.tags_service.speed();
+    let health = ai.tags_service.health();
     Ok(KeywordsSummary {
         photos: totals.photos,
         keyworded: totals.keyworded,
@@ -59,7 +73,20 @@ pub fn keywords_summary(ai: State<'_, AiState>) -> Result<KeywordsSummary, Strin
             crate::tags_service::BLOCK_FREE => Some("free".into()),
             _ => None,
         },
+        health: health.state.into(),
+        failure: health.reason.map(Into::into),
+        retry_in_s: health.retry_in_s,
+        failure_detail: (!health.detail.is_empty()).then_some(health.detail),
+        failed: ai.tags_service.failed(),
     })
+}
+
+/// Retry after Auto-keywords stopped on a failure: forgets the failures and tries again at once.
+/// Fixing the cause (the AI runtime, the model's files via Check files) is the user's.
+#[tauri::command]
+#[specta::specta]
+pub fn keywords_retry(ai: State<'_, AiState>) {
+    ai.tags_service.retry();
 }
 
 /// Sets the confidence a tag needs to become a keyword. Stored results are re-decided in

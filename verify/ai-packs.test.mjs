@@ -16,7 +16,7 @@ const tr = (key, vars = {}) => {
   assert.ok(text !== undefined, `missing string ${key}`);
   return text.replace(/\{(\w+)\}/g, (m, name) => (name in vars ? String(vars[name]) : m));
 };
-const { packView, workView, analysedLine, keywordsLine, speedLine, resultsLine, sizeLabel, etaLabel, summaryOf, percent, plainFmt } = await import('../app/src/aiPacks.ts');
+const { packView, workView, analysedLine, keywordsLine, keywordsStuck, keywordsFailureLine, speedLine, resultsLine, sizeLabel, etaLabel, summaryOf, percent, plainFmt } = await import('../app/src/aiPacks.ts');
 
 const base = {
   id: 'clip', name: 'Smart search (CLIP)', license: 'MIT', license_url: '', source_host: 'huggingface.co',
@@ -164,6 +164,28 @@ test('the Auto-keywords lines: off, counting, waiting, measured speed and the re
   assert.equal(resultsLine({ ...s, keyworded: 1, keywords: 3 }, tr, plainFmt), '3 keywords on 1 photo. Review or remove them.');
   assert.equal(resultsLine({ ...s, keywords: 0, keyworded: 0 }, tr, plainFmt), 'No keywords added yet.');
   assert.equal(resultsLine(null, tr, plainFmt), 'Reading status…');
+});
+
+test('a failed Auto-keywords says so in plain words, never "waiting", and counts the photos it skipped', () => {
+  const ok = { health: 'ok', failure: null, retry_in_s: null, failed: 0 };
+  assert.equal(keywordsStuck(ok), null);
+  assert.equal(keywordsStuck(null), null);
+  const blocked = { health: 'blocked', failure: 'model', retry_in_s: null, failed: 0 };
+  assert.equal(keywordsStuck(blocked), 'blocked');
+  assert.equal(keywordsLine(0, 413, true, tr, plainFmt, null, blocked),
+    "Auto-keywords can't run: the model could not be loaded. Its files may be damaged, or the AI runtime (ONNX Runtime) is missing. Fix that, then press Retry.");
+  assert.doesNotMatch(keywordsLine(0, 413, true, tr, plainFmt, 'free', blocked), /waiting/i, 'a failure comes before the memory wait and the count');
+  const retrying = { health: 'retrying', failure: 'crash', retry_in_s: 30, failed: 0 };
+  assert.equal(keywordsStuck(retrying), 'retrying');
+  assert.equal(keywordsLine(0, 413, true, tr, plainFmt, null, retrying),
+    'Auto-keywords hit a problem: the helper that runs the model keeps stopping. Trying again in 30 s.');
+  // an unknown reason still gets a sentence
+  assert.match(keywordsFailureLine({ ...blocked, failure: 'something new' }, tr), /the model failed on every try\./);
+  assert.match(keywordsFailureLine({ ...blocked, failure: 'nocpu' }, tr), /no CPU AI support/);
+  // photos skipped for their own fault are counted beside the normal line
+  assert.equal(keywordsLine(1204, 616, true, tr, plainFmt, null, { ...ok, failed: 1 }), '1,204 photos analysed, 616 waiting. 1 photo could not be read and is skipped.');
+  assert.equal(keywordsLine(1204, 0, true, tr, plainFmt, null, { ...ok, failed: 3 }), '1,204 photos analysed. Nothing waiting. 3 photos could not be read and are skipped.');
+  assert.equal(keywordsLine(1204, 0, false, tr, plainFmt, null, blocked), 'Off. No photo is analysed and no keyword is added.');
 });
 
 test('the RAM++ pack is a pack like CLIP: Download is the only action until installed, and its switch needs the model', () => {

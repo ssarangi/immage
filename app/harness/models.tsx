@@ -53,7 +53,7 @@ function Harness() {
   return <div style={{ position: "fixed", inset: 0, display: "grid", placeItems: "center" }}>
     <div className="prefs-scroll" style={{ width: w, height: h, flex: "none", background: "var(--panel)", borderRadius: "var(--radius-panel)" }} data-harness-page>
       <AiModelsView packs={fx.packs} work={fx.work} smartOn={fx.smartOn} keywordsOn={!!fx.keywordsOn} keywordsWork={fx.keywordsWork ?? null}
-        keywords={fx.keywords ?? null} aiTags={fx.aiTags ?? []} onThreshold={noop} onReview={noop} onBurst={noop} onRemoveTags={() => Promise.resolve({ photos: 0, keywords: 0, failed: 0 })} flash={fx.flash ? { clip: fx.flash } : {}} busy={false} error=""
+        keywords={fx.keywords ?? null} aiTags={fx.aiTags ?? []} onThreshold={noop} onReview={noop} onBurst={noop} onRetry={noop} onRemoveTags={() => Promise.resolve({ photos: 0, keywords: 0, failed: 0 })} flash={fx.flash ? { clip: fx.flash } : {}} busy={false} error=""
         dialog={fx.dialog ?? null} onAction={noop} onSwitch={noop} onPause={noop} onShowFolder={noop} onCulling={noop} onConsent={noop}
         onRemove={noop} onClose={noop} license={() => Promise.resolve("MIT License\n\nCopyright (c) 2021 OpenAI\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software...")}
         onTest={noop} testLine="" />

@@ -91,6 +91,8 @@ a.pack-chip-link:hover { color: var(--text); }
 .kw-slider { width: 200px; }
 .kw-pct { display: inline-block; width: 44px; text-align: right; margin-left: 8px; color: var(--text-2); font-size: var(--fs-small); font-variant-numeric: tabular-nums; }
 .kw-btn { width: 84px; text-align: center; }
+/* the failure buttons: always this wide, so a failure appearing moves nothing */
+.kw-fix { display: flex; justify-content: flex-end; gap: 8px; width: 200px; height: 28px; }
 .kw-list { list-style: none; margin: 0 0 12px; padding: 4px 0; height: 252px; overflow: auto; background: var(--inset); border-radius: 8px; }
 .kw-list li { display: grid; grid-template-columns: minmax(0, 1fr) 64px 84px; align-items: center; gap: 8px; height: 36px; padding: 0 10px 0 14px; }
 .kw-list li .btn { width: 84px; text-align: center; }

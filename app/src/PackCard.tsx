@@ -28,6 +28,8 @@ export type AnalysisRowProps = {
   /** a standing line under the switch (analysed so far), always laid out */
   status: string;
   statusLabel: string;
+  /** buttons for a failure, in a fixed slot beside the status line (Auto-keywords: Retry, Check files) */
+  statusAction?: ReactNode;
   /** more fixed-height rows below the status line (Auto-keywords: confidence, speed, results) */
   extra?: ReactNode;
 };
@@ -80,7 +82,7 @@ export function PackCard({ info, view, name, does, photos, card, busy, flash, on
           <PrefSwitch checked={analysis.checked && !analysis.reason} disabled={!!analysis.reason || busy} aria-label={analysis.label}
                       onChange={analysis.onChange} />
         </PrefRow>
-        <PrefRow label={analysis.statusLabel} hint={analysis.status}><span /></PrefRow>
+        <PrefRow label={analysis.statusLabel} hint={analysis.status}>{analysis.statusAction ?? <span />}</PrefRow>
         {analysis.extra}
       </div>}
     </section>

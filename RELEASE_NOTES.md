@@ -226,6 +226,14 @@ Performance
 
 Bug fixes
 
+- **Auto-keywords:** when the model cannot run (the AI runtime is missing, the
+  model's files are damaged, or the helper cannot start), Immage no longer
+  retries the same photos forever and respawns its helper. It waits 5 seconds,
+  30 seconds and 5 minutes between tries, then stops. Preferences > General >
+  AI models says "Auto-keywords can't run" and why, with **Retry** and **Check
+  files**, instead of "waiting" beside an "Installed" model. A photo that cannot
+  be read is tried a few times, then skipped and counted, without holding up the
+  others.
 - The Metadata and Keywording cards in the Library panel no longer disappear and
   reappear, moving Folders, Catalog and History, while you keep changing photos;
   they keep their place, read-only, until the next photo's details arrive.

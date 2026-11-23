@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { KeywordsSummary, RemoveReport, TagCount } from "./bindings";
 import { PrefRow, PrefSwitch } from "./PrefsUI";
-import { burstLine, resultsLine, speedLine, uiFmt } from "./aiPacks";
+import { burstLine, keywordsStuck, resultsLine, speedLine, uiFmt } from "./aiPacks";
 import { t } from "./i18n";
 
 export type KeywordsRowsProps = {
@@ -45,6 +45,15 @@ export function KeywordsRows({ summary, busy, onThreshold, onReview, onBurst }: 
       <button type="button" className="btn small kw-btn" disabled={busy || none} onClick={onReview}>{t("aimodels.kw.review")}</button>
     </PrefRow>
   </>;
+}
+
+/** Retry and Check files beside the status line: a slot of fixed width, empty unless Auto-keywords has stopped */
+export function KeywordsFix({ summary, busy, onRetry, onCheck }: { summary: KeywordsSummary | null; busy: boolean; onRetry: () => void; onCheck: () => void }) {
+  const stuck = !!summary && !!keywordsStuck(summary);
+  return <span className="kw-fix">{stuck && <>
+    <button type="button" className="btn small" disabled={busy} onClick={onRetry}>{t("aimodels.kw.retry")}</button>
+    <button type="button" className="btn small" disabled={busy} onClick={onCheck}>{t("aimodels.act.check")}</button>
+  </>}</span>;
 }
 
 export function KeywordsReviewDialog({ list, keywords, photos, onRemove, onClose }: {

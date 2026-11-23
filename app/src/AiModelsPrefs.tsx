@@ -13,8 +13,8 @@ import { commands } from "./commands";
 import type { AnalysisId, AnalysisStatusAll, KeywordsSummary, PackId, PackInfo, RemoveReport, SearchStatus, TagCount } from "./bindings";
 import { PackCard } from "./PackCard";
 import { PackConsentDialog, PackRemoveDialog } from "./PackDialogs";
-import { KeywordsReviewDialog, KeywordsRows } from "./KeywordsCard";
-import { analysedLine, keywordsLine, packView, summaryOf, uiFmt, usePacks, workView, sizeLabel, type ActionId, type WorkInput } from "./aiPacks";
+import { KeywordsFix, KeywordsReviewDialog, KeywordsRows } from "./KeywordsCard";
+import { analysedLine, keywordsLine, keywordsStuck, packView, summaryOf, uiFmt, usePacks, workView, sizeLabel, type ActionId, type WorkInput } from "./aiPacks";
 import { t } from "./i18n";
 import "./aiModels.css";
 
@@ -39,6 +39,7 @@ export type ViewProps = {
   onThreshold: (percent: number) => void;
   onReview: () => void;
   onBurst: (on: boolean) => void;
+  onRetry: () => void;
   onRemoveTags: (names: string[]) => Promise<RemoveReport>;
   onPause: () => void;
   onShowFolder: () => void;
@@ -67,7 +68,9 @@ export function AiModelsView(p: ViewProps) {
   // the strip shows whichever analysis is busy; Smart search when neither is
   const kwBusy = !!p.keywordsWork && p.keywordsWork.enabled && p.keywordsWork.installed && (p.keywordsWork.running > 0 || p.keywordsWork.active || (p.keywordsWork.pending ?? 0) > 0);
   const stripWork = kwBusy ? { ...p.keywordsWork!, analysed: p.keywords?.photos ?? null } : p.work;
-  const work = workView(stripWork, t, uiFmt);
+  const kwStuck = kwBusy && p.keywordsOn && !!keywordsStuck(p.keywords);
+  // a failed Auto-keywords is never shown as work in progress or waiting
+  const work = kwStuck ? { line: t("aimodels.kw.strip"), bar: null, paused: false } : workView(stripWork, t, uiFmt);
   const running = stripWork?.enabled && stripWork.installed;
   const dialogPack = p.dialog && "id" in p.dialog ? p.packs.find((x) => x.id === (p.dialog as { id: PackId }).id) : undefined;
   return (
@@ -111,7 +114,8 @@ export function AiModelsView(p: ViewProps) {
             label: t("aimodels.kw.switch"), hint: t("aimodels.kw.switchHint"),
             checked: p.keywordsOn, reason: view.usable ? null : view.reason,
             onChange: (on) => p.onSwitch("keywords", on), statusLabel: t("aimodels.clip.statusLabel"),
-            status: keywordsLine(p.keywords?.photos ?? null, p.keywordsWork?.pending ?? null, p.keywordsOn && view.usable, t, uiFmt, p.keywords?.blocked ?? null),
+            status: keywordsLine(p.keywords?.photos ?? null, p.keywordsWork?.pending ?? null, p.keywordsOn && view.usable, t, uiFmt, p.keywords?.blocked ?? null, p.keywords),
+            statusAction: <KeywordsFix summary={p.keywordsOn && view.usable ? p.keywords : null} busy={p.busy} onRetry={p.onRetry} onCheck={() => p.onAction("ram", "check")} />,
             extra: <KeywordsRows summary={p.keywords} busy={p.busy} onThreshold={p.onThreshold} onReview={p.onReview} onBurst={p.onBurst} />,
           }} />;
       })}
@@ -206,6 +210,7 @@ export function AiModelsPrefs({ onGoTo }: { onGoTo: (tab: "culling", card?: stri
       setKeywordsOn(!!list.find((x) => x.id === "keywords")?.enabled);
     })}
     onThreshold={(percent) => void guard(async () => { await commands.keywordsThresholdSet(percent); setKeywords(await commands.keywordsSummary()); })}
+    onRetry={() => void guard(async () => { await commands.keywordsRetry(); setKeywords(await commands.keywordsSummary()); })}
     onBurst={(on) => void guard(async () => { await commands.keywordsBurstSet(on); setKeywords(await commands.keywordsSummary()); })}
     onReview={() => void guard(async () => { setAiTags(await commands.keywordsAiList(5000)); setDialog({ kind: "review" }); })}
     onRemoveTags={async (names) => {

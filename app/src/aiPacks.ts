@@ -158,15 +158,35 @@ export function analysedLine(analysed: number | null, pending: number | null, en
   return tr("aimodels.clip.doneWaiting", { n: analysed, count: fmt.num(analysed), left: fmt.num(pending) });
 }
 
+export type KeywordsHealth = Pick<KeywordsSummary, "health" | "failure" | "retry_in_s" | "failed">;
+
+/** whether Auto-keywords has stopped, or is waiting to retry, after a failure (never "waiting" as if all were well) */
+export function keywordsStuck(h: KeywordsHealth | null | undefined): "blocked" | "retrying" | null {
+  return h?.health === "blocked" || h?.health === "retrying" ? h.health : null;
+}
+
+/** the plain-words failure line: "can't run" with Retry when blocked, "trying again in N s" while backing off */
+export function keywordsFailureLine(h: KeywordsHealth, tr: Tr): string | null {
+  const stuck = keywordsStuck(h);
+  if (!stuck) return null;
+  const known = ["model", "engine", "nocpu", "crash"].includes(h.failure ?? "") ? h.failure : "other";
+  const reason = tr(`aimodels.kw.why.${known}`);
+  return stuck === "blocked" ? tr("aimodels.kw.stuck", { reason }) : tr("aimodels.kw.retryIn", { reason, s: h.retry_in_s ?? 0 });
+}
+
 /** the standing line under the Auto-keywords switch */
-export function keywordsLine(analysed: number | null, pending: number | null, enabled: boolean, tr: Tr, fmt: Fmt = plainFmt, blocked: string | null = null): string {
+export function keywordsLine(analysed: number | null, pending: number | null, enabled: boolean, tr: Tr, fmt: Fmt = plainFmt, blocked: string | null = null, health: KeywordsHealth | null = null): string {
   if (!enabled) return tr("aimodels.kw.off");
+  // a failure comes before any count: the photos are not progressing, whatever is waiting
+  const failure = health ? keywordsFailureLine(health, tr) : null;
+  if (failure) return failure;
   // photos wait, untouched, until the model fits in memory
   if (blocked === "level") return tr("aimodels.kw.blockedLevel");
   if (blocked === "free") return tr("aimodels.kw.blockedFree");
   if (analysed == null) return tr("aimodels.work.reading");
-  if (pending == null || pending === 0) return tr("aimodels.clip.doneNothing", { n: analysed, count: fmt.num(analysed) });
-  return tr("aimodels.clip.doneWaiting", { n: analysed, count: fmt.num(analysed), left: fmt.num(pending) });
+  const skipped = health && health.failed > 0 ? ` ${tr("aimodels.kw.failedPhotos", { n: health.failed, count: fmt.num(health.failed) })}` : "";
+  if (pending == null || pending === 0) return tr("aimodels.clip.doneNothing", { n: analysed, count: fmt.num(analysed) }) + skipped;
+  return tr("aimodels.clip.doneWaiting", { n: analysed, count: fmt.num(analysed), left: fmt.num(pending) }) + skipped;
 }
 
 /** "About 1.4 s per photo ... 2.9 GB", or the line shown before the first photo is measured */

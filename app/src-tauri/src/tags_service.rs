@@ -28,6 +28,7 @@ use crate::{
     ram_models::{self, Models},
     search_analysis::{library_selection, now_ms, selected, AnalysisProgress, SHARE_QUIET},
     search_cache::{AssetMeta, SearchCache},
+    tags_health::{self, Gate, Health, Kind, Ledger, Reason},
     tags_store::{Origin, TagStore},
 };
 use serde_json::{json, Value};
@@ -125,6 +126,8 @@ pub struct Control {
     stop: Arc<AtomicBool>,
     progress: Arc<Progress>,
     helper: Arc<Helper>,
+    health: Arc<Health>,
+    ledger: Arc<Ledger>,
 }
 impl Control {
     pub fn stop(&self) {
@@ -156,6 +159,20 @@ impl Control {
     /// Why photos are waiting without being analysed: the Memory level is too low, or too little is free.
     pub fn blocked(&self) -> u8 {
         self.progress.blocked.load(Ordering::Acquire)
+    }
+    /// Whether analysis is working, waiting to retry or blocked, and why (what the card shows).
+    pub fn health(&self) -> tags_health::Report {
+        self.health.report(now_ms())
+    }
+    /// Photos left alone after failing on their own.
+    pub fn failed(&self) -> u32 {
+        self.ledger.count(now_ms())
+    }
+    /// The user's Retry: forgets the failures so the worker tries again at once.
+    pub fn retry(&self) {
+        self.health.retry();
+        self.ledger.reset();
+        self.helper.end();
     }
     #[cfg(test)]
     /// The helper process's id while it runs (it holds the model), 0 otherwise.
@@ -252,6 +269,8 @@ struct Service {
     cursor: AtomicI64,
     stop: Arc<AtomicBool>,
     progress: Arc<Progress>,
+    health: Arc<Health>,
+    ledger: Arc<Ledger>,
     /// Paths handed to the queue and not finished; at most AHEAD.
     inflight: Mutex<HashSet<String>>,
     idle_since: Mutex<Option<Instant>>,
@@ -272,6 +291,8 @@ pub fn start(
     let stop = Arc::new(AtomicBool::new(false));
     let progress = Arc::new(Progress::new());
     let helper = Arc::new(Helper::new(engine_bin, &runtime));
+    let health = Arc::new(Health::default());
+    let ledger = Arc::new(Ledger::default());
     if let Some(cache) = cache {
         let service = Arc::new(Service {
             cache,
@@ -287,12 +308,14 @@ pub fn start(
             cursor: AtomicI64::new(0),
             stop: stop.clone(),
             progress: progress.clone(),
+            health: health.clone(),
+            ledger: ledger.clone(),
             inflight: Mutex::default(),
             idle_since: Mutex::new(None),
         });
         std::thread::spawn(move || service.run());
     }
-    Control { stop, progress, helper }
+    Control { stop, progress, helper, health, ledger }
 }
 
 /// How wanted a photo is: rated and recent first, ones Auto Cull marked blurry last.
@@ -319,7 +342,64 @@ fn blurry_paths(runtime: &Path) -> HashSet<String> {
     q.query_map([], |r| r.get::<_, String>(0)).map(|rows| rows.flatten().collect()).unwrap_or_default()
 }
 
+/// Why one photo's job failed, and whether it is the photo's fault.
+pub struct Failure {
+    kind: Kind,
+    msg: String,
+}
+impl From<String> for Failure {
+    fn from(msg: String) -> Self {
+        Failure { kind: Kind::Photo, msg }
+    }
+}
+impl From<&str> for Failure {
+    fn from(msg: &str) -> Self {
+        msg.to_string().into()
+    }
+}
+impl Failure {
+    fn model(msg: String) -> Self {
+        Failure { kind: Kind::Systemic(Reason::Model), msg }
+    }
+    fn helper(msg: String) -> Self {
+        Failure { kind: tags_health::classify_helper(&msg), msg }
+    }
+}
+
+/// Records a failed job: a systemic one backs the worker off (and ends the helper, so the next
+/// try starts a clean one after the wait); a photo's own one leaves that photo alone. Each is
+/// logged once, not on every retry.
+#[allow(clippy::too_many_arguments)]
+fn record_failure(health: &Health, ledger: &Ledger, end_helper: &dyn Fn(), path: &str, key: &str, version: &str, generation: u64, f: Failure, now: u64) {
+    match f.kind {
+        Kind::Transient => {}
+        Kind::Systemic(reason) => {
+            if let Some(line) = health.systemic(generation, reason, &f.msg, now) {
+                eprintln!("{line}");
+            }
+            end_helper();
+        }
+        Kind::Photo => {
+            let tries = ledger.fail(key, version, now);
+            if tries == 1 || tries >= tags_health::MAX_PHOTO_TRIES {
+                eprintln!("auto-keywords {path} (try {tries}{}): {}", if tries >= tags_health::MAX_PHOTO_TRIES { ", given up" } else { "" }, f.msg);
+            }
+        }
+    }
+}
+
+/// Whether a photo may be handed to the worker now: not one left alone after its own failures,
+/// and (for an analysis, which needs the model) not while the worker backs off or is blocked.
+fn admit(health: &Health, ledger: &Ledger, key: &str, version: &str, needs_model: bool, now: u64) -> bool {
+    !ledger.skipped(key, version, now) && (!needs_model || matches!(health.gate(now), Gate::Go))
+}
+
 impl Service {
+    /// Records a failed job (see `record_failure`).
+    fn failed(&self, path: &str, key: &str, version: &str, generation: u64, f: Failure) {
+        record_failure(&self.health, &self.ledger, &|| self.helper.end(), path, key, version, generation, f, now_ms());
+    }
+
     fn run(self: Arc<Self>) {
         let mut last_scan: Option<Instant> = None;
         let mut last_count: Option<Instant> = None;
@@ -331,7 +411,8 @@ impl Service {
             p.installed.store(installed, Ordering::Release);
             p.enabled.store(enabled, Ordering::Release);
             if installed && enabled {
-                if last_scan.is_none_or(|t| t.elapsed() >= SCAN_EVERY) {
+                // no scan while the worker is backing off or blocked: nothing could be analysed
+                if matches!(self.health.gate(now_ms()), Gate::Go) && last_scan.is_none_or(|t| t.elapsed() >= SCAN_EVERY) {
                     last_scan = Some(Instant::now());
                     let next = self.clone();
                     self.queue.submit("tags:scan".into(), move |job| {
@@ -385,6 +466,7 @@ impl Service {
     /// Photos of the selected folders with no result for this model, counted a page at a time.
     fn count_backlog(&self) -> Option<u32> {
         let selection = library_selection(&self.runtime);
+        let now = now_ms();
         let (mut after, mut total) = (0i64, 0u32);
         loop {
             if self.stop.load(Ordering::Acquire) {
@@ -396,6 +478,7 @@ impl Service {
             for row in rows {
                 if selected(Path::new(&row.path), &selection)
                     && !self.store.is_current(&row.path, &row.original_fingerprint, ram_models::MODEL_VERSION).ok()?
+                    && !self.ledger.skipped(&row.path, &row.original_fingerprint, now)
                 {
                     total = total.saturating_add(1);
                 }
@@ -407,6 +490,12 @@ impl Service {
     }
 
     fn offer(self: &Arc<Self>, path: String, fingerprint: Option<String>) -> bool {
+        let key = if fingerprint.is_some() { path.clone() } else { format!("reapply:{path}") };
+        let version = fingerprint.clone().unwrap_or_default();
+        if !admit(&self.health, &self.ledger, &key, &version, fingerprint.is_some(), now_ms()) {
+            // not an end of the walk: the next photos are still offered, so one bad photo starves none
+            return true;
+        }
         {
             let mut inflight = self.inflight.lock().unwrap();
             if inflight.len() >= AHEAD || !inflight.insert(path.clone()) {
@@ -415,14 +504,16 @@ impl Service {
         }
         let next = self.clone();
         let path_copy = path.clone();
-        let key = format!("tags:photo:{path}");
-        let queued = self.queue.submit(key, move |job| {
+        let job_key = format!("tags:photo:{path}");
+        let queued = self.queue.submit(job_key, move |job| {
+            let generation = next.health.generation();
             let result = match &fingerprint {
                 Some(fp) => next.analyze(&path, fp, &job),
                 None => next.reapply(&path, &job),
             };
-            if let Err(e) = result {
-                eprintln!("auto-keywords {path}: {e}");
+            match result {
+                Ok(()) => {}
+                Err(f) => next.failed(&path, &key, &version, generation, f),
             }
             next.inflight.lock().unwrap().remove(&path);
         });
@@ -542,7 +633,7 @@ impl Service {
         best.map(|(_, p)| p)
     }
 
-    fn analyze(&self, path: &str, fingerprint: &str, job: &Job) -> Result<(), String> {
+    fn analyze(&self, path: &str, fingerprint: &str, job: &Job) -> Result<(), Failure> {
         if job.cancelled() || self.stop.load(Ordering::Acquire) || !self.models.enabled() {
             return Ok(());
         }
@@ -552,7 +643,10 @@ impl Service {
         if self.fingerprint_now(path).as_deref() != Some(fingerprint) {
             return Ok(());
         }
-        let (root, vocabulary) = self.models.package()?;
+        if !matches!(self.health.gate(now_ms()), Gate::Go) {
+            return Ok(());
+        }
+        let (root, vocabulary) = self.models.package().map_err(Failure::model)?;
         let running = RunGuard::new(&self.progress);
         let imgid = std::cell::Cell::new(0i64);
         let imgid_of = || {
@@ -577,7 +671,8 @@ impl Service {
                 if let Some(true) = job.commit(|| self.store.put_with(path, fingerprint, ram_models::MODEL_VERSION, &tags, secs, &origin)).transpose()? {
                     self.progress.copied.fetch_add(1, Ordering::AcqRel);
                     running.stored();
-                    return self.decide(path, imgid_of());
+                    self.ledger.clear(path);
+                    return Ok(self.decide(path, imgid_of())?);
                 }
                 return Ok(());
             }
@@ -591,10 +686,13 @@ impl Service {
             }
         }
         self.progress.blocked.store(BLOCK_NONE, Ordering::Release);
-        let helper = self.helper.tagged()?;
+        let helper = self.helper.tagged().map_err(Failure::helper)?;
         let tensor = ram_models::preprocess(rgb.as_raw(), rgb.width(), rgb.height())?;
-        let logits = infer(&helper, &self.runtime, &root, &tensor, &self.progress)?;
-        let found = vocabulary.select(&logits)?;
+        let logits = infer(&helper, &self.runtime, &root, &tensor, &self.progress).map_err(Failure::helper)?;
+        if let Some(line) = self.health.ok() {
+            eprintln!("{line}");
+        }
+        let found = vocabulary.select(&logits).map_err(Failure::model)?;
         if job.cancelled() || self.fingerprint_now(path).as_deref() != Some(fingerprint) {
             return Ok(());
         }
@@ -605,16 +703,17 @@ impl Service {
             None => return Ok(()),
         }
         running.stored();
+        self.ledger.clear(path);
         self.progress.last_rss_kb.store(self.helper.rss_kb(), Ordering::Release);
-        self.decide(path, imgid_of())
+        Ok(self.decide(path, imgid_of())?)
     }
 
-    fn reapply(&self, path: &str, job: &Job) -> Result<(), String> {
+    fn reapply(&self, path: &str, job: &Job) -> Result<(), Failure> {
         if job.cancelled() || !self.models.enabled() {
             return Ok(());
         }
         let imgid = self.engine.cached_photo(path, 0);
-        self.decide(path, imgid)
+        Ok(self.decide(path, imgid)?)
     }
 
     /// Attaches the keywords at or above the confidence setting and takes off the ones
@@ -723,6 +822,105 @@ mod tests {
         // a 4 GB machine cannot hold it at any level
         assert_eq!(memory_gate(4096, 3_000, "large"), BLOCK_LEVEL);
         assert_eq!(rss_of(0), 0);
+    }
+
+    /// A worker run on a fake clock and a fake helper, through the same `admit` and `record_failure`
+    /// the service uses: `fake(photo, helper_spawns)` is what the engine answers. (The service itself
+    /// needs the 1.8 GB model's checksummed files, so its own run is the ignored real test.)
+    struct Sim {
+        health: Health,
+        ledger: Ledger,
+        now: u64,
+        /// helper processes started: one per analysis while none runs
+        spawns: u32,
+        running: std::cell::Cell<bool>,
+        attempts: std::collections::HashMap<String, u32>,
+        done: Vec<String>,
+    }
+    impl Sim {
+        fn new() -> Self {
+            Sim { health: Health::default(), ledger: Ledger::default(), now: 1_000, spawns: 0, running: false.into(), attempts: Default::default(), done: vec![] }
+        }
+        /// One scan: offers every photo not yet done, two at a time like the service
+        fn pass(&mut self, photos: &[&str], fake: &dyn Fn(&str) -> Result<(), String>) {
+            let mut offered = 0;
+            for p in photos {
+                if self.done.iter().any(|d| d == p) || !admit(&self.health, &self.ledger, p, "v1", true, self.now) {
+                    continue;
+                }
+                if offered == AHEAD {
+                    break;
+                }
+                offered += 1;
+                let generation = self.health.generation();
+                if !self.running.get() {
+                    self.spawns += 1;
+                    self.running.set(true);
+                }
+                *self.attempts.entry(p.to_string()).or_default() += 1;
+                match fake(p) {
+                    Ok(()) => {
+                        self.health.ok();
+                        self.ledger.clear(p);
+                        self.done.push(p.to_string());
+                    }
+                    Err(msg) => {
+                        let running = &self.running;
+                        record_failure(&self.health, &self.ledger, &|| running.set(false), p, p, "v1", generation, Failure::helper(msg), self.now);
+                    }
+                }
+            }
+        }
+        /// The worker's loop for `secs` seconds, one scan every 4 s
+        fn run(&mut self, secs: u64, photos: &[&str], fake: &dyn Fn(&str) -> Result<(), String>) {
+            for _ in 0..secs / 4 {
+                if matches!(self.health.gate(self.now), Gate::Go) {
+                    self.pass(photos, fake);
+                }
+                self.now += 4_000;
+            }
+        }
+    }
+
+    #[test]
+    fn a_missing_runtime_backs_off_then_blocks_without_respawning_in_a_loop() {
+        let mut sim = Sim::new();
+        let photos = ["/a.jpg", "/b.jpg", "/c.jpg"];
+        let missing = |_: &str| Err("RAM++ model is unavailable; verify the Auto-keywords model".to_string());
+        sim.run(3 * 3600, &photos, &missing);
+        // 4 systemic failures (the waits are 5 s, 30 s and 5 min), then nothing for the next hours
+        assert_eq!(sim.attempts.values().sum::<u32>(), tags_health::MAX_SYSTEMIC);
+        assert_eq!(sim.spawns, tags_health::MAX_SYSTEMIC, "one fresh helper per try, none in a loop");
+        let r = sim.health.report(sim.now);
+        assert_eq!((r.state, r.reason), ("blocked", Some("model")));
+        assert!(r.detail.contains("unavailable"));
+        // the user fixes the runtime and presses Retry: everything is analysed
+        sim.health.retry();
+        sim.ledger.reset();
+        sim.run(60, &photos, &|_| Ok(()));
+        assert_eq!(sim.done.len(), 3);
+        assert_eq!(sim.health.report(sim.now).state, "ok");
+    }
+
+    #[test]
+    fn an_unreadable_photo_is_tried_a_few_times_and_never_holds_up_the_others() {
+        let mut sim = Sim::new();
+        let photos = ["/bad.jpg", "/b.jpg", "/c.jpg", "/d.jpg", "/e.jpg"];
+        let fake = |p: &str| if p == "/bad.jpg" { Err("Invalid RAM++ tensor values".to_string()) } else { Ok(()) };
+        sim.run(6 * 3600, &photos, &fake);
+        assert_eq!(sim.done.len(), 4, "every good photo was analysed: {:?}", sim.done);
+        assert_eq!(sim.attempts["/bad.jpg"], tags_health::MAX_PHOTO_TRIES, "tried a few times, then left alone");
+        assert_eq!(sim.ledger.count(sim.now), 1, "the card can say one photo failed");
+        assert_eq!(sim.health.report(sim.now).state, "ok", "a photo's own failure is not the worker's");
+        assert_eq!(sim.spawns, 1, "the helper was not restarted for it");
+    }
+
+    #[test]
+    fn a_transient_busy_reply_counts_as_nothing() {
+        let (h, l) = (Health::default(), Ledger::default());
+        record_failure(&h, &l, &|| {}, "/a.jpg", "/a.jpg", "v1", h.generation(), Failure::helper("RAM++ worker is full or stopping".into()), 0);
+        assert_eq!(h.report(0).state, "ok");
+        assert_eq!(l.count(0), 0);
     }
 
     fn wait(what: &str, limit: Duration, mut done: impl FnMut() -> bool) {

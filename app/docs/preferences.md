@@ -257,6 +257,15 @@ describe, and runs on this computer.
   photos are not analysed. The standing line below the switch says how many photos are
   analysed and how many wait, and the one **Pause / Resume** covers it, as it does
   Smart search.
+  - **When it fails.** If the model cannot run at all (the AI runtime, ONNX Runtime,
+    is missing, the model's files are damaged, or the helper cannot start or keeps
+    stopping), Immage tries again after 5 seconds, 30 seconds and 5 minutes, and then
+    stops. The line below the switch says "Auto-keywords can't run:" with the reason
+    in plain words, the summary strip says it is not analysing photos, and **Retry**
+    and **Check files** appear beside it. Fix the cause, then press Retry (Check files
+    verifies the model's files; a missing runtime is fixed outside Immage). A photo
+    whose picture cannot be read is tried a few times, then skipped; the line counts
+    those photos, and the others carry on.
   - **Keyword confidence** (40 to 95%, 70% by default): a tag becomes a keyword
     when the model is at least this sure of it. Lower finds more tags, and more
     wrong ones. Changing it applies to photos already analysed at once, without
