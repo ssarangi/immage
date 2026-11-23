@@ -220,6 +220,9 @@ Performance
 
 Bug fixes
 
+- The Metadata and Keywording cards in the Library panel no longer disappear and
+  reappear, moving Folders, Catalog and History, while you keep changing photos;
+  they keep their place, read-only, until the next photo's details arrive.
 - **Opening a photo:** on a busy machine, the previous photo's full-resolution
   copy, histogram, navigator and placement could still show over the new
   photo for a second or two. They are now cleared the moment the next photo

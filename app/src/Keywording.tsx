@@ -35,7 +35,7 @@ const path = (k: string) => k.split("|").join(" > ");
 // the box to type keywords in, with the known ones that match below it:
 // Enter takes the highlighted suggestion for the last entry, or the text as
 // typed; commas separate several
-export function KeywordInput({ attached, known, onAdd, addOnBlur = false, autoFocus = false }: {
+export function KeywordInput({ attached, known, onAdd, addOnBlur = false, autoFocus = false, disabled = false }: {
   attached: Set<string>;         // keywords already there, not suggested
   known: string[];               // every keyword ever used
   onAdd: (names: string[]) => void;
@@ -43,6 +43,7 @@ export function KeywordInput({ attached, known, onAdd, addOnBlur = false, autoFo
   // presses Enter for would otherwise be lost
   addOnBlur?: boolean;
   autoFocus?: boolean;
+  disabled?: boolean;
 }) {
   const [draft, setDraft] = useState("");
   const [hi, setHi] = useState(0);
@@ -71,7 +72,7 @@ export function KeywordInput({ attached, known, onAdd, addOnBlur = false, autoFo
 
   return (
     <div className="kw-add">
-      <input ref={input} autoFocus={autoFocus} className="field" value={draft} placeholder={t("library.keywording.add")}
+      <input ref={input} autoFocus={autoFocus} disabled={disabled} className="field" value={draft} placeholder={t("library.keywording.add")}
              onChange={(e) => setDraft(e.target.value)}
              onBlur={() => {
                if (addOnBlur && !discarding.current && draft.trim()) { onAdd(draft.split(",")); setDraft(""); }
@@ -103,21 +104,21 @@ export function KeywordInput({ attached, known, onAdd, addOnBlur = false, autoFo
 
 // the chips of a list of keywords, each taken off with its ×
 // `ai` names the keywords Auto-keywords added, which carry an AI mark (text, so not by color alone)
-export function KeywordChips({ keywords, onRemove, ai }: { keywords: string[]; onRemove: (name: string) => void; ai?: ReadonlySet<string> }) {
+export function KeywordChips({ keywords, onRemove, ai, disabled = false }: { keywords: string[]; onRemove: (name: string) => void; ai?: ReadonlySet<string>; disabled?: boolean }) {
   return (
     <div className="kw-chips">
       {keywords.length === 0 && <span className="kw-none">{t("library.keywording.none")}</span>}
       {keywords.map((k) => (
         <span key={k} className={`kw-chip${ai?.has(k) ? " ai" : ""}`} title={ai?.has(k) ? `${path(k)} - ${t("keywording.aiTip")}` : path(k)}>
           {leaf(k)}{ai?.has(k) && <span className="kw-ai">{t("keywording.ai")}</span>}
-          <button title={t("library.keywording.remove", { keyword: path(k) })} onClick={() => onRemove(k)}>×</button>
+          <button disabled={disabled} title={t("library.keywording.remove", { keyword: path(k) })} onClick={() => onRemove(k)}>×</button>
         </span>
       ))}
     </div>
   );
 }
 
-export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true, onToggle, photoPath }: {
+export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true, onToggle, photoPath, loading = false }: {
   keywords: string[] | null;     // the open photo's; null while there is none
   // the open photo's file, to mark the keywords Auto-keywords added (none for a selection)
   photoPath?: string;
@@ -126,6 +127,9 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true,
   onRemove: (name: string) => void;
   open?: boolean;
   onToggle?: (alt: boolean) => void;
+  // the next photo's keywords are not in yet: the card keeps its place with the
+  // last ones, read-only, instead of vanishing
+  loading?: boolean;
 }) {
   const [recent, setRecent] = useState(loadRecent);
   const attached = useMemo(() => new Set(keywords ?? []), [keywords]);
@@ -149,14 +153,14 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true,
   if (!keywords) return null;
   const content = (
     <div className={onToggle ? "kw-body" : "keyword-dialog-content"}>
-      <KeywordChips keywords={keywords} onRemove={onRemove} ai={ai} />
-      <KeywordInput attached={attached} known={known} onAdd={add} />
+      <KeywordChips keywords={keywords} onRemove={onRemove} ai={ai} disabled={loading} />
+      <KeywordInput attached={attached} known={known} onAdd={add} disabled={loading} />
       {recent.length > 0 && (
         <>
           <div className="kw-label">{t("library.keywording.recent")}</div>
           <div className="kw-recent">
             {recent.map((k) => (
-              <button key={k} className={attached.has(k) ? "on" : ""} title={path(k)}
+              <button key={k} disabled={loading} className={attached.has(k) ? "on" : ""} title={path(k)}
                       onClick={() => (attached.has(k) ? onRemove(k) : add([k]))}>{leaf(k)}</button>
             ))}
           </div>

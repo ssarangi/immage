@@ -135,6 +135,7 @@ import "./scenes.css";
 import { ScenesView } from "./ScenesView";
 import { scenesState, setScenesOn, useScenesOn } from "./scenesStore";
 import { KeywordingPanel } from "./Keywording";
+import { useCardHold } from "./cardHold";
 import { FindPanel } from "./FindPanel";
 import { CullDialog } from "./CullDialog";
 import { CullPanel } from "./CullPanel";
@@ -6436,6 +6437,8 @@ export default function App() {
   useEffect(() => {
     if (cellsPage && sheetKey) loader.current?.request(sheetKey.split(",").map(Number));
   }, [!!cellsPage, sheetKey]);
+  // Metadata and Keywording keep their place while the next photo opens (cardHold.ts)
+  const card = useCardHold(currentEntry, !!current, keywords);
   const cellsSheet = (() => {
     if (!cellsPage || viewerBox.w <= 0) return null;
     const { width: W, height: H } = cellsPage.page;
@@ -6749,7 +6752,7 @@ export default function App() {
                      placeLayers();
                      if (done) { updatePlacement(); session.current?.requestRender(); }
                    }} />
-        <MetadataPanel image={currentEntry} text={metaText}
+        <MetadataPanel image={card.entry} text={metaText}
                        onLocationSaved={(location) => currentEntry && patchImage(currentEntry.imgid, { location })}
                        onCaptureTime={() => { if (currentEntry) {
                          const sel = selectionRef.current;
@@ -6763,7 +6766,7 @@ export default function App() {
                          setMetaText((t) => (t ? { ...t, [field]: value } : t));
                          void setMeta(currentEntry.imgid, { [field]: value });
                        }} />
-        <KeywordingPanel keywords={currentEntry ? keywords : null} known={knownKeywords} photoPath={currentEntry?.path}
+        <KeywordingPanel keywords={card.keywords} loading={card.loading} known={knownKeywords} photoPath={currentEntry?.path}
                          open={leftOpen.has("keywording")} onToggle={(alt) => toggleLeft("keywording", alt)}
                          onAdd={(names) => void setPhotoKeywords(names, [])}
                          onRemove={(name) => void setPhotoKeywords([], [name])} />
