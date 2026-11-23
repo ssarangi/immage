@@ -817,12 +817,14 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .kw-chip.act { cursor: pointer; }
 .kw-chip.mixed { color: var(--text-2); }
 .kw-chip .kw-n { flex: none; opacity: 0.55; font-size: 0.92em; font-variant-numeric: tabular-nums; }
-/* confidence: a 2px line at the foot of the chip, always laid out, only shown for an Auto-keywords chip that has one */
-.kw-chip.ai[style*="--c"]::after {
-  content: ""; position: absolute; inset-inline: 6px; bottom: 1px; height: 2px; border-radius: 1px; opacity: 0.45; pointer-events: none;
-  background: linear-gradient(to right, currentColor var(--c), transparent var(--c));
-}
-[dir="rtl"] .kw-chip.ai[style*="--c"]::after { background: linear-gradient(to left, currentColor var(--c), transparent var(--c)); }
+/* confidence is in the tooltip, the accessible name and the sort order; a line under the chip read as a link underline */
+/* confidence as a tint of the chip, six steps from red (unsure) through yellow to green (sure); the exact figure stays in the tooltip and accessible name, so colour is never the only cue */
+.kw-chip.ai[data-conf="0"] { background: color-mix(in srgb, var(--cat-error) 24%, var(--inset)); }
+.kw-chip.ai[data-conf="1"] { background: color-mix(in srgb, color-mix(in srgb, var(--cat-error) 50%, var(--cat-warn)) 24%, var(--inset)); }
+.kw-chip.ai[data-conf="2"] { background: color-mix(in srgb, var(--cat-warn) 24%, var(--inset)); }
+.kw-chip.ai[data-conf="3"] { background: color-mix(in srgb, color-mix(in srgb, var(--cat-warn) 50%, var(--cat-ok)) 22%, var(--inset)); }
+.kw-chip.ai[data-conf="4"] { background: color-mix(in srgb, var(--cat-ok) 18%, var(--inset)); }
+.kw-chip.ai[data-conf="5"] { background: color-mix(in srgb, var(--cat-ok) 30%, var(--inset)); }
 .kw-auto-menu { flex: none; margin-inline-start: auto; display: inline-flex; }
 .kw-auto-more { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; background: none; border: none; border-radius: 4px; color: var(--text-3); cursor: pointer; }
 .kw-auto-more:hover, .kw-auto-more.on, .kw-auto-more:focus-visible { color: var(--text); background: var(--hover); }

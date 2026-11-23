@@ -821,7 +821,7 @@
   "keywording.aiTip": "Added automatically by Auto-keywords",
   "keywording.auto": "Auto-keywords",
   "keywording.autoChip": "{keyword}, added by Auto-keywords",
-  "keywording.groupTip": "Keywords added automatically by Auto-keywords. They are in English.",
+  "keywording.groupTip": "Keywords added automatically by Auto-keywords. They are in English. The tint shows how sure the model was: red unsure, yellow in between, green sure.",
   "keywording.more": "Show {n} more",
   "keywording.less": "Show fewer",
   "keywording.state.analysing": "analysing",

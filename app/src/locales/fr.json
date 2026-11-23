@@ -821,7 +821,7 @@
   "keywording.aiTip": "Ajouté automatiquement par les mots-clés automatiques",
   "keywording.auto": "Mots-clés automatiques",
   "keywording.autoChip": "{keyword}, ajouté par les mots-clés automatiques",
-  "keywording.groupTip": "Mots-clés ajoutés automatiquement. Ils sont en anglais.",
+  "keywording.groupTip": "Mots-clés ajoutés automatiquement. Ils sont en anglais. La teinte indique la confiance du modèle : rouge incertain, jaune intermédiaire, vert sûr.",
   "keywording.more": "Afficher {n} de plus",
   "keywording.less": "Afficher moins",
   "keywording.state.analysing": "analyse en cours",

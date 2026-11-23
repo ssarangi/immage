@@ -1057,7 +1057,8 @@ add it or take it off.
 When [Auto-keywords](preferences.md#general) is on, the keywords it adds are
 ordinary keywords in the photo's sidecar. This card keeps them apart from yours
 in an **Auto-keywords** group below the add box and above Recent keywords, each
-chip a little paler with a small sparkle (and "added by Auto-keywords" for a
+chip with a small sparkle and a tint from red (the model was unsure) through
+yellow to green (sure); hover one for the exact percentage (and "added by Auto-keywords" for a
 screen reader). The group's header says what it is doing: the number of
 keywords, **analysing** while photos wait for it, **nothing found**,
 **paused** (background work is paused) or **not running** (the model cannot

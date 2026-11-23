@@ -208,8 +208,9 @@ Improvements
   has not been through, **nothing found** only for one it has. Click an
   Auto-keywords keyword (or press Enter) to **keep** it as your own, so removing
   Auto-keywords keywords later never takes it off; its **...** menu has **Keep
-  all**, **Remove all from this photo** and **Auto-keywords settings**. Hovering
-  one shows how sure the model was, and the surest come first. With several
+  all**, **Remove all from this photo** and **Auto-keywords settings**. Each
+  one is tinted from red (unsure) through yellow to green (sure), hovering shows
+  the exact percentage, and the surest come first. With several
   photos selected, the card shows the keywords all of them share and, paler with
   an n/m count, the ones on only some; click one to add it to all. The **×** on
   an Auto-keywords keyword now removes it from that photo only and it is not
