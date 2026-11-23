@@ -816,7 +816,8 @@ the background), so the rules never guess. Manual decisions always win.
 undecided, without writing anything; the numbers dim when a rule, a score or a
 choice has changed since. Frames already rejected are not counted as rejects:
 the panel notes how many there are and leaves them alone. When the rules would
-keep or reject nothing, the panel says so and Apply stays off. **Review piles** opens a review in the grid's place:
+keep or reject nothing, the panel says so and Apply stays off.
+**Review piles** opens a review in the grid's place:
 one row per scene with a **Keep** pile and a **Reject** pile side by side.
 Click a frame to move it to the other pile, or use **Keep all** and **Reject all**
 for a scene; your calls win over the rules. **Apply** writes the previewed

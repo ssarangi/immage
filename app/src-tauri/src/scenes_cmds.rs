@@ -395,7 +395,8 @@ pub(crate) async fn scenes_rules_plan(app: AppHandle, label: String, request: Ru
         };
         let (items, failed) = scenes_rules::plan_items(&request.scenes, &verdicts, &known);
         if items.is_empty() {
-            return Err("the rules leave nothing to keep or reject".to_string());
+            return Err(if failed.is_empty() { "the rules leave nothing to keep or reject".to_string() }
+                else { "none of the photos the rules would change can be read".to_string() });
         }
         let failed: Vec<CullFailure> = failed.into_iter().map(|(path, error)| CullFailure { path, error }).collect();
         let (session, decisions) = store.create_session(&label, &crate::cull_plan::CullSettings::default(), items, failed)?;

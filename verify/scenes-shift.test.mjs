@@ -151,6 +151,14 @@ test('rules panel texts: the panel, its preview counts and the piles review say 
   for (const word of ['Règles de scène', 'Garder les meilleures', 'Qualité minimale', 'Aperçu des règles', 'Revoir les piles', 'Appliquer', 'Tout garder', 'Tout rejeter']) assert.match(fr, new RegExp(word));
 });
 
+test('rules panel: a preview that changes nothing says so plainly and leaves Apply off (en and fr)', { skip }, () => {
+  const en = dump('view=nothing', 1440, 900, [], 8000);
+  assert.match(text(en), /would not keep or reject any frame, so there is nothing to apply/);
+  assert.match(text(en), /6 frames are already rejected and stay as they are/);
+  assert.match(en, /<button[^>]*class="btn primary"[^>]*disabled[^>]*>Apply</, 'Apply is enabled with nothing to apply');
+  assert.match(text(dump('view=nothing', 1440, 900, ['--accept-lang=fr'], 8000)), /rien à appliquer/);
+});
+
 test('20,000 photos: the piles review mounts a bounded number of rows however far it is scrolled', { skip }, () => {
   const r = report(dump('shift=1&size=big&view=piles&theme=dark', 1440, 900, [], 170000));
   assert.equal(r.error, undefined, r.error);

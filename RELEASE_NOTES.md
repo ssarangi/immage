@@ -33,7 +33,8 @@ Improvements
   of every scene, rejects frames under a minimum quality, always keeps frames
   rated at least a chosen number of stars and the ones you accepted, and keeps
   or skips single frames. **Preview rules** counts what would be kept, rejected
-  and left alone (frames already rejected are noted, not counted), **Review piles** shows a Keep and a Reject pile per scene
+  and left alone (frames already rejected are noted, not counted),
+  **Review piles** shows a Keep and a Reject pile per scene
   where you can move frames, and **Apply** flags the rejects in place as one
   undoable cull session (nothing is moved or deleted). Photos' cached quality
   scores from earlier versions are measured again once, to find their sharpest

@@ -157,7 +157,7 @@ function fakePreview() {
   const verdicts = fakeVerdicts();
   const flat = verdicts.flat();
   const n = (p: string) => flat.filter((v) => v.startsWith(p)).length;
-  return { counts: { keep: n("keep"), reject: n("reject"), undecided: n("undecided") }, verdicts } as never;
+  return { counts: { keep: n("keep"), reject: n("reject"), undecided: n("undecided"), alreadyRejected: 0 }, verdicts } as never;
 }
 (window as unknown as { __fake: unknown }).__fake = { fakeVerdicts, fakePreview };
 
@@ -203,6 +203,8 @@ function Harness() {
     }
     if (view === "scene") openScene(Number(q.get("scene") ?? 1));
     if (view === "rules" || view === "piles") setScenes({ preview: fakePreview(), previewStale: false, piles: view === "piles" });
+    // a preview where the rules change nothing but some frames were already rejected: the panel says so and Apply stays off
+    if (view === "nothing") setScenes({ preview: { counts: { keep: 0, reject: 0, undecided: 394, alreadyRejected: 6 }, verdicts: [] }, previewStale: false });
     if (q.get("shift") === "1") void (view === "scene" ? runSceneViewShift() : view === "rules" || view === "piles" ? runRulesShift(view === "piles") : runScenesShift()).then((r) => r, (e) => ({ ok: false, error: String(e?.stack ?? e) }))
       .then((r) => { const el = document.getElementById("shift-report")!; el.textContent = JSON.stringify(r); el.dataset.done = "1"; });
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -215,7 +217,7 @@ function Harness() {
         <div style={{ position: "relative", height: "100%" }}>
           <div className="scenes-host"><ScenesView entries={shown} onMeta={onMeta} autoBuild={false} /></div>
         </div>
-        {(view === "rules" || view === "piles") && <aside className="right" style={{ position: "absolute", insetBlock: 0, insetInlineEnd: 0, width: 340, display: "flex", flexDirection: "column", background: "var(--panel)", zIndex: 5 }}>
+        {(view === "rules" || view === "piles" || view === "nothing") && <aside className="right" style={{ position: "absolute", insetBlock: 0, insetInlineEnd: 0, width: 340, display: "flex", flexDirection: "column", background: "var(--panel)", zIndex: 5 }}>
           <SceneRules entries={shown} onChanges={noop} /></aside>}
       </div>
     </div>

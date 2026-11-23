@@ -25,11 +25,12 @@ export function SceneRules({ entries, onChanges }: { entries: ImageEntry[]; onCh
   const session = s.ruleSession;
   const applied = session?.state === "applied";
   const counts = s.preview?.counts;
+  const nothingToDo = fresh && counts !== undefined && counts.keep + counts.reject === 0;
   const num = (n: number | undefined) => (n === undefined ? "-" : formatNumber(n));
   const folder = (s.items[0]?.path ?? "").split(/[\\/]/).slice(-2, -1)[0] ?? "";
 
   async function apply() {
-    if (!s.model || !fresh || busy || applied) return;
+    if (!s.model || !fresh || busy || applied || nothingToDo) return;
     setBusy(true); setScenes({ ruleNote: null });
     try {
       const plan = await commands.scenesRulesPlan(t("cull.scenes.rules.sessionLabel", { folder }),
@@ -99,10 +100,11 @@ export function SceneRules({ entries, onChanges }: { entries: ImageEntry[]; onCh
           <span><bdi dir="ltr">{t("cull.scenes.rules.reject")} {num(counts?.reject)}</bdi></span>
           <span><bdi dir="ltr">{t("cull.scenes.rules.undecided")} {num(counts?.undecided)}</bdi></span>
         </p>
-        <p className="note-plain scene-rule-state">{t(s.preview === null ? "cull.scenes.rules.nothingYet" : s.previewStale ? "cull.scenes.rules.stale" : "cull.scenes.rules.promise")}</p>
+        <p className="note-plain scene-rule-state">{t(s.preview === null ? "cull.scenes.rules.nothingYet" : s.previewStale ? "cull.scenes.rules.stale" : nothingToDo ? "cull.scenes.rules.nothingToDo" : "cull.scenes.rules.promise")}
+          {counts && counts.alreadyRejected > 0 ? ` ${t("cull.scenes.rules.alreadyRejected", { n: counts.alreadyRejected, count: formatNumber(counts.alreadyRejected) })}` : ""}</p>
         <div className="cull-actions">
           <button type="button" className="btn" disabled={!fresh || busy} onClick={() => setScenes({ piles: true })}>{t("cull.scenes.rules.review")}</button>
-          <button type="button" className="btn primary" disabled={!fresh || busy || applied} onClick={() => void apply()}>{t("cull.scenes.rules.apply")}</button>
+          <button type="button" className="btn primary" disabled={!fresh || busy || applied || nothingToDo} onClick={() => void apply()}>{t("cull.scenes.rules.apply")}</button>
           <button type="button" className="btn" disabled={!applied || busy} onClick={() => void undo()}>{t("cull.scenes.rules.undo")}</button>
         </div>
       </div>

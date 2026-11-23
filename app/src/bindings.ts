@@ -2368,8 +2368,11 @@ export type RootStatus = {
 
 export type RuleCounts = {
 	keep: number,
+	/**  frames Apply would reject: already rejected frames are not among them */
 	reject: number,
 	undecided: number,
+	/**  frames rejected in the library before, left as they are */
+	alreadyRejected: number,
 };
 
 export type RuleFrame = {

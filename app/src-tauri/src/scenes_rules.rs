@@ -128,8 +128,11 @@ impl Verdict {
 #[serde(rename_all = "camelCase")]
 pub struct RuleCounts {
     pub keep: u32,
+    /// frames Apply would reject: already rejected frames are not among them
     pub reject: u32,
     pub undecided: u32,
+    /// frames rejected in the library before, left as they are
+    pub already_rejected: u32,
 }
 
 pub fn counts(verdicts: &[Vec<Verdict>]) -> RuleCounts {
@@ -137,6 +140,7 @@ pub fn counts(verdicts: &[Vec<Verdict>]) -> RuleCounts {
     for v in verdicts.iter().flatten() {
         match v.kind() {
             Kind::Keep => out.keep += 1,
+            Kind::Reject if *v == Verdict::RejectedAlready => out.already_rejected += 1,
             Kind::Reject => out.reject += 1,
             Kind::Undecided => out.undecided += 1,
         }
@@ -433,5 +437,60 @@ mod tests {
         undo_session(&store, session.id, &library).unwrap();
         assert!(!library.0.lock().unwrap()["/s/b"].rejected);
         assert_eq!(library.0.lock().unwrap()["/s/b"].rating, 2);
+    }
+
+    fn mixed_library() -> Vec<RuleScene> {
+        // like a folder of single frames with a few bursts, some scored, some already rejected
+        let mut scenes = Vec::new();
+        for i in 0..40 {
+            let mut fr = f(&format!("single{i}"), if i % 3 == 0 { None } else { Some(0.5) });
+            fr.rejected = i % 7 == 0;
+            fr.rating = (i % 5) as u32;
+            scenes.push(scene(vec![fr]));
+        }
+        scenes.push(scene(vec![f("b1", Some(0.9)), f("b2", Some(0.4)), f("b3", Some(0.1))]));
+        let mut already = f("c1", Some(0.8));
+        already.rejected = true;
+        scenes.push(scene(vec![already, f("c2", Some(0.7)), f("c3", None)]));
+        scenes.push(scene(vec![f("d1", Some(0.2)), f("d2", Some(0.6))]));
+        scenes
+    }
+
+    fn plan_counts(scenes: &[RuleScene], r: &Rules) -> RuleCounts {
+        let verdicts = evaluate(scenes, r);
+        let known = |_: &RuleFrame| Some(Known { analysis: None, size: 1, modified_ms: 1 });
+        let (items, failed) = plan_items(scenes, &verdicts, &known);
+        assert!(failed.is_empty());
+        let keep = items.iter().filter(|i| i.planned.proposed == CullStatus::Keep).count() as u32;
+        let reject = items.iter().filter(|i| i.planned.proposed == CullStatus::Reject).count() as u32;
+        RuleCounts { keep, reject, ..Default::default() }
+    }
+
+    #[test]
+    fn already_rejected_frames_are_not_counted_as_rejects_the_plan_would_write() {
+        // every frame is a single, already rejected: the preview used to say "Reject 6" while the plan had nothing
+        let scenes: Vec<RuleScene> = (0..6).map(|i| scene(vec![RuleFrame { rejected: true, ..f(&format!("r{i}"), Some(0.5)) }])).collect();
+        let r = Rules::default();
+        let c = counts(&evaluate(&scenes, &r));
+        let p = plan_counts(&scenes, &r);
+        assert_eq!((c.keep, c.reject), (p.keep, p.reject));
+        assert_eq!(c.already_rejected, 6);
+    }
+
+    #[test]
+    fn preview_counts_equal_plan_counts_across_rule_combinations() {
+        let scenes = mixed_library();
+        for keep_best in [0, 1, 2, 3] {
+            for min_quality in [0, 30, 80] {
+                for always_keep in [false, true] {
+                    for singles_keep in [false, true] {
+                        let r = Rules { keep_best, min_quality, always_keep, rated_at_least: 3, singles_keep };
+                        let c = counts(&evaluate(&scenes, &r));
+                        let p = plan_counts(&scenes, &r);
+                        assert_eq!((c.keep, c.reject), (p.keep, p.reject), "{r:?}");
+                    }
+                }
+            }
+        }
     }
 }
