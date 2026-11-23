@@ -810,8 +810,8 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .kw-chip button:disabled { cursor: default; opacity: 0.35; }
 @keyframes kw-fade { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .kw-chip { animation: none; } .kw-chip button { transition: none; } }
-/* what Auto-keywords added: the faintest tint, muted text and a sparkle; no border, no badge */
-.kw-chip.ai { color: var(--text-2); background: color-mix(in srgb, var(--text) 7%, var(--inset)); }
+/* what Auto-keywords added: the faintest tint, full-strength text (muted text failed 4.5 contrast on the grey themes) and a sparkle; no border, no badge */
+.kw-chip.ai { color: var(--text); background: color-mix(in srgb, var(--text) 7%, var(--inset)); }
 .kw-spark { flex: none; opacity: 0.9; }
 .kw-more {
   height: 24px; min-width: 28px; padding: 0 6px; display: inline-grid; place-items: center; background: none; border: none;
