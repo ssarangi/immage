@@ -1279,16 +1279,19 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   display: grid; grid-template-columns: repeat(auto-fill, var(--grid-column, 230px));
   justify-content: center;
   flex: 1; height: auto; align-content: start; gap: 6px;
-  /* the scrolling area stops 10px short of the surface's top and bottom edge (a margin, not padding,
-     which would scroll away), so photos are cut by an edge inside the surface with a clean band of
-     surface above and below, not by the surface's own border */
-  margin: 18px 8px; padding: 0 10px; border-radius: var(--radius-card); overflow-x: hidden; overflow-y: auto;
+  margin: 8px; padding: 10px; border-radius: var(--radius-card); overflow-x: hidden; overflow-y: auto;
 }
 /* the recessed surface is drawn on the slot, behind the scrolling photos; recessed below the
    window color so it separates from the panel behind it in every theme */
 .strip-slot.grid::before {
   content: ""; position: absolute; inset: 8px; z-index: -1; border-radius: var(--radius-card); pointer-events: none;
-  background: color-mix(in srgb, var(--window) 72%, black); box-shadow: inset 0 0 0 1px var(--inset);
+  background: color-mix(in srgb, var(--window) 72%, black);
+}
+/* the frame is drawn over the photos, not under them: a photo cut by the edge as it scrolls ends
+   at a clean 1px line, like a viewport, instead of fading into or merging with the surface */
+.strip-slot.grid::after {
+  content: ""; position: absolute; inset: 8px; z-index: 1; border-radius: var(--radius-card); pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--border, var(--inset));
 }
 html[data-scheme="light"] .strip-slot.grid::before { background: color-mix(in srgb, var(--window) 94%, black); }
 .filmstrip.grid.empty { display: flex; align-items: center; justify-content: center; }
