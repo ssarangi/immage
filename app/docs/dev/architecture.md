@@ -128,7 +128,7 @@ identifiers.
 | [zoom.ts](../../src/zoom.ts) | The `Zoom` levels and the `Placement` type that App.tsx, Toolbar and Navigator share. |
 | [icons.tsx](../../src/icons.tsx) | `icon()` and every outline icon component (`FolderIcon`, `SlidersIcon`, `PanelIcon`, ...). |
 | [Toolbar.tsx](../../src/Toolbar.tsx) | The bar under the filmstrip (`Toolbar`), `ZoomBar`, `ResetAll` and the panel `Splitter`. |
-| [Filmstrip.tsx](../../src/Filmstrip.tsx) | The filmstrip and grid (`Filmstrip`, `FilmCell`, `KnownCell`, `GhostCell`), the thumbnail canvases (`ThumbCanvas`, `CellCanvas`), `ThumbProgress`, `InfoOverlay` and `pairedRaws`. |
+| [Filmstrip.tsx](../../src/Filmstrip.tsx) | The filmstrip and grid (`Filmstrip`, windowed: only the cells near the screen exist, between two spacers, from the strip's size and the cells' pitch; `FilmCell`, `KnownCell`, `GhostCell`), the thumbnail canvases (`ThumbCanvas`, `CellCanvas`), `ThumbProgress`, `InfoOverlay` and `pairedRaws`. |
 | [ActivityBar.tsx](../../src/ActivityBar.tsx) | The activity line's progress bar and a background job's row (`ActivityBar`, `JobActivity`). |
 | [FileMenu.tsx](../../src/FileMenu.tsx) | A photo's right-click menu, with `hdrBrackets` and `panoFrames` for its merge items. |
 | [HistogramView.tsx](../../src/HistogramView.tsx) | The histogram and darktable's other scopes, and the scope menu (`HistogramView`, `ScopeMenu`, `loadScope`). |
@@ -243,7 +243,7 @@ and one undo after Done.
 
 | File | Responsibility |
 |---|---|
-| [library.ts](../../src/library.ts) | `ImageEntry`, and `Known`: a photo as the folder's last read found it; `openFolder` (batches arriving as `folder-progress` events); `withKnown`, the read and known photos in one order; RAW+JPEG pairing; `ThumbLoader`, which fetches two thumbnails from the engine at a time, alongside editing, shows a known photo's last thumbnail until it is checked, and lets those off screen longest go past the memory budget's thumbnail share. |
+| [library.ts](../../src/library.ts) | `ImageEntry`, and `Known`: a photo as the folder's last read found it; `openFolder` (batches arriving as `folder-progress` events); `withKnown`, the read and known photos in one order; RAW+JPEG pairing; `ThumbLoader`, which fetches two thumbnails from the engine at a time, alongside editing, only for the cells near the screen (`request`, `retain`), shows a known photo's last thumbnail until it is checked, and lets those off screen longest go past the memory budget's thumbnail share. |
 | [FolderTree.tsx](../../src/FolderTree.tsx) | The Folders adapter of the shared tree: reads `list_subfolders`, builds the flat row list (a heading per drive when folders are on more than one drive, from `folder_volumes`, read again every 10 s, its dot green while the drive answers and red while it does not), and owns the drag and drop, New Folder (an inline `NameEdit` row first among the subfolders, then `create_folder`) and the host rename. The photo's folder and "Show in Folders" are scrolled to by key. |
 | [FolderTreeView.tsx](../../src/FolderTreeView.tsx) / [folderTreeModel.ts](../../src/folderTreeModel.ts) | The one folder tree both lists draw: a flat `TreeRow[]` in `role="tree"` with `aria-level`/`setsize`/`posinset`, a roving tab stop, the keyboard map (Left and Right swap in RTL), type-ahead, rows of one fixed height (`ROW_HEIGHT`, 28 px) and a window of rows above 400 (`windowRows`; the tab stop stays mounted). It draws no row content: adapters pass `renderItem`, `renderOther` and `rowAttrs`. The model has no React and is tested in verify/folder-tree.test.mjs. |
 | [FolderMenu.tsx](../../src/FolderMenu.tsx) | A folder's right-click menu for both trees (`variant`), and the `FolderTools` App supplies (Cull, Statistics, Add to Catalog, Show in Catalog / Folders, Remove). |
@@ -1169,13 +1169,26 @@ correct folder. Check that sidecars are saved before files move.
 
 ### Thumbnail scheduling while scrolling
 
-Filmstrip's IntersectionObserver tracks the actual viewport, clearing its
-visible IDs when rebuilt or unmounted. ThumbLoader partitions its queue by
-current visibility on every scheduling pass, including after asynchronous disk
-reads and render completions. Visible cache checks run first, in batches of
-eight; visible cache misses then take the two engine slots before off-screen
-cache checks. Already running reads and renders finish normally. A rendering
-ID set prevents repeat viewport requests from queueing duplicate renders.
+Filmstrip draws only the cells near the screen (a viewport of overscan each
+side), computed from the strip's size, its scroll position and the cells'
+pitch, with a spacer for the rest; a grid's column count follows CSS's
+`auto-fill` rule. The same window drives the loader: `ThumbLoader.show` marks
+the photos on screen, `request` asks for them first and then for the overscan,
+and `retain` drops whatever scrolled away before it was reached, so the engine
+is never asked for a photo nobody can see. App.tsx no longer asks for a whole
+folder at once. ThumbLoader keeps `wanted` (the truth) and two orders over it
+(`front` for what was asked for first, `fifo` for the rest) with a cursor each
+for disk reads and renders, so every step costs the same however long the
+folder is. Visible cache checks run first, in batches of eight; visible
+misses then take the engine slots before off-screen cache checks. Already
+running reads and renders finish normally. A rendering ID set prevents repeat
+requests from queueing duplicate renders. While a Catalog thumbnail job runs,
+thumbSignals.ts tells it (`thumbnails_busy`) that the page is in use, so it
+waits `QUIET_MS` after the last click, key, wheel turn or pointer move, and
+(`thumbnails_hint`) which photos are on screen, so it makes those next.
+`benchmarking/large-catalog-js.mjs`, `large-catalog-engine.py`,
+`verify/large-folder.test.mjs` and `verify/large-grid.test.mjs` measure and
+check this; the numbers are in notes/large-catalog-perf.md.
 
 Verify on an uncached large folder: scroll far down while thumbnails load,
 then back up. The next free render slots should serve the current viewport

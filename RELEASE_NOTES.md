@@ -185,6 +185,18 @@ Improvements
 
 Performance
 
+- **Large folders:** a folder of 10,000 photos or more no longer makes the
+  whole app sluggish. The grid and the filmstrip now draw only the photos on or
+  near the screen, so opening a 9,653-photo folder takes 0.6 seconds instead of
+  3, a click or a rating redraws in 15 milliseconds instead of 100 to 250, and
+  the page's memory drops from 190 MB to 40 MB. Thumbnails are made for what is
+  on screen and just beyond it, not for the whole folder, so "Loading
+  thumbnails" no longer runs for minutes and what you scroll to comes first.
+  The page's thumbnail queue and the folder's merge of each batch of photos no
+  longer slow down with the square of the folder's size (a folder of 30,000
+  photos took 20 seconds of page time to queue). The Catalog's background
+  thumbnail job now waits while you click, type or scroll, and makes the photos
+  on screen next.
 - **Indexing large folders:** storing photo metadata in the search index no
   longer slows down as the index grows. A batch of 20,000 photos took 9 seconds
   (30 seconds when many photos shared a fingerprint) and now takes 1.6 seconds.

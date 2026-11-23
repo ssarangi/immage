@@ -56,7 +56,7 @@ import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone
 
 import { type ClipShow, type Histogram, type ScopeSettings } from "./histogram";
 import { applyCacheLimits } from "./CachePrefs";
-import { fetchThumb, fileKind, kindsInclude, isCompanion, isPrimaryRaw, loadIncludeSubfolders, openFolder, pairKey, pairPartners, storeIncludeSubfolders, ThumbLoader, byCaptureTime, knownKey, withKnown, type ImageEntry, type Known } from "./library";
+import { fetchThumb, fileKind, kindsInclude, isCompanion, isPrimaryRaw, loadIncludeSubfolders, openFolder, pairKey, pairPartners, storeIncludeSubfolders, ThumbLoader, byCaptureTime, mergeByCaptureTime, knownKey, withKnown, type ImageEntry, type Known } from "./library";
 import { known, MetadataPanel, type TextFields } from "./MetadataPanel";
 import { HistoryPanel, stepName } from "./HistoryPanel";
 import { VignetteOverlay } from "./VignetteOverlay";
@@ -79,6 +79,7 @@ import { Tour, tourSeen } from "./Tour";
 import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 
+import { watchUse } from "./thumbSignals";
 import { loadFrameCacheMb, loadThumbMemoryMb, refreshMemoryBudget } from "./memoryBudget";
 import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadEditMode, storeEditMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadNewPhotosLensMethod, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, loadGridSize, storeGridSize, clampGridSize, GRID_SIZE_MIN, GRID_SIZE_MAX, GRID_SIZE_DEFAULT, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type PanelPins, type Pins, type PrefsTab, type Preview, type EditMode } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
@@ -238,6 +239,8 @@ export default function App() {
   const [foldedVolumes, setFoldedVolumes] = useState<Set<string>>(() => new Set(loadLibrary().foldedVolumes));
   const [hostNames, setHostNames] = useState<Record<string, string>>(() => loadLibrary().hostNames ?? {});
   useEffect(() => { void refreshMemoryBudget(); }, []);
+  // the Catalog's thumbnail job waits while the page is in use
+  useEffect(() => watchUse(), []);
   // read again every few seconds, for the drive headings' dots: a share
   // that comes back has its folders' subfolders read again
   useEffect(() => {
@@ -268,9 +271,21 @@ export default function App() {
   // copies share its path; until the engine has said, the file's original
   const isOpen = (i: ImageEntry, o = currentRef.current) =>
     !!o && (o.imgid !== null ? i.imgid === o.imgid : i.path === o.path && !i.copy);
+  // the folder's photos by imgid, for the thumbnail loader, which asks for
+  // each one; built once for each list the folder's reading makes
+  const imageIndex = useRef<{ list: ImageEntry[]; byId: Map<number, ImageEntry> } | null>(null);
+  const imageById = (imgid: number) => {
+    const list = imagesRef.current;
+    if (imageIndex.current?.list !== list) {
+      const byId = new Map<number, ImageEntry>();
+      for (const i of list) if (!byId.has(i.imgid)) byId.set(i.imgid, i);
+      imageIndex.current = { list, byId };
+    }
+    return imageIndex.current.byId.get(imgid);
+  };
   const loader = useRef<ThumbLoader | null>(null);
   if (!loader.current)
-    loader.current = new ThumbLoader((imgid) => imagesRef.current.find((i) => i.imgid === imgid),
+    loader.current = new ThumbLoader(imageById,
                                      () => loadThumbMemoryMb() * 1024 * 1024,
                                      // the server's refusal is said once, not hidden behind placeholders
                                      (imgid, e) => {
@@ -3155,17 +3170,14 @@ export default function App() {
         // an Immich search took the filmstrip while this was read
         if (immichRef.current) return;
         // a refresh's photos are on show already
-        if (last && !again) {
-          known = last;
-          loader.current!.request(byCaptureTime(known).map(knownKey));
-        }
+        if (last && !again) known = last;
         if (all) {
           files = all;
           listed = true;
         }
-        got = byCaptureTime(edits.apply([...got, ...batch]));
+        // `got` is in order already, and `edits` keeps its order
+        got = edits.apply(mergeByCaptureTime(got, batch));
         if (!again && batch.length) { updateImages(got); seen?.(got); }
-        loader.current!.request(batch.map((i) => i.imgid));
         setReading({ done, total, files: again ? [] : files, listed, known });
       });
       if (immichRef.current) return list;
@@ -3214,7 +3226,6 @@ export default function App() {
       const next = sources.some(([, v]) => v.next) ? "more" : null;
       const list = preserveSearchEntries(state.results.map(r => r.item), imagesRef.current);
       updateImages(list);
-      loader.current?.request(list.map(i => i.imgid));
       setImmich({ search: q.form, next, busy });
       const errors = sources.filter(([, v]) => v.error).map(([name, v]) => `${name}: ${indexChanged(v.error) ? t("app.status.searchIndexChanged") : String(v.error)}`);
       setStatus(t("app.status.searchResults", { count: list.length.toLocaleString(), more: next ? "+" : "", busy: busy ? t("app.status.searchBusy") : "", errors: errors.length ? t("app.status.searchErrors", { errors: errors.join("; ") }) : "" })
@@ -3368,7 +3379,6 @@ export default function App() {
       setReading(null);
       setGrid(true);
       updateImages(list);
-      loader.current?.request(list.map((i) => i.imgid));
       setStatus(t("app.status.statsResult", { count: list.length.toLocaleString(), filter: title }));
     } catch (e) {
       setStatus(t("app.status.error", { error: e }));
@@ -6339,11 +6349,17 @@ export default function App() {
 
   // stacked pairs: a raw's JPEG or HEIF hides behind it, unless the
   // filters leave the raw out
-  const partners = stackPairs ? pairPartners(images) : new Map<number, ImageEntry[]>();
+  // the work of these three is for the whole folder, and every render of the
+  // page, a frame or a slider among them, would repeat it: they are kept
+  // until the photos, the pairing or a filter changes
+  const partners = useMemo(() => stackPairs ? pairPartners(images) : new Map<number, ImageEntry[]>(), [stackPairs, images]);
   partnersRef.current = partners;
   // results show through the filter their search used: an Immich-only search hides the folder lists
-  const passing = images.filter((i) => immich ? passesSearch(i, effectiveFilter(find, !!immichBase)) : passes(i, filter));
-  const behind = new Set(passing.flatMap((i) => (partners.get(i.imgid) ?? []).map((p) => p.imgid)));
+  const passing = useMemo(
+    () => images.filter((i) => immich ? passesSearch(i, effectiveFilter(find, !!immichBase)) : passes(i, filter)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [images, !!immich, immichForm, filter, immichBase]);
+  const behind = useMemo(() => new Set(passing.flatMap((i) => (partners.get(i.imgid) ?? []).map((p) => p.imgid))), [passing, partners]);
   // the photos the folder's last read found that this one has not reached:
   // shown as they were, through the filters, until they are read. once the
   // folder is listed, those no longer in it go

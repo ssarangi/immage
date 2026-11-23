@@ -90,11 +90,29 @@ export async function openFolder(path: string, recursive = false, skip: string[]
 // engine's "YYYY:MM:DD HH:MM:SS" sorts as text; a photo without one goes by
 // its file's time (takenAt), photos with neither go last, and ties keep the
 // name order the folder was read in
+const captureOrder = (a: Known, b: Known) => {
+  const p = takenAt(a), q = takenAt(b);
+  return !p || !q ? Number(!p) - Number(!q) : p < q ? -1 : p > q ? 1 : 0;
+};
 export function byCaptureTime<T extends Known>(images: T[]): T[] {
-  return [...images].sort((a, b) => {
-    const p = takenAt(a), q = takenAt(b);
-    return !p || !q ? Number(!p) - Number(!q) : p < q ? -1 : p > q ? 1 : 0;
-  });
+  return [...images].sort(captureOrder);
+}
+
+// `sorted`, already by capture time, with `more` placed in it: what
+// byCaptureTime([...sorted, ...more]) gives, in one pass over `sorted`
+// rather than a sort of every photo for each batch a folder's read brings.
+// a tie keeps the photos already there first
+export function mergeByCaptureTime<T extends Known>(sorted: T[], more: T[]): T[] {
+  if (!more.length) return sorted;
+  const add = byCaptureTime(more);
+  const out: T[] = [];
+  let j = 0;
+  for (const i of sorted) {
+    while (j < add.length && captureOrder(add[j], i) < 0) out.push(add[j++]);
+    out.push(i);
+  }
+  while (j < add.length) out.push(add[j++]);
+  return out;
 }
 
 // the photos read so far and the known ones not yet read, in the order the
@@ -240,7 +258,16 @@ export class ThumbLoader {
   private visible = new Set<Id>();
   private seen = new Map<Id, number>();
   private clock = 0;
-  private queue: Id[] = [];
+  // what is wanted and not yet loaded. `wanted` is the truth; `front` (asked
+  // for first, newest first) and `fifo` (in order) only say in what order,
+  // and may hold ids since dropped, which are skipped when reached. nothing
+  // scans them whole: disk reads and renders each walk their own cursor, so
+  // a folder's thousands of cells cost the same per photo as a handful
+  private wanted = new Set<Id>();
+  private front: Id[] = [];
+  private fifo: Id[] = [];
+  private diskHead = 0;
+  private renderHead = 0;
   private running = false;
   // engine thumbnails under way, and run() waiting for one to finish
   private inFlight = 0;
@@ -302,13 +329,37 @@ export class ThumbLoader {
   // load these, in this order, after anything already asked for first
   request(ids: Id[], first = false) {
     for (const id of ids) if (typeof id === "number") this.adopt(id);
-    const wanted = ids.filter((id) => !this.rendering.has(id) &&
-      (!this.cache.has(id) || (typeof id === "number" && this.unverified.has(id))));
-    wanted.forEach((id) => { if (typeof id === "number") this.asked.add(id); });
-    this.queue = first ? [...wanted, ...this.queue.filter((id) => !wanted.includes(id))]
-                       : [...this.queue, ...wanted.filter((id) => !this.queue.includes(id))];
-    if (wanted.length) this.progressed();
+    const fresh: Id[] = [];
+    for (const id of ids) {
+      if (this.rendering.has(id) || (this.cache.has(id) && !(typeof id === "number" && this.unverified.has(id)))) continue;
+      if (typeof id === "number") this.asked.add(id);
+      if (this.wanted.has(id) && !first) continue;
+      this.wanted.add(id);
+      fresh.push(id);
+    }
+    if (first) {
+      const now = new Set(fresh);
+      this.front = [...fresh, ...this.front.filter((id) => !now.has(id) && this.wanted.has(id))];
+    } else this.fifo.push(...fresh);
+    if (fresh.length) this.progressed();
     void this.run();
+  }
+
+  // the cells on screen or near it are what is wanted: what was asked for and
+  // has scrolled far away is dropped, unless the engine is already on it
+  retain(keep: ReadonlySet<Id>) {
+    let dropped = false;
+    for (const id of this.wanted) {
+      if (keep.has(id) || this.visible.has(id)) continue;
+      this.wanted.delete(id);
+      if (typeof id === "number" && !this.done.has(id)) this.asked.delete(id);
+      dropped = true;
+    }
+    if (!dropped) return;
+    this.front = this.front.filter((id) => this.wanted.has(id));
+    this.fifo = this.fifo.slice(Math.min(this.diskHead, this.renderHead)).filter((id) => this.wanted.has(id));
+    this.diskHead = this.renderHead = 0;
+    this.progressed();
   }
 
   // an image just read takes its known thumbnail, unchecked
@@ -345,7 +396,8 @@ export class ThumbLoader {
     this.refreshTimers.set(imgid, window.setTimeout(() => {
       this.refreshTimers.delete(imgid);
       this.stale.add(imgid);
-      this.queue = [imgid, ...this.queue.filter((id) => id !== imgid)];
+      this.wanted.add(imgid);
+      this.front = [imgid, ...this.front.filter((id) => id !== imgid)];
       void this.run();
     }, 2000));
   }
@@ -363,7 +415,10 @@ export class ThumbLoader {
     this.bytes = 0;
     this.visible.clear();
     this.seen.clear();
-    this.queue = [];
+    this.wanted.clear();
+    this.front = [];
+    this.fifo = [];
+    this.diskHead = this.renderHead = 0;
     this.stale.clear();
     this.unverified.clear();
     this.adopted.clear();
@@ -373,25 +428,60 @@ export class ThumbLoader {
     this.progressed();
   }
 
-  // up to eight queued that may be on disk, with their entries (none for
-  // a known thumbnail)
+  // up to eight wanted ones that may be on disk, with their entries (none
+  // for a known thumbnail): those on screen first, then in the order asked
   private nextOnDisk(visibleOnly: boolean): [Id, ImageEntry | null][] {
     const out: [Id, ImageEntry | null][] = [];
-    for (const id of this.queue) {
-      if (visibleOnly && !this.visible.has(id)) continue;
-      if (out.length === 8) break;
+    const take = (id: Id) => {
       if (typeof id === "string") {
-        if (this.tried.has(id) || this.cache.has(id) || this.adopted.has(id)) continue;
+        if (this.tried.has(id) || this.cache.has(id) || this.adopted.has(id)) return;
         this.tried.add(id);
         out.push([id, null]);
-        continue;
+        return;
       }
-      if (id < 0 || this.tried.has(id) || this.stale.has(id) || (this.cache.has(id) && !this.unverified.has(id))) continue;
+      if (id < 0 || this.tried.has(id) || this.stale.has(id) || (this.cache.has(id) && !this.unverified.has(id))) return;
       this.tried.add(id);
       const entry = this.entryOf(id);
       if (entry) out.push([id, entry]);
+    };
+    for (const id of this.visible) {
+      if (out.length === 8) return out;
+      if (this.wanted.has(id)) take(id);
     }
+    if (visibleOnly) return out;
+    for (const id of this.front) {
+      if (out.length === 8) return out;
+      if (this.wanted.has(id)) take(id);
+    }
+    while (this.diskHead < this.fifo.length && out.length < 8) {
+      const id = this.fifo[this.diskHead++];
+      if (this.wanted.has(id)) take(id);
+    }
+    this.compact();
     return out;
+  }
+
+  // the next to render: on screen first, then in the order asked
+  private nextToRender(): Id | undefined {
+    for (const id of this.visible) if (this.wanted.has(id)) return id;
+    while (this.front.length) {
+      const id = this.front.shift()!;
+      if (this.wanted.has(id)) return id;
+    }
+    while (this.renderHead < this.fifo.length) {
+      const id = this.fifo[this.renderHead++];
+      if (this.wanted.has(id)) { this.compact(); return id; }
+    }
+    return undefined;
+  }
+
+  // the part of the order both cursors are past is let go
+  private compact() {
+    const done = Math.min(this.diskHead, this.renderHead);
+    if (done < 4096 || done * 2 < this.fifo.length) return;
+    this.fifo = this.fifo.slice(done);
+    this.diskHead -= done;
+    this.renderHead -= done;
   }
 
   private keep(id: Id, bitmap: ImageBitmap) {
@@ -436,12 +526,11 @@ export class ThumbLoader {
     if (this.running) return;
     this.running = true;
     try {
-      while (this.queue.length) {
-        // Re-evaluate visibility after every await. Visible cache misses render
-        // before checking the rest of the folder's disk cache.
-        this.queue = [...this.queue.filter((id) => this.visible.has(id)),
-                      ...this.queue.filter((id) => !this.visible.has(id))];
-        const visiblePending = this.queue.some((id) => this.visible.has(id));
+      while (this.wanted.size) {
+        // Visibility is re-evaluated after every await. Visible cache misses
+        // render before the rest of the folder's disk cache is checked.
+        let visiblePending = false;
+        for (const id of this.visible) if (this.wanted.has(id)) { visiblePending = true; break; }
         const disk = this.nextOnDisk(visiblePending);
         if (disk.length) {
           const generation = this.generation;
@@ -453,13 +542,13 @@ export class ThumbLoader {
             const bitmap = got[k];
             // a known thumbnail is the disk's or none; the engine has no imgid for it
             if (typeof id === "string") {
-              this.queue = this.queue.filter((q) => q !== id);
+              this.wanted.delete(id);
               // its image was read meanwhile, and has it from the disk or the engine
               if (!bitmap || this.adopted.has(id)) return;
             } else {
               // an edit while it was read wants a fresh render
               if (!bitmap || this.stale.has(id)) return;
-              this.queue = this.queue.filter((q) => q !== id);
+              this.wanted.delete(id);
               this.unverified.delete(id);
             }
             this.keep(id, bitmap);
@@ -472,7 +561,9 @@ export class ThumbLoader {
           await new Promise<void>((r) => { this.wake = r; });
           continue;
         }
-        const id = this.queue.shift()!;
+        const id = this.nextToRender();
+        if (id === undefined) { this.wanted.clear(); break; }
+        this.wanted.delete(id);
         if (typeof id === "string" || (this.cache.has(id) && !this.stale.has(id) && !this.unverified.has(id))) continue;
         const useServerPreview = this.visible.has(id) && !this.stale.has(id) && !this.unverified.has(id);
         this.stale.delete(id);

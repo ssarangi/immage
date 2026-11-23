@@ -81,7 +81,13 @@ and shows its indexing progress when folded.
   30 seconds, so photos on your own drive still open. Open the folder again
   once the share is back to read the skipped files.
 - Editing comes first. While you zoom or adjust an open photo, the folder's
-  reading and thumbnails slow down and catch up when you pause.
+  reading and thumbnails slow down and catch up when you pause. The Catalog's
+  thumbnail job likewise waits while you click, type or scroll, and makes the
+  photos on screen next.
+- A folder of any size stays quick. The grid and the filmstrip draw only the
+  photos on or near the screen, and make thumbnails for those first (the
+  progress bar counts the thumbnails asked for, not the whole folder), so a
+  folder of 100,000 photos scrolls and responds like one of a hundred.
 
 Folders you import into join the list by themselves. The list, the open
 folder and the last photo are remembered when you quit.

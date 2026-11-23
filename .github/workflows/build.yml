@@ -138,6 +138,7 @@ jobs:
             verify/gui-suites.test.mjs \
             verify/gpu-check.test.mjs \
             verify/grid-size.test.mjs \
+            verify/large-folder.test.mjs \
             verify/menus.test.mjs \
             verify/mask-module-flags.test.mjs \
             verify/mask-modules.test.mjs \

@@ -13,6 +13,7 @@ nothing in the app or the user guide links to them.
 | [scenes.html](../../harness/scenes.html) | the Scenes timeline, scene cards and the scene view (`ScenesView`, `SceneLightbox`, `CullLightbox`, `CullSide`) | synthetic photos drawn in the page (`setThumbSource`), fake paths, a fixture store ([scenes.tsx](../../harness/scenes.tsx)) | [scenes-shift.test.mjs](../../../verify/scenes-shift.test.mjs) |
 | [statistics.html](../../harness/statistics.html) | the whole `Statistics` view | recorded replies of the real backend, [statsMock.ts](../../harness/statsMock.ts) | [stats-shift.test.mjs](../../../verify/stats-shift.test.mjs) |
 | [models.html](../../harness/models.html) | `AiModelsView`, the AI models group of Preferences > General | [modelsFixtures.ts](../../harness/modelsFixtures.ts) | [models-shift.test.mjs](../../../verify/models-shift.test.mjs) |
+| [grid.html](../../harness/grid.html) | the real `Filmstrip` (grid or strip) and `ThumbLoader` over `n` synthetic photos (`mode=`, `preload=1`, `check=1`) | generated in [grid.tsx](../../harness/grid.tsx) | [large-grid.test.mjs](../../../verify/large-grid.test.mjs) |
 | [catalog.html](../../harness/catalog.html) | `CatalogCard` with its index card, the add and remove dialogs and Preferences' `CatalogPrefsView` (`?state=`, `?view=`) | [catalogFixtures.ts](../../harness/catalogFixtures.ts) | [catalog-shift.test.mjs](../../../verify/catalog-shift.test.mjs) |
 
 [tauriShim.ts](../../harness/tauriShim.ts) is imported first by every page. It
