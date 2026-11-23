@@ -103,11 +103,13 @@ html[dir="rtl"] .scene-fold[aria-expanded="false"] svg, .scenes-view[dir="rtl"] 
 .scene-skel-card { flex: none; width: 220px; height: 229px; border-radius: 10px; background: var(--card); box-shadow: 0 0 0 1px var(--inset); animation: scene-pulse 1.4s ease-in-out infinite; }
 @keyframes scene-pulse { 50% { opacity: .55; } }
 
-/* the toolbar's Grid | Scenes switch */
-.scenes-switch { display: inline-flex; padding: 2px; gap: 2px; border-radius: 8px; background: var(--inset); }
-.scenes-switch button { height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: none; color: var(--text-2); font: inherit; font-size: var(--fs-small); font-weight: 600; cursor: pointer; white-space: nowrap; }
-.scenes-switch button:hover { color: var(--text); }
-.scenes-switch button[aria-checked="true"] { background: var(--hover); color: var(--text); box-shadow: 0 0 0 1px var(--text-3); }
+/* the toolbar's Edit | Grid | Scenes switch */
+.view-switch { display: inline-flex; flex: none; padding: 2px; gap: 2px; border-radius: 8px; background: var(--inset); }
+.view-switch button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: none; color: var(--text-2); font: inherit; font-size: var(--fs-small); font-weight: 600; cursor: pointer; white-space: nowrap; }
+.view-switch button .icon { width: 16px; height: 16px; }
+.view-switch button:hover { color: var(--text); }
+.view-switch button[aria-checked="true"] { background: var(--hover); color: var(--text); box-shadow: 0 0 0 1px var(--text-3); }
+.view-switch button[aria-disabled="true"] { color: var(--text-3); cursor: default; }
 
 /* the lightbox: the Scene tab's panel and the burst filmstrip under the stage */
 .scene-strip { grid-column: 1 / -1; display: flex; align-items: stretch; gap: 12px; height: 104px; padding: 0 4px; min-width: 0; }

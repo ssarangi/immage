@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
-import { ScenesSwitch } from "./ScenesView";
-import { BanIcon, FilterIcon, LibraryIcon, MagnifierIcon, PanelIcon, ResetIcon, SlidersIcon, StarIcon, icon } from "./icons";
+import { ViewSwitch, type ViewMode } from "./ScenesView";
+import { BanIcon, FilterIcon, MagnifierIcon, PanelIcon, ResetIcon, SlidersIcon, StarIcon, WandIcon } from "./icons";
 import { effectiveFilter, clearAll, findCount, serverPickers, setStars, withFilter, type FindState } from "./findModel";
 import { LABEL_COLORS } from "./library";
 import { Layout, PanelKey } from "./layoutPrefs";
 import { ChevronDown } from "lucide-react";
-import { invert } from "./probe";
 import { keys } from "./keys";
 import { useEffect, useRef, useState } from "react";
 import { type Zoom } from "./zoom";
-import { t } from "./i18n";
+import { formatNumber, t } from "./i18n";
+
+const LABEL_NAMES = ["red", "yellow", "green", "blue", "purple"];
 
 // a drag handle between panels. `invert` for a panel that grows as the
 // handle moves left or up (the right panel, the filmstrip)
@@ -100,13 +101,14 @@ export function GridZoomBar({ size, min, max, standard, onSize }: {
 // the bar under the filmstrip: rate and reject the open image, filter the
 // folder, and show or hide the side panels and the filmstrip
 export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind, onFindMenu, savedMenu,
-                   layout, zoomBar, viewTools, onLayout, ref, pin, grid, onToggleGrid, rightPanel, scenes, onScenes }: {
+                   layout, zoomBar, viewTools, onLayout, ref, pin, view, onView, canScenes, review, onReview, rightPanel }: {
   ref: React.RefObject<HTMLDivElement | null>;
   viewTools: React.ReactNode;               // undo, redo, before/after, compare
-  onToggleGrid: () => void;                 // grid and filmstrip, as the Library button on the rail does
-  grid: boolean;                            // the magnifier shows only in the grid, the one view it opens the lightbox in
-  scenes: boolean;                          // the grid shows its photos as scenes (Scenes mode)
-  onScenes: (on: boolean) => void;
+  view: ViewMode;                           // Edit (the open photo), Grid or Scenes: the Loupe and Auto Cull act in the last two
+  onView: (v: ViewMode) => void;
+  canScenes: boolean;                       // the folder lists a local photo to group
+  review: { count: number } | null;         // an Auto Cull plan waits: its photos to reject
+  onReview: () => void;                     // opens the Cull panel on that plan
   pin: React.ReactNode;
   find: FindState;                          // what is searched and filtered: the stars, flags and labels set it
   immichAvailable: boolean;
@@ -120,6 +122,7 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
   onLayout: (k: PanelKey) => void;
 }) {
   const f = find.filter;
+  const grid = view !== "edit";
   // an Immich-only search has no reject flag or labels, and the stars set the server's
   const remote = serverPickers(find.search, immichAvailable);
   const stars = f.minRating || find.search.minRating;
@@ -151,20 +154,18 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
     onFind(withFilter(find, { ...f, edited: next }), true);
     say(t(next === "all" ? "library.toolbar.showAll" : next === "edited" ? "library.toolbar.onlyEdited" : "library.toolbar.onlyUnedited"), e);
   };
+  const cullName = review ? t("cull.toolbar.reviewName", { count: review.count }) : t("cull.toolbar.title");
   return (
-    <div className="toolbar" ref={ref}>
-      {/* first and labelled: the rail's Library icon was the only way back to the grid */}
-      <div className="tool-group">
-        <button className={`tool grid-toggle${grid ? " on" : ""}`} aria-pressed={grid}
-                title={t(grid ? "library.toolbar.filmstrip" : "library.toolbar.grid")} onClick={onToggleGrid}>
-          <LibraryIcon /><span>{t("library.toolbar.gridShort")}</span>
-        </button>
-      </div>
+    <div className="toolbar" ref={ref} role="toolbar" aria-label={t("library.toolbar.label")} aria-orientation="horizontal">
+      <ViewSwitch view={view} onView={onView} canScenes={canScenes} />
+      <span className="sep" role="separator" aria-orientation="vertical" />
       <div className={`tool-group filter${filtering ? " active" : ""}`}>
-        <button className={`tool${filtering ? " on" : ""}`} title={filtering ? t("library.toolbar.clearFilters") : t("library.toolbar.noFilters")}
+        <button className={`tool${filtering ? " on" : ""}`} aria-label={filtering ? t("library.toolbar.clearFilters") : t("library.toolbar.noFilters")}
+                title={filtering ? t("library.toolbar.clearFilters") : t("library.toolbar.noFilters")}
                 onClick={clearFilters}><FilterIcon /></button>
         {[1, 2, 3, 4, 5].map((n) => (
           <button key={n} className="tool" title={t("library.toolbar.starsAndUp", { count: n })}
+                  aria-label={t("library.toolbar.starsAndUp", { count: n })} aria-pressed={stars === n}
                   onClick={() => onFind(setStars(find, stars === n ? 0 : n), true)}>
             <StarIcon filled={stars >= n} />
           </button>
@@ -172,25 +173,38 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
         {!remote && <>
         <span className="sep" />
         {/* all, then without the rejected, then only them (to delete) */}
-        <button className={`tool${f.rejected === "hide" ? " on" : f.rejected === "only" ? " on only-rejected" : ""}`}
-                title={t(f.rejected === "all" ? "library.toolbar.hideRejected" : f.rejected === "hide" ? "library.toolbar.rejectedHidden" : "library.toolbar.onlyRejected")}
-                onClick={cycleRejected}>
-          <BanIcon />
-          {note && <span className="filter-note" key={note.text} style={{ left: note.x, top: note.y }}>{note.text}</span>}
-        </button>
+        {(() => {
+          const title = t(f.rejected === "all" ? "library.toolbar.hideRejected" : f.rejected === "hide" ? "library.toolbar.rejectedHidden" : "library.toolbar.onlyRejected");
+          return (
+            <button className={`tool${f.rejected === "hide" ? " on" : f.rejected === "only" ? " on only-rejected" : ""}`}
+                    title={title} aria-label={title} aria-pressed={f.rejected !== "all"} onClick={cycleRejected}>
+              <BanIcon />
+              {note && <span className="filter-note" key={note.text} style={{ left: note.x, top: note.y }}>{note.text}</span>}
+            </button>
+          );
+        })()}
         {/* all, then the edited, then the ones still untouched */}
-        <button className={`tool${f.edited === "edited" ? " on" : f.edited === "unedited" ? " on only-unedited" : ""}`}
-                title={t(f.edited === "all" ? "library.toolbar.onlyEdited" : f.edited === "edited" ? "library.toolbar.editedOnly" : "library.toolbar.onlyUnedited")}
-                onClick={cycleEdited}>
-          <SlidersIcon />
-        </button>
+        {(() => {
+          const title = t(f.edited === "all" ? "library.toolbar.onlyEdited" : f.edited === "edited" ? "library.toolbar.editedOnly" : "library.toolbar.onlyUnedited");
+          return (
+            <button className={`tool${f.edited === "edited" ? " on" : f.edited === "unedited" ? " on only-unedited" : ""}`}
+                    title={title} aria-label={title} aria-pressed={f.edited !== "all"} onClick={cycleEdited}>
+              <SlidersIcon />
+            </button>
+          );
+        })()}
         <span className="sep" />
-        {LABEL_COLORS.map((c, k) => (
-          <button key={c} className={`swatch${f.labels & (1 << k) ? " on" : ""}`} style={{ background: c }}
-                  title={t("library.toolbar.withLabel")} onClick={() => onFind(withFilter(find, { ...f, labels: f.labels ^ (1 << k) }), true)} />
-        ))}
+        {LABEL_COLORS.map((c, k) => {
+          const name = t("library.toolbar.labelNamed", { color: t(`library.menu.label-${LABEL_NAMES[k]}`) });
+          return (
+            <button key={c} className={`swatch${f.labels & (1 << k) ? " on" : ""}`} style={{ background: c }}
+                    title={name} aria-label={name} aria-pressed={!!(f.labels & (1 << k))}
+                    onClick={() => onFind(withFilter(find, { ...f, labels: f.labels ^ (1 << k) }), true)} />
+          );
+        })}
         <button className={`swatch${f.unlabeled ? " on" : ""}`} style={{ background: "#9ca3af" }}
-                title={t("library.toolbar.withoutLabel")} onClick={() => onFind(withFilter(find, { ...f, unlabeled: !f.unlabeled }), true)} />
+                title={t("library.toolbar.withoutLabel")} aria-label={t("library.toolbar.withoutLabel")} aria-pressed={f.unlabeled}
+                onClick={() => onFind(withFilter(find, { ...f, unlabeled: !f.unlabeled }), true)} />
         </>}
         <span className="sep" />
         {/* Find and its saved filters, as a split button */}
@@ -201,13 +215,6 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
           </button>
           <span className="find-saved">{savedMenu(<ChevronDown size={12} strokeWidth={1.8} />)}</span>
         </div>
-        {/* in the first group, which stays on screen: the right-hand one scrolls out of view in a narrow window */}
-        {grid && <>
-          <span className="sep" />
-          <ScenesSwitch scenes={scenes} onScenes={onScenes} />
-          <button className="tool cull-open" title={t("cull.toolbar.title")} aria-label={t("cull.toolbar.title")}
-                  onClick={() => window.dispatchEvent(new CustomEvent("auto-cull-open"))}>{t("cull.toolbar.button")}</button>
-        </>}
         {filtering && (
           <button className="tool clear-filters" title={t("library.toolbar.showEveryPhoto")} onClick={clearFilters}>{t("library.filters.clear")}</button>
         )}
@@ -218,20 +225,37 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
           handles and whatever was being edited in that corner */}
       <div className="tool-group view-tools">
         {viewTools}
-        {/* the lightbox over the grid's photos; the Library button on the rail switches the view */}
-        {grid && <>
-          <span className="sep" />
-          <button className="tool culling-open" title={t("library.toolbar.culling")}
-                  aria-label={t("library.toolbar.culling")}
-                  onClick={() => window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: {} }))}><MagnifierIcon /></button>
-        </>}
-        <span className="sep" />
-        <button className={`tool${layout.left ? " on" : ""}`} title={t("library.toolbar.libraryPanel")}
-                onClick={() => onLayout("left")}><PanelIcon side="left" /></button>
-        <button className={`tool${layout.strip ? " on" : ""}`} title={t("library.toolbar.filmstripLabel")}
-                onClick={() => onLayout("strip")}><PanelIcon side="bottom" /></button>
+      </div>
+      <span className="sep" role="separator" aria-orientation="vertical" />
+      {/* what the grid's photos are looked at and judged with. Laid out in Edit too, switched off, so the
+          bar does not change when the view does */}
+      <div className="tool-group review">
+        <button className="tool culling-open" title={t("library.toolbar.culling")} aria-label={t("library.toolbar.culling")}
+                aria-disabled={!grid || undefined}
+                onClick={() => { if (grid) window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: {} })); }}><MagnifierIcon /></button>
+        {/* an action that opens a dialog, so a pill with an ellipsis: it is the Cull panel's review once a plan exists.
+            Both labels are laid out, one hidden, so the pill keeps its width through the change */}
+        <button className={`tool pill cull-open${review ? " review" : ""}${view === "scenes" ? " scenes" : ""}`}
+                title={review ? t("cull.toolbar.reviewTitle") : t("cull.toolbar.title")} aria-label={cullName}
+                aria-disabled={!grid || undefined}
+                onClick={() => { if (!grid) return; if (review) onReview(); else window.dispatchEvent(new CustomEvent("auto-cull-open")); }}>
+          <WandIcon />
+          <span className="pill-label">
+            <span className={review ? "off" : undefined} aria-hidden>{t("cull.toolbar.button")}</span>
+            <span className={review ? undefined : "off"} aria-hidden>{t("cull.toolbar.review")}</span>
+          </span>
+          <span className="pill-count" aria-hidden>{review ? formatNumber(review.count) : ""}</span>
+        </button>
+      </div>
+      <span className="sep" role="separator" aria-orientation="vertical" />
+      <div className="tool-group panels">
+        <button className={`tool${layout.left ? " on" : ""}`} title={t("library.toolbar.libraryPanel")} aria-label={t("library.toolbar.libraryPanel")}
+                aria-pressed={layout.left} onClick={() => onLayout("left")}><PanelIcon side="left" /></button>
+        <button className={`tool${layout.strip ? " on" : ""}`} title={t("library.toolbar.filmstripLabel")} aria-label={t("library.toolbar.filmstripLabel")}
+                aria-pressed={layout.strip} onClick={() => onLayout("strip")}><PanelIcon side="bottom" /></button>
         <button className={`tool${layout[rightPanel] ? " on" : ""}`} data-panel-toggle={rightPanel}
                 title={t(rightPanel === "find" ? "library.toolbar.findPanel" : "library.toolbar.adjustmentsPanel")}
+                aria-label={t(rightPanel === "find" ? "library.toolbar.findPanel" : "library.toolbar.adjustmentsPanel")}
                 aria-pressed={layout[rightPanel]} onClick={() => onLayout(rightPanel)}>
           <PanelIcon side="right" />
         </button>

@@ -353,7 +353,7 @@ export async function menusGuards(t) {
 
 export async function menusViewMode(t) {
   const culling = '[data-menu-item="culling-preview"]';
-  const lightbox = '.modal-backdrop[aria-label="Culling preview"]';
+  const lightbox = '.modal-backdrop[aria-label="Loupe"]';
   const photoReady = () => t.driver.observe(() => {
     const root = document.querySelector('.culling-lightbox');
     const canvas = root?.querySelector('canvas');

@@ -35,7 +35,7 @@ A focused menu keeps its arrow keys, Space and Enter for choosing.
 
 | Key | Action |
 | --- | --- |
-| F | Full screen preview in the editor (F or Esc leaves); in the grid, the culling preview of the photo under the pointer or the selection |
+| F | Full screen preview in the editor (F or Esc leaves); in the grid, the Loupe of the photo under the pointer or the selection |
 | L | Next canvas: dark, neutral gray, white |
 | Tab | Hide or show the side panels |
 | ⇧Tab | Hide or show the side panels and filmstrip |
@@ -65,7 +65,7 @@ In full screen preview, Z, ⌘= ⌘-, Y, X, I, L, \, 0-9 and ← → still work.
 | ⇧S | In the grid: show the photos as Scenes (a timeline of bursts), or go back to the grid |
 | A X U | In Scenes: accept, reject or clear the scene's best frame (⇧ for the whole scene); in a scene's preview, the frame shown |
 | N ⇧N | In a scene's preview: the next or previous scene |
-| P R B | In the culling preview of a reviewed Auto cull: keep the photo, reject it, or make it the best of its set (the preview of a photo in the review) |
+| P R B | In the Loupe of a reviewed Auto cull: keep the photo, reject it, or make it the best of its set (the preview of a photo in the review) |
 | ⌘-click | In the filmstrip: add a photo to the selection, or take it out |
 | ⇧-click | In the filmstrip: select the run from the last clicked photo |
 | ⌥1 - ⌥9 | Open saved filter 1 to 9 (Find's saved filters, in list order) |

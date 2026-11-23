@@ -56,7 +56,7 @@ Immage also:
 - starts the **quick start guide**, a ten-step tour in the order of the
   work: Import, Statistics, the Library (adding folders and the grid), Find
   (filters, **Smart** and **Filename** search, and **Ask Gemini**), Cull
-  (**Cull** in the grid, the culling preview on F, and Critique with Gemini on
+  (**Auto Cull...** in the grid, the Loupe on F, and Critique with Gemini on
   ⇧⌘G, or Shift+Ctrl+G on Windows and Linux), Edit, Advanced mode, Export and
   Print, and Preferences (including the optional AI models under **General**).
   It points out the stacked-cards button for [Advanced mode](advanced-mode.md).
@@ -65,7 +65,7 @@ Immage also:
   moves to. Tick **Don't show on startup** to keep it from coming back; the
   **?** button at the bottom of the rail starts it again. With reduced motion
   on, the steps appear without gliding, fading or drawn arrows. Steps for
-  parts of the window that are not showing, such as Cull outside the grid,
+  parts of the window that are not showing, such as Auto Cull outside the grid,
   appear in the middle of the window.
 
 ![The Immage window on first launch, with a photo open](images/first-launch.png)

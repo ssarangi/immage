@@ -245,7 +245,7 @@ export async function findLive(t) {
   assert(await present(t, pop), 'no popup opens in the grid');
 
   // the magnifier: only in the grid, and it opens the culling lightbox
-  const lightbox = '.modal-backdrop[aria-label="Culling preview"]';
+  const lightbox = '.modal-backdrop[aria-label="Loupe"]';
   // nothing is selected or hovered here: it opens the first photo
   await click(t, '.toolbar button.culling-open');
   await until(() => present(t, lightbox), 'the magnifier opens the culling preview');
@@ -261,7 +261,7 @@ export async function findLive(t) {
   await until(async () => !await present(t, '.filmstrip.grid'), 'a double-click opens the photo and leaves the grid');
   assert(!await present(t, pop), 'Find is gone outside the grid');
   assert(await present(t, 'aside.right .panels'), 'the normal right panel is back');
-  assert(!await present(t, 'button.culling-open'), 'no magnifier outside the grid');
+  assert(await present(t, 'button.culling-open[aria-disabled="true"]'), 'the Loupe is switched off outside the grid');
   assert(!await t.driver.observe(s => document.querySelector(s).disabled, library), 'the Library button is enabled with a photo open');
   await click(t, library);
   await until(() => present(t, '.filmstrip.grid'), 'the Library button returns to the grid');

@@ -650,7 +650,7 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
   align-self: stretch;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
   /* the column is a two-row grid (.center) and pads nothing, so the bar's side margin is its own:
      8px, the grid surface's inset. 4px above plus the surface's 8px is the 12px gap; 8px below */
@@ -666,8 +666,25 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
   border-radius: var(--radius-card);
 }
 .tool-group { display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 10px; }
-.tool-group.filter { background: var(--ui-window-161616, #161616); }
-.tool-group .sep { width: 1px; height: 18px; margin: 0 5px; background: var(--border, #333); }
+.toolbar .zoom-bar { margin-inline-start: auto; }
+.tool-group .sep, .toolbar > .sep { flex: none; width: 1px; height: 20px; background: var(--border); }
+.tool-group .sep { margin: 0 4px; }
+/* the bar's controls: a focus ring on every one, and a switched-off look that still takes focus */
+.toolbar :is(button, input[type="range"]):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.toolbar [aria-disabled="true"] { color: var(--text-3); cursor: default; opacity: .6; }
+.toolbar [aria-disabled="true"]:hover { background: transparent; color: var(--text-3); }
+/* an active filter: the funnel in the accent color with a dot under it */
+.tool-group.filter.active > .tool:first-child { position: relative; }
+.tool-group.filter.active > .tool:first-child::after { content: ""; position: absolute; inset-block-end: 2px; inset-inline-start: calc(50% - 2px); width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
+/* Auto Cull and Review cull: an action that opens a dialog or a panel, so an outlined pill, not a segment */
+.tool.pill { width: auto; gap: 6px; padding: 0 10px; border-radius: 14px; box-shadow: inset 0 0 0 1px var(--border); color: var(--text); font-size: var(--fs-small); font-weight: 600; white-space: nowrap; }
+.tool.pill .icon { width: 15px; height: 15px; }
+.tool.pill.scenes, .tool.pill.review { box-shadow: inset 0 0 0 1px var(--accent); color: var(--accent); }
+/* both labels share one cell: the longer one sets the width, so the pill does not change size with its state */
+.pill-label { display: inline-grid; }
+.pill-label > span { grid-area: 1 / 1; }
+.pill-label > .off { visibility: hidden; }
+.pill-count { min-width: 2ch; text-align: end; font-variant-numeric: tabular-nums; }
 .tool {
   display: flex;
   align-items: center;
@@ -3126,8 +3143,6 @@ html[data-scheme="light"] .strip-slot.grid::before { background: color-mix(in sr
 .find-ai { margin-top: 2px; }
 .find-ai-note { align-items: flex-start; }
 
-/* the Auto Cull button in the grid toolbar, beside Find */
-.tool.cull-open { width: auto; padding: 0 8px; border-radius: 7px; font-size: var(--fs-small); white-space: nowrap; }
 /* the Gemini key field: the card's inset colour alone made it invisible */
 .prefs-scroll .field.key-field { min-width: 260px; border-color: var(--border, #444); }
 .prefs-scroll .field.key-field::placeholder { color: var(--muted, #8a8a8a); }
@@ -3261,9 +3276,6 @@ html[data-scheme="light"] .strip-slot.grid::before { background: color-mix(in sr
   .cull-label { transform: none; }
 }
 
-/* the Grid button at the start of the bottom toolbar */
-.tool.grid-toggle { width: auto; padding: 0 9px; gap: 6px; border-radius: 7px; font-size: var(--fs-small); white-space: nowrap; }
-.tool.grid-toggle.on { background: var(--inset); color: var(--accent); }
 
 /* the Catalog: its Library card (a list of sources, one state glyph each, then the focused source's
    index card), the add and remove dialogs and Preferences' card. Fixed boxes throughout: a row is

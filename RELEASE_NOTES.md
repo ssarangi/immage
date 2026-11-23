@@ -7,13 +7,13 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- **Scenes:** the grid has a new **Grid | Scenes** switch (also **View > Scenes**
+- **Scenes:** the toolbar's new **Edit | Grid | Scenes** switch (Scenes is also **View > Scenes**
   and Shift+S). Scenes shows the open folder as a vertical timeline of time
   blocks, grouped by day, each a row of scene cards: bursts grouped by capture
   time (to the tenth of a second where the camera recorded it) and by how the
   frames look, with the best frame, the frame count, a quality score and the
   camera, lens, focal length, aperture, shutter speed and ISO. A scene opens in
-  the culling preview with a Scene tab, a filmstrip of its frames sharpest
+  the Loupe with a Scene tab, a filmstrip of its frames sharpest
   first, and Accept, Undecided and Reject (A, U and X; N and Shift+N for the
   next and previous scene). Accept gives the green color label, Reject is the
   ordinary reject flag, and nothing is moved or deleted. Grouping reads only
@@ -25,6 +25,19 @@ Improvements
   measurements and are filled in as you open scenes; Preferences > Culling can
   score every scene in the background (on local drives by default) and make
   Accept also give one star.
+- **Bottom toolbar:** one **Edit | Grid | Scenes** switch replaces the separate
+  Grid button and the Grid | Scenes switch, and Grid or Scenes opens straight
+  from Edit. **Auto Cull...** is an outlined button beside the Loupe at the
+  right, no longer among the filters; once a cull plan exists it becomes
+  **Review cull** with the number of photos proposed for rejection and opens the
+  Cull panel, and in Scenes it is outlined in the accent color. The magnifier
+  and its View menu item are now called **Loupe** (the culling preview). The
+  bar is the width of the grid surface with an even gap above it, takes its
+  place from the layout instead of a measured offset, and in a narrow column
+  turns labels to icons and moves label colors, filters and undo into menus
+  instead of scrolling sideways. Every control has a name for screen readers
+  (each label color has its own), and the bar is one tab stop with the arrow
+  keys moving along it.
 - **Library cards:** The Folders and Catalog cards fold and open from the
   keyboard as well as the mouse (Enter or Space on the header), and tell
   screen readers whether they are open. A folded Catalog card still shows its

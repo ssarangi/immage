@@ -9,6 +9,14 @@ export const icon = (path: React.ReactNode) => (
        strokeLinecap="round" strokeLinejoin="round">{path}</svg>
 );
 export const CullingIcon = () => icon(<><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M8 9H5M5 9V12M16 15h3M19 15v-3" /></>);
+// the three views: the open photo, the grid of photos, and scenes (a timeline of bursts)
+export const EditViewIcon = () => icon(<><rect x="3" y="4.5" width="18" height="15" rx="2.5" /><path d="m3.5 16 4.5-4.5 3.5 3.5 3-3 6 5" /><circle cx="16.5" cy="9" r="1.4" /></>);
+export const GridViewIcon = () => icon(<><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+  <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></>);
+export const ScenesViewIcon = () => icon(<><path d="M3.5 6h6M3.5 12h6M3.5 18h6" /><rect x="12.5" y="4" width="3.5" height="4" rx="1" /><rect x="17.5" y="4" width="3.5" height="4" rx="1" />
+  <rect x="12.5" y="10" width="3.5" height="4" rx="1" /><rect x="12.5" y="16" width="3.5" height="4" rx="1" /><rect x="17.5" y="16" width="3.5" height="4" rx="1" /></>);
+// Auto Cull: a wand with a spark
+export const WandIcon = () => icon(<><path d="m4 20 11-11" /><path d="m13.5 7.5 3 3" /><path d="M18.5 3v3M17 4.5h3M20.5 10v2M19.5 11h2" /></>);
 export const MagnifierIcon = () => icon(<><circle cx="10.5" cy="10.5" r="6.5" /><path d="m15.5 15.5 5 5" /><path d="M8 10.5h5M10.5 8v5" /></>);
 // the library: a row of photos stood on their edges, the last one leaning
 export const LibraryIcon = () => icon(<><rect x="3.5" y="5" width="4" height="15" rx="1" /><rect x="9.5" y="5" width="4" height="15" rx="1" />

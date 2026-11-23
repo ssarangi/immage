@@ -67,7 +67,8 @@ function Harness() {
                    <button className="tool"><UndoIcon /></button><button className="tool"><UndoIcon redo /></button>
                    <span className="sep" />
                    <button className="tool view"><BeforeAfterIcon /></button><button className="tool view"><CompareIcon /></button></>}
-                 grid={grid} scenes={cfg.view === "scenes"} onScenes={noop} onToggleGrid={noop}
+                 view={cfg.view} onView={(v) => setCfg((c) => ({ ...c, view: v }))} canScenes
+                 review={cfg.cull === "pending" ? { count: 14 } : null} onReview={noop}
                  zoomBar={grid ? <GridZoomBar size={230} min={100} max={400} standard={230} onSize={noop} />
                    : <ZoomBar disabled={false} register={() => noop} onZoom={noop} onToggle={noop} fit={() => 1} />}
                  onLayout={noop} />
@@ -81,7 +82,8 @@ const rectOf = (e: Element) => { const r = e.getBoundingClientRect(); return { x
 if (q.get("report") === "1") setTimeout(() => {
   const col = document.querySelector(".center")!, bar = document.querySelector(".toolbar")!;
   const surf = document.querySelector(".filmstrip.grid");
-  const out = { column: rectOf(col), bar: rectOf(bar), surface: surf ? rectOf(surf) : null,
+  const kids = [...bar.children].map((c) => `${c.className || c.tagName}:${Math.round(c.getBoundingClientRect().width)}`);
+  const out = { kids, column: rectOf(col), bar: rectOf(bar), surface: surf ? rectOf(surf) : null,
     gap: surf ? bar.getBoundingClientRect().top - surf.getBoundingClientRect().bottom : null,
     below: col.getBoundingClientRect().bottom - bar.getBoundingClientRect().bottom,
     barScroll: [(bar as HTMLElement).scrollWidth, (bar as HTMLElement).clientWidth],

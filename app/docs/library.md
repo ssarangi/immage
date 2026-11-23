@@ -377,12 +377,18 @@ opened in Immage before version 0.23.2 count their New Photos settings as
 an edit until you reset them.
 
 Press G, click **Library** on the rail at the right edge, below
-**Import**, or click the labelled **Grid** button at the left of the toolbar
-under the filmstrip, for **Grid** view: the whole folder at once.
-Double-click a photo to open it and go back to the filmstrip. G, Esc or either
-button also goes back. Both are highlighted while the grid shows. In the grid
-the toolbar also has **Grid | Scenes**, which shows the photos as a timeline of
-bursts ([Scenes](#scenes)), and **Cull**, which starts [Auto cull](#auto-cull).
+**Import**, or click **Grid** in the **Edit | Grid | Scenes** switch at the left
+of the toolbar under the filmstrip, for **Grid** view: the whole folder at once.
+Double-click a photo to open it and go back to the filmstrip. G, Esc or
+**Edit** in the switch also goes back. The switch is one control for the three
+views of the same photos: **Edit** (the open photo with its filmstrip),
+**Grid**, and **Scenes**, a timeline of bursts ([Scenes](#scenes)). Clicking
+**Grid** or **Scenes** from Edit opens that view directly. At the right of the
+toolbar, in the grid, the **Loupe** (magnifier, or F) opens the photos large,
+and **Auto Cull...** starts [Auto cull](#auto-cull). The toolbar adapts to the
+width the panels leave it: labels turn to icons, then the label colors and
+the less used filters go into menus, then the undo, redo and compare buttons into a
+**...** menu. It never scrolls sideways.
 
 Each thumbnail card has a thin ring around it, brighter under the pointer and
 for the open photo, and its picture a faint edge, so a dark photo does not
@@ -604,7 +610,7 @@ left out. Nothing is changed until you apply the result.
 
 ### Starting a cull
 
-In the grid, click **Cull** in the toolbar or choose **Photo > Auto Cull...**.
+In the grid, click **Auto Cull...** in the toolbar or choose **Photo > Auto Cull...**.
 The window asks:
 
 - **Shoot type**: General, Portrait or Wildlife. It is kept with the session;
@@ -623,7 +629,11 @@ The starting values are the ones in **Preferences > Culling**
 ([Preferences](preferences.md#culling)). **Run** closes the window and the
 analysis goes on in the activity line under the photo, which names the photo
 it is measuring and has **Stop**. A stopped run stores nothing. You can keep
-browsing meanwhile. When it finishes, the **Cull** panel opens.
+browsing meanwhile. When it finishes, the **Cull** panel opens, and the toolbar's
+button becomes **Review cull** with the number of photos proposed for rejection;
+click it to open the panel again (the window stays in the panel and under
+**Photo > Auto Cull...**). In Scenes the button is outlined in the accent color,
+as Scenes and Auto Cull are two steps of one job.
 
 ### Reviewing
 
@@ -643,7 +653,7 @@ Each reviewed thumbnail carries a badge in words and a symbol: **Best**,
 **Keep** or **Reject**, with the set number for a photo in a set. The reviewed
 state does not rely on color alone. Opening another folder ends the review.
 
-Open a photo in the culling preview (the magnifier, or **F**). A report panel
+Open a photo in the Loupe (the magnifier, or **F**). A report panel
 of a fixed width, so the photo never changes size, sits at its right with two
 underlined tabs, **Critique** and **Cull**. Cull is shown while a cull is under
 review, Critique otherwise. The **Cull** tab has:
@@ -685,7 +695,7 @@ It groups the photos of the folder you have open (its subfolders too while
 by time but never share a scene, so two folders' bursts that overlap stay
 separate. Scenes never moves, renames or deletes a photo.
 
-Switch with the **Grid | Scenes** control in the toolbar, **View > Scenes**, or
+Switch with the **Edit | Grid | Scenes** control in the toolbar, **View > Scenes**, or
 **Shift+S** in the grid. **Esc** or **Grid** goes back; the grid keeps its
 scroll position and selection.
 
@@ -735,7 +745,7 @@ nothing moves while photos, scores or the status line change.
 
 ### The scene view
 
-Click a card, or press **Enter**. The scene opens in the culling preview with a
+Click a card, or press **Enter**. The scene opens in the Loupe with a
 **Scene** tab: the scene's number and time, and the camera details of the frame
 (file, quality, camera, lens, focal length, aperture, shutter, ISO and time to
 the tenth of a second). Under the photo is a **burst filmstrip** of the scene's
@@ -766,7 +776,7 @@ and unfold the block.
 In the scene view: **Left** and **Right** change frame, **N** and
 **Shift+N** the next and previous scene, **A**, **X** and **U** decide the
 frame, **0** to **5** rate it, and **Esc** returns to the timeline. The other
-culling preview keys work as before.
+Loupe keys work as before.
 
 Scenes works with [Auto cull](#auto-cull): its scores are shared, and a scene's
 frames can be looked at in either. Rules that keep the best N frames of every
@@ -1070,7 +1080,7 @@ to another selection.
 
 Click the magnifier in the toolbar under the grid (shown in the grid only), the
 small icon at the right of a thumbnail's hover footer, or choose
-**View > Culling Preview**, to open the same preview without the keyboard.
+**View > Loupe**, to open the same preview without the keyboard.
 The menu command is available when the grid shows a local photo.
 **View > Full Screen Preview** is available for an open photo in the editor.
 The toolbar magnifier and the menu use the photo under the pointer, else the

@@ -176,11 +176,11 @@ the photo:
   a dark surround, or **White**, which shows the photo as on a print. L
   steps through them.
 
-The toolbar under the filmstrip starts with the labelled **Grid** button, which
-switches between the grid and the filmstrip as the rail's Library button and G
-do (it is lit in the grid, so an open photo no longer needs its folder clicked
-to get back). In the grid it also has **Cull**, which opens
-[Auto cull](library.md#auto-cull). It also has buttons to show or hide the
+The toolbar under the filmstrip starts with the **Edit | Grid | Scenes** switch:
+**Edit** and **Grid** go between the filmstrip and the grid as the rail's
+Library button and G do, and **Scenes** shows the grid as a timeline of bursts.
+In the grid it also has the **Loupe** and **Auto Cull...**, which opens
+[Auto cull](library.md#auto-cull) (**Review cull** once a plan exists). It also has buttons to show or hide the
 Library panel and the filmstrip. In Grid view, the **Find panel** button
 shows or hides Find. In the photo editing view, the **Adjustments panel**
 button controls the editing panel. Immage remembers each panel's width and

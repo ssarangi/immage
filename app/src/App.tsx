@@ -7177,7 +7177,6 @@ export default function App() {
         </div>
         <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findLocked && layout.find} rightPanel={rightPanel}
                  onToggleFind={toggleFind}
-                 onToggleGrid={() => { if (!croppingRef.current) setGrid(!gridRef.current); }}
                  onFindMenu={immich ? showResultsMenu : undefined}
                  savedMenu={(button) => <SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
                                                     onManage={() => setManageSaved(true)} button={button} />}
@@ -7195,7 +7194,16 @@ export default function App() {
                            title={t("app.compare.hint")}
                            onClick={toggleCompare}><CompareIcon /></button>
                  </>}
-                 grid={grid} scenes={scenesOn} onScenes={setScenesOn}
+                 view={scenesOn ? "scenes" : grid ? "grid" : "edit"}
+                 onView={(v) => {
+                   if (croppingRef.current) return;
+                   if (v === "edit") { setGrid(false); return; }
+                   setScenesOn(v === "scenes");
+                   setGrid(true);
+                 }}
+                 canScenes={shown.some((i) => !isRemote(i))}
+                 review={cull.plan ? { count: cull.plan.session.rejectCount } : null}
+                 onReview={() => { setCull({ open: true }); revealRightPanel(); }}
                  // in the grid the zoom bar sizes the thumbnails; the photo's
                  // stays mounted, hidden, so it still shows the photo's zoom after
                  zoomBar={<>

@@ -4,18 +4,18 @@ import { until, pause } from '../support/webdriver.mjs';
 import { click } from '../support/controls.mjs';
 import { textButton } from '../support/scenario.mjs';
 
-const preview = '.modal-backdrop[aria-label="Culling preview"]';
-const hasPreview = () => !!document.querySelector('.modal-backdrop[aria-label="Culling preview"]');
+const preview = '.modal-backdrop[aria-label="Loupe"]';
+const hasPreview = () => !!document.querySelector('.modal-backdrop[aria-label="Loupe"]');
 const inspect = () => {
   const root = document.querySelector('.filmstrip.grid');
-  const box = document.querySelector('.modal-backdrop[aria-label="Culling preview"] .culling-lightbox');
-  const canvas = document.querySelector('.modal-backdrop[aria-label="Culling preview"] canvas');
-  const viewport = document.querySelector('.modal-backdrop[aria-label="Culling preview"] .culling-lightbox > div[style*="overflow"]');
+  const box = document.querySelector('.modal-backdrop[aria-label="Loupe"] .culling-lightbox');
+  const canvas = document.querySelector('.modal-backdrop[aria-label="Loupe"] canvas');
+  const viewport = document.querySelector('.modal-backdrop[aria-label="Loupe"] .culling-lightbox > div[style*="overflow"]');
   const active = document.querySelector('.filmstrip .thumb.active');
   return { grid: !!root, count: root?.querySelectorAll('.thumb[data-imgid]').length ?? 0,
     selected: root?.querySelector('.thumb.selected')?.getAttribute('data-imgid') ?? null,
     name: box?.firstElementChild?.textContent ?? null,
-    photo: !!document.querySelector('.modal-backdrop[aria-label="Culling preview"]'), bounds: box && { x: box.getBoundingClientRect().x,
+    photo: !!document.querySelector('.modal-backdrop[aria-label="Loupe"]'), bounds: box && { x: box.getBoundingClientRect().x,
       y: box.getBoundingClientRect().y, width: box.getBoundingClientRect().width,
       height: box.getBoundingClientRect().height },
     canvas: canvas && { width: canvas.width, height: canvas.height,
@@ -64,27 +64,27 @@ export async function gridCulling(t) {
   assert(await t.driver.observe(hasPreview), 'closing keywords returns to the lightbox');
 
   const next = await t.driver.observe(() => {
-    const b = document.querySelector('.modal-backdrop[aria-label="Culling preview"] button[aria-label="Next photo (right arrow key)"]');
+    const b = document.querySelector('.modal-backdrop[aria-label="Loupe"] button[aria-label="Next photo (right arrow key)"]');
     const r = b?.getBoundingClientRect(); return r && { x: r.x + r.width / 2, y: r.y + r.height / 2, disabled: b.disabled };
   });
   assert(next && !next.disabled, 'next photo is available');
   const firstName = state.name;
   await t.driver.keys('\uE014'); // WebDriver ArrowRight
   state = await until(() => t.driver.observe((previous) => {
-    const root = document.querySelector('.modal-backdrop[aria-label="Culling preview"]');
+    const root = document.querySelector('.modal-backdrop[aria-label="Loupe"]');
     const box = root?.querySelector('.culling-lightbox'); const canvas = root?.querySelector('canvas');
     const name = box?.firstElementChild?.textContent ?? null;
     if (name === previous || !canvas?.width) return null;
     return { name, canvas: { width: canvas.width, height: canvas.height } };
   }, firstName), 'right arrow selects and draws the next preview', 60000);
   const nextButton = await t.driver.observe(() => {
-    const b = document.querySelector('.modal-backdrop[aria-label="Culling preview"] button[aria-label="Next photo (right arrow key)"]');
+    const b = document.querySelector('.modal-backdrop[aria-label="Loupe"] button[aria-label="Next photo (right arrow key)"]');
     const r = b?.getBoundingClientRect(); return r && { x: r.x + r.width / 2, y: r.y + r.height / 2, disabled: b.disabled };
   });
   assert(nextButton && !nextButton.disabled, 'the outer next arrow is available');
   await t.driver.point(nextButton.x, nextButton.y);
   const afterButton = await until(() => t.driver.observe((previous) => {
-    const root = document.querySelector('.modal-backdrop[aria-label="Culling preview"]');
+    const root = document.querySelector('.modal-backdrop[aria-label="Loupe"]');
     const box = root?.querySelector('.culling-lightbox'); const canvas = root?.querySelector('canvas');
     const name = box?.firstElementChild?.textContent ?? null;
     if (name === previous || !canvas?.width) return null;
@@ -95,7 +95,7 @@ export async function gridCulling(t) {
   const frameAfterNavigation = await t.driver.observe(inspect);
   assert.deepEqual(frameAfterNavigation.bounds, fixedFrame, 'preview frame stays the same when the photo changes');
   const zoomState = (x, y) => {
-    const root = document.querySelector('.modal-backdrop[aria-label="Culling preview"]');
+    const root = document.querySelector('.modal-backdrop[aria-label="Loupe"]');
     const canvas = root?.querySelector('canvas'); const viewport = root?.querySelector('.culling-lightbox > div[style*="overflow"]');
     const label = root?.querySelector('.culling-bottom-bar .zoom-label');
     if (!canvas?.width || !viewport || !label) return null;
@@ -159,7 +159,7 @@ export async function gridCulling(t) {
     if (Math.abs(r.width - canvas.width / dpr) > 2 || Math.abs(r.height - canvas.height / dpr) > 2) return null;
     return { image: { width: r.width, height: r.height, pixels: [canvas.width, canvas.height] },
       viewport: { width: viewport.clientWidth, height: viewport.clientHeight, left: viewport.scrollLeft, top: viewport.scrollTop } };
-  }, '.modal-backdrop[aria-label="Culling preview"]'), 'full-resolution 100% preview settles', 60000);
+  }, '.modal-backdrop[aria-label="Loupe"]'), 'full-resolution 100% preview settles', 60000);
   t.measure({ name: 'culling-100-percent', ...zoomed });
   const frameAt100 = await t.driver.observe(inspect);
   assert.deepEqual(frameAt100.bounds, fixedFrame, 'preview frame stays the same at 100%');
@@ -278,21 +278,21 @@ export async function gridCulling(t) {
   }, 'Z returns to Fit after wheel zoom');
 
   await t.driver.keys('3');
-  await until(() => t.driver.observe(() => document.querySelector('.modal-backdrop[aria-label="Culling preview"] [aria-label="3 stars"]')?.getAttribute('aria-pressed') === 'true'),
+  await until(() => t.driver.observe(() => document.querySelector('.modal-backdrop[aria-label="Loupe"] [aria-label="3 stars"]')?.getAttribute('aria-pressed') === 'true'),
     '3 rates the displayed photo');
   await t.driver.keys('x');
-  await until(() => t.driver.observe(() => document.querySelector('.modal-backdrop[aria-label="Culling preview"] [aria-label="Reject photo"]')?.getAttribute('aria-pressed') === 'true'),
+  await until(() => t.driver.observe(() => document.querySelector('.modal-backdrop[aria-label="Loupe"] [aria-label="Reject photo"]')?.getAttribute('aria-pressed') === 'true'),
     'X rejects the displayed photo');
   await t.driver.keys('4');
-  await until(() => t.driver.observe(() => document.querySelector('.modal-backdrop[aria-label="Culling preview"] [aria-label="4 stars"]')?.getAttribute('aria-pressed') === 'true'
-      && document.querySelector('.modal-backdrop[aria-label="Culling preview"] [aria-label="Reject photo"]')?.getAttribute('aria-pressed') === 'false'),
+  await until(() => t.driver.observe(() => document.querySelector('.modal-backdrop[aria-label="Loupe"] [aria-label="4 stars"]')?.getAttribute('aria-pressed') === 'true'
+      && document.querySelector('.modal-backdrop[aria-label="Loupe"] [aria-label="Reject photo"]')?.getAttribute('aria-pressed') === 'false'),
     'rating clears reject');
   await t.driver.keys('6');
-  await until(() => t.driver.observe(() => document.querySelector('.modal-backdrop[aria-label="Culling preview"] [aria-label="Red label"]')?.getAttribute('aria-pressed') === 'true'),
+  await until(() => t.driver.observe(() => document.querySelector('.modal-backdrop[aria-label="Loupe"] [aria-label="Red label"]')?.getAttribute('aria-pressed') === 'true'),
     '6 toggles the red label');
   await t.evidence('culling-rating');
   await t.driver.keys('\uE00C'); // WebDriver Escape
-  await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Culling preview"]')), 'preview closes with Escape');
+  await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Loupe"]')), 'preview closes with Escape');
   await pause(300);
   const rated = await t.driver.observe(() => [...document.querySelectorAll('.filmstrip .thumb[data-imgid]')]
     .map(e => ({ title: e.title, stars: e.querySelectorAll('.thumb-stars button.on').length,
@@ -422,7 +422,7 @@ export async function gridCulling(t) {
   const selectedFallback = await t.driver.observe(inspect);
   assert(selectedFallback.name.includes(cells[2].title), `F without a hovered photo previews the selected photo (${selectedFallback.name})`);
   await t.driver.keys('\uE00C'); // WebDriver Escape
-  await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Culling preview"]')), 'preview closes');
+  await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Loupe"]')), 'preview closes');
   // Double-click the photo to hand it to the editor.
   await t.driver.point(cells[2].x, cells[2].y, 2);
   await until(() => t.driver.observe(() => !document.querySelector('.filmstrip.grid')), 'double-click opens the photo editor');
@@ -431,14 +431,14 @@ export async function gridCulling(t) {
     contextKeywords: true, doubleClickEdit: true });
 }
 
-const lightboxName = () => document.querySelector('.modal-backdrop[aria-label="Culling preview"] .culling-lightbox')?.firstElementChild?.textContent ?? null;
+const lightboxName = () => document.querySelector('.modal-backdrop[aria-label="Loupe"] .culling-lightbox')?.firstElementChild?.textContent ?? null;
 
 // The visible controls for the F lightbox: the toolbar button beside Grid and
 // the icon in each thumbnail's hover footer.
 export async function gridCullingControls(t) {
   await until(() => t.driver.observe(() => document.querySelectorAll('.filmstrip .thumb[data-imgid]').length >= 3),
     'three photos in the folder', 120000);
-  assert(await t.driver.observe(() => !document.querySelector('button.culling-open')), 'no culling button outside the grid');
+  assert(await t.driver.observe(() => document.querySelector('button.culling-open')?.getAttribute('aria-disabled') === 'true'), 'the Loupe button is switched off outside the grid');
   if (!await t.driver.observe(() => !!document.querySelector('.filmstrip.grid'))) await t.driver.keys('g');
   await until(() => t.driver.observe(() => !!document.querySelector('.filmstrip.grid')), 'grid view');
   await pause(1000); // let the grid finish laying out before measuring its cells
@@ -488,7 +488,7 @@ export async function gridCullingControls(t) {
   await until(() => t.driver.observe(selector => !document.querySelector(selector), dialog), 'Keywords closes');
   await t.evidence('culling-toolbar-button');
   await t.driver.keys('\uE00C');
-  await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Culling preview"]')), 'preview closes with Escape');
+  await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Loupe"]')), 'preview closes with Escape');
   // the footer icon of the third photo, while the second stays selected
   await t.driver.move(cells[2].x, cells[2].y);
   const icon = await until(() => t.driver.observe(id => {
@@ -511,7 +511,7 @@ const PRIORITY_LIMIT_MS = 8000;
 // stopped saying "Loading preview…" (GridCulling's busy flag), on the photo
 // named in the title row.
 const lightboxDrawn = (expectName) => {
-  const root = document.querySelector('.modal-backdrop[aria-label="Culling preview"]');
+  const root = document.querySelector('.modal-backdrop[aria-label="Loupe"]');
   const box = root?.querySelector('.culling-lightbox'), canvas = root?.querySelector('canvas');
   if (!box || !canvas?.width) return null;
   const name = box.firstElementChild?.textContent ?? '';
@@ -559,7 +559,7 @@ export async function gridCullingPriority(t) {
     assert.notEqual(d.name, first.name, 'ArrowRight shows another photo');
   });
   await t.driver.keys('');
-  await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Culling preview"]')), 'preview closes with Escape');
+  await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Loupe"]')), 'preview closes with Escape');
   // the toolbar button, on the selected photo
   await t.driver.point(cells[3].x, cells[3].y);
   const button = await until(() => t.driver.observe(() => {

@@ -22,6 +22,8 @@ import {
 } from "./scenesStore";
 import { SceneThumb } from "./SceneThumb";
 import { formatNumber, t } from "./i18n";
+import { keys } from "./keys";
+import { EditViewIcon, GridViewIcon, ScenesViewIcon } from "./icons";
 
 // the context every card and header reads: the library's flags, the scores, the accepts
 export function useCtx(entries: readonly ImageEntry[]): { ctx: Ctx<ImageEntry>; byKey: Map<string, ImageEntry> } {
@@ -127,13 +129,23 @@ function Skeleton({ blocks }: { blocks: number }) {
   </div>;
 }
 
-// the toolbar's Grid | Scenes switch
-export function ScenesSwitch({ scenes, onScenes }: { scenes: boolean; onScenes: (on: boolean) => void }) {
-  return <span className="scenes-switch" role="radiogroup" aria-label={t("cull.scenes.toggle.label")}>
-    <button type="button" role="radio" aria-checked={!scenes} title={t("cull.scenes.toggle.gridTitle")}
-            onClick={() => onScenes(false)}>{t("cull.scenes.toggle.grid")}</button>
-    <button type="button" role="radio" aria-checked={scenes} title={t("cull.scenes.toggle.scenesTitle")}
-            onClick={() => onScenes(true)}>{t("cull.scenes.toggle.scenes")}</button>
+// the toolbar's Edit | Grid | Scenes switch: the three ways to look at the same photos
+export type ViewMode = "edit" | "grid" | "scenes";
+export function ViewSwitch({ view, onView, canScenes }: {
+  view: ViewMode; onView: (v: ViewMode) => void; canScenes: boolean; labels?: boolean;
+}) {
+  const items: { id: ViewMode; icon: React.ReactNode; label: string; title: string; off?: boolean }[] = [
+    { id: "edit", icon: <EditViewIcon />, label: t("library.toolbar.view.edit"), title: t("library.toolbar.view.editTitle") },
+    { id: "grid", icon: <GridViewIcon />, label: t("cull.scenes.toggle.grid"), title: t("library.toolbar.view.gridTitle") },
+    { id: "scenes", icon: <ScenesViewIcon />, label: t("cull.scenes.toggle.scenes"), title: keys(t("library.toolbar.view.scenesTitle")), off: !canScenes },
+  ];
+  return <span className="view-switch" role="radiogroup" aria-label={t("library.toolbar.view.label")}>
+    {items.map((i) => (
+      <button key={i.id} type="button" role="radio" aria-checked={view === i.id} aria-disabled={i.off || undefined} aria-label={i.label}
+              title={i.title} onClick={() => { if (!i.off) onView(i.id); }}>
+        {i.icon}<span className="view-label">{i.label}</span>
+      </button>
+    ))}
   </span>;
 }
 
