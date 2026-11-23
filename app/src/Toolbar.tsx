@@ -135,7 +135,10 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
   useEffect(() => {
     const bar = ref.current;
     if (!bar || typeof ResizeObserver === "undefined") return;
-    const set = () => bar.parentElement?.style.setProperty("--toolbar-h", `${bar.offsetHeight + parseFloat(getComputedStyle(bar).marginBottom || "0")}px`);
+    const set = () => {
+      const m = getComputedStyle(bar);
+      bar.parentElement?.style.setProperty("--toolbar-h", `${bar.offsetHeight + parseFloat(m.marginTop || "0") + parseFloat(m.marginBottom || "0")}px`);
+    };
     set();
     const ro = new ResizeObserver(set);
     ro.observe(bar);
