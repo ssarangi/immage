@@ -131,7 +131,7 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
   const [note, setNote] = useState<{ text: string; x: number; y: number } | null>(null);
   const noteTimer = useRef(0);
   // the floating status pills (App's .activities) are placed above this bar: they are
-  // positioned in the same column, so without its height they land on top of the bar
+  // positioned in the same column, so without its height (and margins) they land on top of the bar
   useEffect(() => {
     const bar = ref.current;
     if (!bar || typeof ResizeObserver === "undefined") return;

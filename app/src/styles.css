@@ -654,7 +654,7 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
   gap: 8px;
   /* the center column is a <section>, which the global `section` rule pads by 14px a side: pulled
      back so the bar is as wide as the grid surface above it (inset 8px from the column's edge) */
-  margin: 8px -6px 8px;
+  margin: 14px -6px 8px;
   padding: 4px 6px;
   /* a raised bar, a step lighter than the panel it sits on (the card color can equal the panel's in a
      theme) and the recessed grid above it, so it reads as one bar the width of the grid surface */
