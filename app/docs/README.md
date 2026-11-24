@@ -65,6 +65,8 @@ is also on the [Immage website](https://immage.photo/guide/).
 - [Catalog command line](catalog-cli.md): `immage catalog` indexes folders and
   network shares from a terminal, safely, with resumable scans, and makes
   thumbnails the library grid reuses
+- [People command line](faces-cli.md): `immage faces` scans folders for faces, names and reviews people, and
+  exports counts from a terminal, with the same data as the app
 - [Immage Accelerator (Experimental)](immage-accelerator.md): browse and filter photos on a
   mapped network share using the NAS index.
 - [Immich](immich.md): connecting your server, searching it, exporting to

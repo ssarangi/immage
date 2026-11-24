@@ -47,7 +47,14 @@ pub fn model_version(r: Recognizer) -> &'static str {
 /// 640 px, so a face under about 50 px in a 1024 picture is lost). On 40 of the owner's family photos: 54 faces at 1024,
 /// 55 at 1600 whole, 72 at 1600 tiled, 76 at 2048 tiled.
 pub const DETECT_SIZES: [u32; 3] = [1024, 1600, 2048];
+/// The command line can run one scan at another size or with another network without changing the settings (0: none).
+pub static DETECT_OVERRIDE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+pub static RECOGNIZER_OVERRIDE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 pub fn wanted_detect_size(runtime: &Path) -> u32 {
+    let o = DETECT_OVERRIDE.load(Ordering::Acquire);
+    if DETECT_SIZES.contains(&o) {
+        return o;
+    }
     crate::settings::read_key(runtime, "faces.detect_size").and_then(|s| s.parse::<u32>().ok()).filter(|n| DETECT_SIZES.contains(n)).unwrap_or(1024)
 }
 /// The model version new scans store: a change of recognizer or of detection size makes stored faces stale.
@@ -59,6 +66,11 @@ pub fn version_for(runtime: &Path, r: Recognizer) -> String {
 }
 /// The hidden setting `faces.recognizer`: "sface" (default) or "arcface".
 pub fn wanted_recognizer(runtime: &Path) -> Recognizer {
+    match RECOGNIZER_OVERRIDE.load(Ordering::Acquire) {
+        1 => return Recognizer::Sface,
+        2 => return Recognizer::Arcface,
+        _ => {}
+    }
     match crate::settings::read_key(runtime, "faces.recognizer").as_deref() {
         Some("arcface") => Recognizer::Arcface,
         _ => Recognizer::Sface,

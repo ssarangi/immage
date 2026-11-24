@@ -11,6 +11,7 @@ mod search_analysis;
 mod library_ids;
 mod analysis_queue;
 mod analysis_image;
+mod faces_cli;
 mod faces_cluster;
 mod faces_cmds;
 mod faces_detect;
@@ -229,6 +230,10 @@ fn main() {
     }
     let mut context = tauri::generate_context!();
     // before GTK and WebKit start, and before any other thread
+    // `immage faces ...` likewise
+    if let Some(code) = faces_cli::maybe_run() {
+        std::process::exit(code);
+    }
     #[cfg(target_os = "linux")]
     renderer::init(&context.config().identifier).expect("cannot select the webview renderer");
     // Tauri otherwise creates configured windows before setup. Wait until the

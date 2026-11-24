@@ -355,6 +355,20 @@ pub fn faces_failed_photos(ai: State<'_, AiState>, limit: u32) -> Result<Vec<Str
     ai.faces_store.failed_photos(limit.clamp(1, 1000))
 }
 
+/// The merge suggestions for the groups, people and skips in a store (also used by the command line).
+pub fn compute_suggestions(store: &crate::faces_store::FaceStore, runtime: &Path, r: fm::Recognizer, th: &fm::Thresholds) -> Result<Vec<crate::faces_cluster::MergeSuggestion>, String> {
+    let model = fm::version_for(runtime, r);
+    let mut groups = store.group_members(&model)?;
+    // the matrix is over the groups: the biggest 1500 are compared
+    groups.sort_by_key(|g| std::cmp::Reverse(g.1.len()));
+    groups.truncate(1500);
+    let people = store.people_members(&model)?;
+    let skips = store.suggestion_skips()?;
+    let g: Vec<(i64, Vec<&[f32]>)> = groups.iter().map(|(i, m)| (*i, m.iter().map(Vec::as_slice).collect())).collect();
+    let p: Vec<(i64, Vec<&[f32]>)> = people.iter().map(|(i, m)| (*i, m.iter().map(Vec::as_slice).collect())).collect();
+    Ok(crate::faces_cluster::merge_suggestions(&g, &p, th, &skips, 200))
+}
+
 /// Joins two unnamed groups without naming them (undoable). The analysis keeps them together afterwards.
 #[tauri::command]
 #[specta::specta]
@@ -381,18 +395,7 @@ pub fn faces_not_same(app: AppHandle, ai: State<'_, AiState>, a: crate::faces_st
 pub async fn faces_merge_suggestions(ai: State<'_, AiState>) -> Result<Vec<crate::faces_cluster::MergeSuggestion>, String> {
     let r = ai.faces.recognizer(&ai.faces_runtime);
     let (store, th, runtime) = (ai.faces_store.clone(), fm::thresholds_for(r, fm::wanted_strictness(&ai.faces_runtime)), ai.faces_runtime.clone());
-    tauri::async_runtime::spawn_blocking(move || {
-        let model = fm::version_for(&runtime, r);
-        let mut groups = store.group_members(&model)?;
-        // the matrix is over the groups: the biggest 1500 are compared
-        groups.sort_by_key(|g| std::cmp::Reverse(g.1.len()));
-        groups.truncate(1500);
-        let people = store.people_members(&model)?;
-        let skips = store.suggestion_skips()?;
-        let g: Vec<(i64, Vec<&[f32]>)> = groups.iter().map(|(i, m)| (*i, m.iter().map(Vec::as_slice).collect())).collect();
-        let p: Vec<(i64, Vec<&[f32]>)> = people.iter().map(|(i, m)| (*i, m.iter().map(Vec::as_slice).collect())).collect();
-        Ok(crate::faces_cluster::merge_suggestions(&g, &p, &th, &skips, 200))
-    })
+    tauri::async_runtime::spawn_blocking(move || compute_suggestions(&store, &runtime, r, &th))
     .await
     .map_err(|e| e.to_string())?
 }

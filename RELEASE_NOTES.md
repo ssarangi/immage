@@ -36,6 +36,10 @@ Improvements
   two people who may be one, to merge, to mark as not the same (remembered) or to
   dismiss; nothing is applied by itself. Two or more selected groups can be joined
   with Merge groups.
+- **People command line and backup:** `immage faces` scans a folder for faces, names and reviews people, lists
+  suggestions and groups, and exports counts from a terminal, with the same data as the app and safe while it is open
+  (see the People command line guide). Back Up and Restore can now include **People & face data**, copied with SQLite's
+  online backup and refused if it comes from a newer Immage.
 - **Faces on the photo:** Shift+F (View > Show faces on photo; also in the Grid's photo preview) draws a box around each face
   on the open photo, following zoom and pan, with the name on hover; click a face to name it,
   reassign it or mark it **Not Maya** or **Not a face**. A **People** card in the Library column

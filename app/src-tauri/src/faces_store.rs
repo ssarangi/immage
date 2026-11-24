@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 
-const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 3;
 pub const MAX_NAME: usize = 80;
 const UNDO_DEPTH: usize = 20;
 
@@ -114,6 +114,54 @@ pub struct FaceStore {
     db: Mutex<Connection>,
     undo: Mutex<Vec<Undo>>,
     path: Option<std::path::PathBuf>,
+}
+
+/// A consistent copy of a faces.sqlite at `dest` through SQLite's online backup, safe while the app has it open.
+pub fn snapshot_to(src: &Path, dest: &Path) -> Result<(), String> {
+    let from = Connection::open_with_flags(src, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e| e.to_string())?;
+    from.busy_timeout(std::time::Duration::from_secs(10)).map_err(|e| e.to_string())?;
+    let mut to = Connection::open(dest).map_err(|e| e.to_string())?;
+    let backup = rusqlite::backup::Backup::new(&from, &mut to).map_err(|e| e.to_string())?;
+    backup.run_to_completion(256, std::time::Duration::from_millis(5), None).map_err(|e| e.to_string())
+}
+
+/// Whether a file is a faces.sqlite this build can restore: a SQLite database that passes its integrity check, has the
+/// People tables, and was not written by a newer Immage. Returns its schema version.
+pub fn check_backup(file: &Path) -> Result<i64, String> {
+    let db = Connection::open_with_flags(file, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|_| "not a SQLite database".to_string())?;
+    let version: i64 = db.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(|_| "not a SQLite database".to_string())?;
+    if version > SCHEMA_VERSION {
+        return Err(format!("it was made by a newer Immage (face data version {version}, this one reads {SCHEMA_VERSION})"));
+    }
+    if version < 1 {
+        return Err("it is not face data".into());
+    }
+    let ok: String = db.query_row("PRAGMA integrity_check", [], |r| r.get(0)).map_err(|e| e.to_string())?;
+    if ok != "ok" {
+        return Err("it is damaged".into());
+    }
+    for table in ["photos", "faces", "people"] {
+        let n: i64 = db.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1", [table], |r| r.get(0)).map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err(format!("it has no {table} table"));
+        }
+    }
+    Ok(version)
+}
+
+/// Puts a checked backup into the live faces.sqlite through the online backup (the app may have it open: its next read sees
+/// the restored pages), then brings an older schema up to date.
+pub fn restore_into(staged: &Path, live: &Path) -> Result<(), String> {
+    check_backup(staged)?;
+    {
+        let from = Connection::open_with_flags(staged, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e| e.to_string())?;
+        let mut to = Connection::open(live).map_err(|e| e.to_string())?;
+        to.busy_timeout(std::time::Duration::from_secs(10)).map_err(|e| e.to_string())?;
+        let backup = rusqlite::backup::Backup::new(&from, &mut to).map_err(|e| e.to_string())?;
+        backup.run_to_completion(256, std::time::Duration::from_millis(5), None).map_err(|e| e.to_string())?;
+    }
+    // a store of an older version is migrated now: the open app does not do it again
+    FaceStore::open(live).map(|_| ())
 }
 
 /// A face as the scan produces it.
@@ -2128,6 +2176,48 @@ mod tests {
         assert_eq!(s.meta_get("k").unwrap(), None);
         s.meta_set("k", "1").unwrap();
         s.meta_set("k", "2").unwrap();
+    #[test]
+    fn a_snapshot_restores_into_a_store_that_is_open_and_a_newer_one_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let live = dir.path().join("faces.sqlite");
+        let s = FaceStore::open(&live).unwrap();
+        let ids = scan(&s, "/a.jpg", &[nf(0.1, 1.0)]);
+        s.create_person("Ann", &ids).unwrap();
+        let snap = dir.path().join("snap.sqlite");
+        snapshot_to(&live, &snap).unwrap();
+        assert_eq!(check_backup(&snap).unwrap(), SCHEMA_VERSION);
+        // the store changes, then the backup is put back while the store is still open
+        s.create_person("Bob", &[]).unwrap();
+        scan(&s, "/b.jpg", &[nf(0.1, 0.5)]);
+        assert_eq!(s.totals().unwrap().faces, 2);
+        restore_into(&snap, &live).unwrap();
+        let t = s.totals().unwrap();
+        assert_eq!((t.faces, t.people, t.photos), (1, 1, 1), "the open store sees the restored data");
+        // refusals: newer, not a database, empty database, damaged
+        let newer = dir.path().join("newer.sqlite");
+        std::fs::copy(&snap, &newer).unwrap();
+        Connection::open(&newer).unwrap().pragma_update(None, "user_version", SCHEMA_VERSION + 1).unwrap();
+        assert!(check_backup(&newer).unwrap_err().contains("newer Immage"));
+        assert!(restore_into(&newer, &live).is_err());
+        assert_eq!(s.totals().unwrap().faces, 1, "a refused restore changes nothing");
+        std::fs::write(dir.path().join("junk"), b"not a database at all, really").unwrap();
+        assert!(check_backup(&dir.path().join("junk")).is_err());
+        let empty = dir.path().join("empty.sqlite");
+        Connection::open(&empty).unwrap().execute_batch("CREATE TABLE x(a)").unwrap();
+        assert!(check_backup(&empty).is_err());
+        // an older version is migrated on the way in
+        let old = dir.path().join("old.sqlite");
+        {
+            let c = Connection::open(&old).unwrap();
+            c.execute_batch(&format!("BEGIN; {} PRAGMA user_version = 1; COMMIT;", LADDER[0])).unwrap();
+            c.execute("INSERT INTO photos(path,fingerprint,model,scanned_at,width,height) VALUES('/o.jpg','f','m',1,10,10)", []).unwrap();
+        }
+        assert_eq!(check_backup(&old).unwrap(), 1);
+        restore_into(&old, &live).unwrap();
+        assert_eq!(FaceStore::open(&live).unwrap().schema_version().unwrap(), SCHEMA_VERSION);
+        assert_eq!(FaceStore::open(&live).unwrap().totals().unwrap().photos, 1);
+    }
+
         assert_eq!(s.meta_get("k").unwrap().as_deref(), Some("2"));
     }
 

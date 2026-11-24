@@ -128,6 +128,8 @@ pub struct Control {
     folders: Arc<Mutex<VecDeque<Requested>>>,
     store: Arc<FaceStore>,
     wake: Arc<AtomicBool>,
+    stale_pass: Arc<AtomicBool>,
+    defer_to_cli: Arc<AtomicBool>,
 }
 /// A folder asked for once: (folder, with subfolders, a network folder is allowed).
 pub type Requested = (PathBuf, bool, bool);
@@ -221,6 +223,24 @@ fn load_list(store: &FaceStore, key: &str) -> VecDeque<Requested> {
         .collect()
 }
 
+/// The file whose lock says a command line scan is running (`immage faces scan` holds it exclusively while it works).
+pub fn scan_lock_path(runtime: &Path) -> PathBuf {
+    runtime.join("faces.scan.lock")
+}
+/// Whether the command line is scanning now: the app then leaves its own scan passes for later, so the two do not
+/// read the same photos. A photo the app already handed to its worker may still finish.
+pub fn cli_scanning(runtime: &Path) -> bool {
+    let Ok(file) = std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).open(scan_lock_path(runtime)) else { return false };
+    match file.try_lock_shared() {
+        Ok(()) => {
+            let _ = file.unlock();
+            false
+        }
+        Err(std::fs::TryLockError::WouldBlock) => true,
+        Err(_) => false,
+    }
+}
+
 /// Whether People scans only the folders it was given (the setting the page writes: "catalog" or "folder").
 pub fn scope_is_folder(runtime: &Path) -> bool {
     crate::settings::read_key(runtime, "faces.scope").as_deref() == Some("folder")
@@ -269,6 +289,14 @@ impl Control {
         self.health.retry();
         self.ledger.reset();
     }
+    /// The command line's own service is the one holding the scan lock: it does not wait for itself.
+    pub fn set_defer_to_cli(&self, on: bool) {
+        self.defer_to_cli.store(on, Ordering::Release);
+    }
+    /// Offer stale stored photos (default) or only the folders asked for.
+    pub fn set_stale_pass(&self, on: bool) {
+        self.stale_pass.store(on, Ordering::Release);
+    }
     /// The model or the detection size changed (or the user asked to reprocess): look for photos to scan now instead of
     /// at the next pass. The folders asked for earlier go back in the queue, the Catalog scan starts from its beginning,
     /// and the pending count and progress are refreshed at once. Nothing is wiped.
@@ -315,6 +343,10 @@ struct Service {
     dirty: Arc<AtomicBool>,
     urgent: Arc<AtomicBool>,
     wake: Arc<AtomicBool>,
+    /// Whether stored photos that are stale are offered (the command line scans one folder only and turns it off).
+    stale_pass: Arc<AtomicBool>,
+    /// Whether a command line scan holding the lock makes this service wait (the command line's own service does not).
+    defer_to_cli: Arc<AtomicBool>,
     /// Where the pass over stale stored photos stopped (a path).
     stale_cursor: Mutex<String>,
     folders: Arc<Mutex<VecDeque<Requested>>>,
@@ -342,6 +374,8 @@ pub fn start(
     let dirty = Arc::new(AtomicBool::new(true));
     let urgent = Arc::new(AtomicBool::new(false));
     let wake = Arc::new(AtomicBool::new(false));
+    let stale_pass = Arc::new(AtomicBool::new(true));
+    let defer_to_cli = Arc::new(AtomicBool::new(true));
     let folders = Arc::new(Mutex::new(load_folders(&store)));
     let service = Arc::new(Service {
         cache,
@@ -360,6 +394,8 @@ pub fn start(
         dirty: dirty.clone(),
         urgent: urgent.clone(),
         wake: wake.clone(),
+        stale_pass: stale_pass.clone(),
+        defer_to_cli: defer_to_cli.clone(),
         stale_cursor: Mutex::new(String::new()),
         folders: folders.clone(),
         inflight: Mutex::default(),
@@ -368,7 +404,7 @@ pub fn start(
         emit,
     });
     std::thread::spawn(move || service.run());
-    Control { stop, progress, health, ledger, dirty, urgent, folders, store, wake }
+    Control { stop, progress, health, ledger, dirty, urgent, folders, store, wake, stale_pass, defer_to_cli }
 }
 
 /// Maps the face worker's own words to what the worker does about them.
@@ -626,11 +662,14 @@ impl Service {
     }
 
     fn scan(self: &Arc<Self>, job: &Job) -> Result<(), String> {
+        if self.defer_to_cli.load(Ordering::Acquire) && cli_scanning(&self.runtime) {
+            return Ok(());
+        }
         let selection = library_selection(&self.runtime);
         let quiet = self.engine.quiet_for();
         // photos the store already has that are stale (another model or detection size, or marked by a reprocess), straight
         // from its rows: independent of the scope, the folders asked for and the Catalog. A share nobody allowed is left alone.
-        {
+        if self.stale_pass.load(Ordering::Acquire) {
             let version = self.model_version();
             let requested: Vec<Requested> = self.folders.lock().unwrap().iter().cloned().collect();
             let policy = NetPolicy::take(&self.runtime, &requested);

@@ -32,13 +32,14 @@ const KEEP_PRE_RESTORE: usize = 3;
 type WithEngineStopped<'a> = &'a dyn Fn(&mut dyn FnMut() -> Result<(), String>) -> Result<(), String>;
 
 // (id, label, the one file it is, or None for a folder of files)
-const COMPONENTS: [(&str, &str, Option<&str>); 6] = [
+const COMPONENTS: [(&str, &str, Option<&str>); 7] = [
     ("settings", "Preferences & library", Some("settings.json")),
     ("presets", "Edit presets", Some("presets.json")),
     ("export_presets", "Export presets", Some("export-presets.json")),
     ("looks", "Looks", None),
     ("plugins", "Edit In plugins", Some("plugins.json")),
     ("darktable", "Keywords & darktable data", Some("data.db")),
+    ("faces", "People & face data", Some("faces.sqlite")),
 ];
 
 fn label(id: &str) -> &'static str {
@@ -73,6 +74,7 @@ fn file_source(runtime: &Path, id: &str) -> Option<PathBuf> {
         "export_presets" => Some(runtime.join("export-presets.json")),
         "plugins" => Some(runtime.join("plugins.json")),
         "darktable" => Some(data_db(runtime)),
+        "faces" => Some(runtime.join("faces.sqlite")),
         "settings" => Some(runtime.join(settings::FILE)),
         _ => None,
     }
@@ -265,6 +267,18 @@ pub fn create(
                     snapshot(&copy)?;
                     bytes = add_file(&mut zip, "darktable/data.db", &copy)?;
                     files.push("data.db".into());
+                }
+                "faces" => {
+                    // SQLite's online backup: a consistent copy while the app has the file open
+                    let live = runtime.join("faces.sqlite");
+                    if !live.is_file() {
+                        continue;
+                    }
+                    std::fs::create_dir_all(&scratch).map_err(|e| io(&scratch, e))?;
+                    let copy = scratch.join("faces.sqlite");
+                    crate::faces_store::snapshot_to(&live, &copy)?;
+                    bytes = add_file(&mut zip, "faces/faces.sqlite", &copy)?;
+                    files.push("faces.sqlite".into());
                 }
                 other => {
                     let src = file_source(runtime, other).ok_or_else(|| format!("unknown backup component \"{other}\""))?;
@@ -475,6 +489,7 @@ fn validate(id: &str, dir: &Path) -> Result<(), String> {
             }
             Ok(())
         }
+        "faces" => crate::faces_store::check_backup(&dir.join("faces.sqlite")).map(|_| ()).map_err(|e| format!("{name}: faces.sqlite: {e}")),
         _ => Ok(()),
     }
 }
@@ -514,6 +529,14 @@ fn save_current(runtime: &Path, settings: &Settings, id: &str, pre: &Path) -> Re
         "looks" => {
             for (name, _) in looks_files(runtime) {
                 copy_file(&looks_dir(runtime).join(&name), &dir.join(&name))?;
+            }
+            Ok(())
+        }
+        "faces" => {
+            let live = runtime.join("faces.sqlite");
+            if live.is_file() {
+                std::fs::create_dir_all(&dir).map_err(|e| io(&dir, e))?;
+                crate::faces_store::snapshot_to(&live, &dir.join("faces.sqlite"))?;
             }
             Ok(())
         }
@@ -568,6 +591,10 @@ fn replace(runtime: &Path, settings: &Settings, id: &str, staging: &Path) -> Res
                 put(&e.path(), &live.join(e.file_name()))?;
             }
             Ok(())
+        }
+        "faces" => {
+            // into the live database through the online backup (the app keeps it open), then migrated if it is older
+            crate::faces_store::restore_into(&dir.join("faces.sqlite"), &runtime.join("faces.sqlite"))
         }
         other => {
             let dest = file_source(runtime, other).ok_or_else(|| format!("unknown backup component \"{other}\""))?;
@@ -798,7 +825,8 @@ mod tests {
     }
 
     fn all() -> Vec<String> {
-        COMPONENTS.iter().map(|c| c.0.to_string()).collect()
+        // face data is covered by its own tests (a database cannot be a few bytes of text)
+        COMPONENTS.iter().filter(|c| c.0 != "faces").map(|c| c.0.to_string()).collect()
     }
 
     fn make(r: &Path, s: &Settings, ids: &[String], zip: &Path) {
@@ -849,11 +877,71 @@ mod tests {
         out
     }
 
+    fn faces_store_at(r: &Path, people: &[&str]) -> crate::faces_store::FaceStore {
+        let s = crate::faces_store::FaceStore::open(&r.join("faces.sqlite")).unwrap();
+        for p in people {
+            s.create_person(p, &[]).unwrap();
+        }
+        s
+    }
+
+    #[test]
+    fn people_and_face_data_back_up_and_restore_through_the_online_backup() {
+        let (r, s) = runtime("faces-a", "one");
+        let open = faces_store_at(&r, &["Ann", "Bob"]);
+        assert!(components(&r, &s).iter().any(|c| c.id == "faces" && c.available && c.label == "People & face data"));
+        let zip = r.join("faces.zip");
+        // the store is open and in use while it is backed up
+        make(&r, &s, &["faces".into()], &zip);
+        open.create_person("Cy", &[]).unwrap();
+        assert_eq!(open.list_people(false).unwrap().len(), 3);
+        // restoring puts the backup into the live file; the open store sees it, and what was there is kept
+        restore_all(&r, &s, &zip, &["faces".into()], "20261111-000050").unwrap();
+        assert_eq!(open.list_people(false).unwrap().iter().map(|p| p.name.clone()).collect::<Vec<_>>(), ["Ann", "Bob"]);
+        let kept = r.join("backups/pre-restore-20261111-000050/faces/faces.sqlite");
+        assert_eq!(crate::faces_store::FaceStore::open(&kept).unwrap().list_people(false).unwrap().len(), 3, "the replaced data is saved first");
+        // into another computer's runtime that has no face data
+        let (r2, s2) = runtime("faces-b", "two");
+        restore_all(&r2, &s2, &zip, &["faces".into()], "20261111-000051").unwrap();
+        assert_eq!(crate::faces_store::FaceStore::open(&r2.join("faces.sqlite")).unwrap().list_people(false).unwrap().len(), 2);
+        // a runtime without face data has nothing to back up for it
+        let (r3, s3) = runtime("faces-c", "three");
+        assert!(!components(&r3, &s3).iter().find(|c| c.id == "faces").unwrap().available);
+        let none = r3.join("n.zip");
+        create(&r3, &s3, &["faces".into()], &none, "1", "now", &|_| Ok(())).unwrap_err();
+    }
+
+    #[test]
+    fn a_face_backup_from_a_newer_immage_or_a_damaged_one_replaces_nothing() {
+        let (r, s) = runtime("faces-d", "one");
+        let open = faces_store_at(&r, &["Ann"]);
+        let make_zip = |name: &str, db: &Path| {
+            let z = r.join(name);
+            let bytes = std::fs::read(db).unwrap();
+            let man = "{\"format\":1,\"app\":\"Immage\",\"version\":\"1\",\"created\":\"x\",\"components\":{\"faces\":{\"files\":[\"faces.sqlite\"],\"bytes\":1}}}";
+            raw_zip(&z, &[("manifest.json", man.as_bytes()), ("faces/faces.sqlite", &bytes)]);
+            z
+        };
+        let snap = r.join("snap.sqlite");
+        crate::faces_store::snapshot_to(&r.join("faces.sqlite"), &snap).unwrap();
+        let newer = r.join("newer.sqlite");
+        std::fs::copy(&snap, &newer).unwrap();
+        rusqlite::Connection::open(&newer).unwrap().pragma_update(None, "user_version", crate::faces_store::SCHEMA_VERSION + 1).unwrap();
+        let err = restore_all(&r, &s, &make_zip("newer.zip", &newer), &["faces".into()], "20261111-000060").unwrap_err();
+        assert!(err.contains("newer Immage") && err.contains("People & face data"), "{err}");
+        let junk = r.join("junk.db");
+        std::fs::write(&junk, b"SQLite format 3\0 but nothing else").unwrap();
+        assert!(restore_all(&r, &s, &make_zip("junk.zip", &junk), &["faces".into()], "20261111-000061").is_err());
+        open.create_person("Bob", &[]).unwrap();
+        assert_eq!(open.list_people(false).unwrap().len(), 2, "the live data is as it was");
+    }
+
     #[test]
     fn lists_what_exists() {
         let (r, s) = runtime("list", "one");
         let list = components(&r, &s);
-        assert!(list.iter().all(|c| c.available));
+        assert!(list.iter().filter(|c| c.id != "faces").all(|c| c.available));
+        assert!(!list.iter().find(|c| c.id == "faces").unwrap().available, "no face data here");
         assert_eq!(list.iter().find(|c| c.id == "looks").unwrap().files, 2);
         std::fs::remove_file(r.join("plugins.json")).unwrap();
         std::fs::remove_dir_all(r.join("looks")).unwrap();

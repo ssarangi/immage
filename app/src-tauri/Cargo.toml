@@ -50,7 +50,7 @@ tauri-specta = { version = "=2.0.0-rc.28", features = ["derive", "typescript"] }
 specta = { version = "=2.0.0-rc.28", features = ["derive", "function", "serde_json"] }
 specta-typescript = "=0.0.15"
 serde_json = { version = "1", features = ["float_roundtrip"] }
-rusqlite = "0.41.1"
+rusqlite = { version = "0.41.1", features = ["backup"] }
 # auto-culling: the perceptual hash that groups near-duplicate frames (cull.rs)
 image_hasher = { version = "3.1.1", default-features = false }
 uuid = { version = "1", features = ["v4"] }
