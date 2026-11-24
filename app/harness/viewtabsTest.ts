@@ -86,11 +86,10 @@ export async function runViewTabsTest(h: H) {
   tabs()[2].click(); await frames();
   if (tabs().find((t) => t.getAttribute("aria-selected") === "true")?.dataset.view === "scenes") fail.push("a disabled tab was selected by click");
   // contrast of the idle label and the active bar against the strip, per theme (the theme in the URL)
-  const lum = (c: string) => { const m = c.match(/[\d.]+/g)!.map(Number).slice(0, 3).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; };
+  const lum = (c: string) => { const m = c.match(/[\d.]+/g)!.map(Number).slice(0, 3).map((v) => { v = c.startsWith("color(") ? v : v / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; };
   const ratio = (a: string, b: string) => { const [x, y] = [lum(a), lum(b)].sort((p, q2) => q2 - p); return (x + 0.05) / (y + 0.05); };
-  const bg = getComputedStyle(strip).backgroundColor === "rgba(0, 0, 0, 0)" ? getComputedStyle(document.body).backgroundColor : getComputedStyle(strip).backgroundColor;
   const idle = tabs().find((t) => t.getAttribute("aria-selected") !== "true" && t.getAttribute("aria-disabled") !== "true")!;
-  const textRatio = ratio(getComputedStyle(idle).color, bg);
+  const trackBg = getComputedStyle(q(".view-tabs")).backgroundColor, textRatio = ratio(getComputedStyle(idle).color, trackBg);
   if (textRatio < 4) fail.push(`idle label contrast ${textRatio.toFixed(2)}`);
   // the owner's rule: no underline, bottom border or bar on a tab or in the strip
   for (const el of [strip, ...strip.querySelectorAll("*")]) {
@@ -98,6 +97,13 @@ export async function runViewTabsTest(h: H) {
     if (cs.textDecorationLine.includes("underline") && !el.closest(".menubar")) fail.push(`${el.className || el.tagName} is underlined`);
     if (el.closest(".view-tabs") && (parseFloat(cs.borderBottomWidth) > 0 || (after.content !== "none" && after.content !== "normal" && parseFloat(after.height) > 0))) fail.push(`${el.className || el.tagName} has a bottom border or bar`);
   }
+  // the active tab is a raised pill that differs from the track, inside one rounded track
+  const track = q(".view-tabs"), active = tabs().find((t) => t.getAttribute("aria-selected") === "true")!;
+  const tcs = getComputedStyle(track), acs = getComputedStyle(active);
+  if (acs.backgroundColor === tcs.backgroundColor || acs.backgroundColor === "rgba(0, 0, 0, 0)") fail.push("the active pill does not differ from the track");
+  if (acs.boxShadow === "none") fail.push("the active pill is not raised");
+  if (parseFloat(tcs.borderTopLeftRadius) < 10 || tcs.backgroundColor === "rgba(0, 0, 0, 0)") fail.push("the tabs are not in one rounded track");
+  if (tabs().some((t) => t !== active && t.getAttribute("aria-disabled") !== "true" && getComputedStyle(t).backgroundColor !== "rgba(0, 0, 0, 0)")) fail.push("an idle tab has a fill");
   // a badge takes no width; the label and the chip do not move
   h.four(true); await frames(); const w0 = JSON.stringify(tabs().map(R)); h.badge(true); await frames();
   if (JSON.stringify(tabs().map(R)) !== w0) fail.push("a badge changed the tabs' geometry");

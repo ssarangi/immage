@@ -27,6 +27,7 @@ const theme = BUILTIN_THEMES.find((t) => t.id === q.get("theme")) ?? BUILTIN_THE
 for (const token of THEME_TOKENS) document.documentElement.style.setProperty(`--${token}`, theme.colors[token]);
 document.documentElement.style.colorScheme = theme.colorScheme;
 document.documentElement.dataset.theme = theme.id;
+document.documentElement.dataset.scheme = theme.colorScheme;
 if (q.get("dir")) document.documentElement.dir = q.get("dir") === "rtl" ? "rtl" : "ltr";
 document.body.style.cssText = "margin:0;background:var(--window)";
 const mac = q.get("mac") === "1";

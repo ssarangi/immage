@@ -2004,44 +2004,67 @@ html[data-scheme="light"] .strip-slot.grid::before { background: color-mix(in sr
 /* the menus in the title strip (Windows and Linux, always shown): the 84px left pad
    is room for the macOS window buttons, so the menus start at the edge */
 .titlebar.with-menus { padding-left: 12px; }
-/* the view tabs: accent-filled chips, no underline or border (notes/view-tabs-visual-spec.md).
-   They sit centred in the strip's free space right of the menus, in a box that is the size
-   container (not the strip: a container would contain the menus' dropdowns). Only the strip,
-   the title and the box's empty space drag the window, never a tab. --tab-idle is --text-2
-   except on the grey themes, where --text-2 is under 4.5:1 on --window */
-:root { --tab-idle: var(--text-2); }
-:root[data-theme="grey"], :root[data-theme="classic-grey"], :root[data-theme="soft-grey"] { --tab-idle: var(--text); }
+/* the view tabs: pill tabs, a raised pill in an inset track (notes/view-tabs-visual-spec.md,
+   V2). They sit centred in the strip's free space right of the menus, in a box that is the
+   size container (not the strip: a container would contain the menus' dropdowns). Only the
+   strip, the title and the box's empty space drag the window, never a tab. The tokens depend
+   on the theme family: deep dark (the default), the mid-greys, and light */
 .titlebar { padding-inline-end: 12px; }
 .titlebar > span:first-child, .titlebar .menubar { flex: none; }
 .titlebar-tabs { flex: 1 1 0; min-width: 16px; align-self: stretch; display: flex; align-items: center; justify-content: center; container: tabs / inline-size; }
-.view-tabs { display: flex; flex: none; align-items: center; -webkit-app-region: no-drag; }
-.view-tab {
-  position: relative; display: inline-flex; align-items: center; gap: 7px; height: 26px; margin-inline: 2px; padding: 0 14px;
-  border: 0; border-radius: 8px; background: none; color: var(--tab-idle);
-  font: 600 var(--fs-body)/1 inherit; white-space: nowrap; cursor: pointer;
-  transition: background-color 90ms ease, color 90ms ease;
+.view-tabs {
+  --tab-track: color-mix(in srgb, var(--text) 5%, var(--window));
+  --tab-pill: color-mix(in srgb, var(--text) 20%, var(--window));
+  --tab-idle: var(--text-2);
+  --tab-line: color-mix(in srgb, var(--text) 9%, transparent);
+  --tab-hi: rgba(255, 255, 255, .10); --tab-sh: rgba(0, 0, 0, .5); --tab-trough: rgba(0, 0, 0, .35);
 }
-.view-tab::before { content: ""; position: absolute; inset: -4px 0; }
-.view-tab .icon { width: 16px; height: 16px; flex: none; }
-.view-tab:hover { background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); }
-.view-tab:active { background: color-mix(in srgb, var(--text) 16%, transparent); }
+:root[data-theme="grey"] .view-tabs, :root[data-theme="classic-grey"] .view-tabs, :root[data-theme="soft-grey"] .view-tabs {
+  --tab-track: color-mix(in srgb, #000 33%, var(--window));
+  --tab-pill: color-mix(in srgb, #000 6%, var(--window));
+  --tab-idle: var(--text);
+  --tab-line: rgba(0, 0, 0, .22);
+  --tab-hi: rgba(255, 255, 255, .22); --tab-sh: rgba(0, 0, 0, .35); --tab-trough: rgba(0, 0, 0, .3);
+}
+:root[data-scheme="light"] .view-tabs {
+  --tab-track: color-mix(in srgb, #000 8%, var(--window));
+  --tab-pill: var(--card);
+  --tab-line: rgba(0, 0, 0, .08);
+  --tab-hi: rgba(255, 255, 255, .9); --tab-sh: rgba(0, 0, 0, .14); --tab-trough: rgba(0, 0, 0, .06);
+}
+.view-tabs {
+  display: flex; flex: none; align-self: center; gap: 2px; height: 30px; padding: 3px; border-radius: 15px;
+  background: var(--tab-track); -webkit-app-region: no-drag;
+  box-shadow: inset 0 0 0 1px var(--tab-line), inset 0 1px 2px var(--tab-trough);
+}
+.view-tab {
+  position: relative; display: inline-flex; align-items: center; gap: 7px; height: 24px; padding: 0 13px;
+  border: 0; border-radius: 12px; background: none; color: var(--tab-idle);
+  font: 600 var(--fs-body)/1 inherit; white-space: nowrap; cursor: pointer;
+  transition: background-color 90ms ease, color 90ms ease, box-shadow 90ms ease;
+}
+.view-tab::before { content: ""; position: absolute; inset: -5px 0; }
+.view-tab .icon { width: 15px; height: 15px; flex: none; }
+.view-tab:hover { color: var(--text); background: color-mix(in srgb, var(--text) 6%, transparent); }
+.view-tab:active { background: color-mix(in srgb, var(--text) 10%, transparent); }
 .view-tab[aria-selected="true"], .view-tab[aria-selected="true"]:hover, .view-tab[aria-selected="true"]:active {
-  background: var(--accent); color: var(--on-accent); cursor: default;
+  color: var(--text); background: var(--tab-pill); cursor: default;
+  box-shadow: inset 0 1px 0 var(--tab-hi), 0 1px 2px var(--tab-sh), 0 0 0 .5px var(--tab-line);
 }
 .view-tab[aria-disabled="true"], .view-tab[aria-disabled="true"]:hover { background: none; color: var(--text-3); cursor: default; }
-.view-tab:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.view-tab:focus-visible { outline: 2px solid var(--focus); outline-offset: 0; }
 .view-tab .tab-badge {
-  position: absolute; top: 4px; inset-inline-start: 25px; width: 8px; height: 8px; border-radius: 50%;
-  background: var(--accent); box-shadow: 0 0 0 2px var(--window); opacity: 0;
+  position: absolute; top: 3px; inset-inline-start: 24px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 2px var(--tab-track); opacity: 0;
 }
 .view-tab[data-badge] .tab-badge { opacity: 1; }
-.view-tab[aria-selected="true"] .tab-badge { background: var(--on-accent); box-shadow: 0 0 0 2px var(--accent); }
-@media (pointer: coarse) { .view-tab { min-width: 44px; height: 32px; } }
+.view-tab[aria-selected="true"] .tab-badge { box-shadow: 0 0 0 2px var(--tab-pill); }
+@media (pointer: coarse) { .view-tab::before { inset: -5px -2px; } }
 @media (prefers-reduced-motion: reduce) { .view-tab { transition: none; } }
 @container tabs (max-width: 440px) {
   .view-tab .view-tab-label { display: none; }
-  .view-tab { padding: 0 11px; }
-  .view-tab .tab-badge { inset-inline-start: 22px; }
+  .view-tab { padding: 0 10px; }
+  .view-tab .tab-badge { inset-inline-start: 21px; }
 }
 .menubar { display: flex; align-items: stretch; align-self: stretch; margin-left: 8px; font-weight: 400; }
 .menubar-slot { position: relative; display: flex; }
