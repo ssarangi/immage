@@ -21,6 +21,7 @@
 //   gps     none: no photo has a position (Places' empty state);  tiles=offline: every map tile fails (the grid fallback)
 //           filter=place:<quadkey> selects a map area (the biggest at the first zooms were recorded)
 //   deg     a degenerate library: one | onecam | nolens | nogps | unrated | all5 | oneyear (statsDegenerate.ts)
+//   faces=1 Faces is on, with ten named people (the People section); faces=error: their list fails; faces=none: nobody is named
 //   shift=1 runs the no-layout-shift test and writes JSON into #report (see shiftTest.ts)
 import "./tauriShim";
 import { createRoot } from "react-dom/client";
@@ -34,6 +35,8 @@ import { BUILTIN_THEMES, THEME_TOKENS } from "../src/themes";
 import { initialState, setScope, setValues, setOnlyTop } from "../src/statsModel";
 import { resetStatsState } from "../src/statsStore";
 import { createMockApi } from "./statsMock";
+import { resetPeople, setPeople, setPeopleApi, type PeopleApi } from "../src/peopleStore";
+import type { FacesStatus, PersonRow } from "../src/bindings";
 import { runStatsShiftTest } from "./statsShift";
 
 // the stats.* strings are in src/locales/en.json like every other catalog key
@@ -45,6 +48,21 @@ document.documentElement.dataset.theme = theme.id;
 document.documentElement.dataset.scheme = theme.colorScheme;
 document.body.style.background = "var(--window)";
 document.body.style.overflow = "hidden";
+
+// Faces on, with named people: the People section shows (it is hidden while Faces is off)
+const facesMode = q.get("faces");
+if (facesMode) {
+  const names = ["Maya", "Dad", "Nana", "Alex", "Sam", "Marcus", "Zoe", "Dan", "Mum", "A very long name that cannot fit in the row of the card"];
+  const people: PersonRow[] = facesMode === "none" ? [] : names.map((name, i) => ({ id: i + 1, name, state: "active", faces: 900 - i * 70, photos: 840 - i * 75, cover_face_id: i + 1, cover_manual: false, suggestions: 0 }));
+  const status = { enabled: true, installed: true } as FacesStatus;
+  setPeopleApi({
+    people: () => (facesMode === "error" ? Promise.reject(new Error("no")) : Promise.resolve(people)),
+    crop: (face: number) => { const h = (face * 47) % 360; return Promise.resolve(new Blob([`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="hsl(${h} 40% 45%)"/><circle cx="32" cy="26" r="12" fill="hsl(${h} 30% 78%)"/></svg>`], { type: "image/svg+xml" })); },
+    subscribe: () => () => {},
+  } as unknown as PeopleApi);
+  resetPeople({ on: false });
+  setPeople({ status, loaded: true });
+}
 // negative control for verify/stats-shift.test.mjs: a hover and a selected style that move layout, which the test must catch
 if (q.get("bad") === "1") {
   const st = document.createElement("style");

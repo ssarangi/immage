@@ -140,7 +140,7 @@ import { PeopleCard } from "./PeopleCard";
 import { NO_FACES, wantFaceSets } from "./facesFilter";
 import { useFaceSetsVersion } from "./useFaceSets";
 import "./people.css";
-import { peopleState, setPeopleOn, setScanFolderTotal, useFacesOn, startPeople, usePeopleBadge, usePeopleOn } from "./peopleStore";
+import { peopleState, requestPerson, setPeopleOn, setScanFolderTotal, useFacesOn, startPeople, usePeopleBadge, usePeopleOn } from "./peopleStore";
 import { SceneRules } from "./SceneRules";
 import { scenesState, setScenesOn, useScenesOn } from "./scenesStore";
 import { KeywordingPanel } from "./Keywording";
@@ -7975,6 +7975,7 @@ export default function App() {
         <Statistics currentFolder={folder} onAddFolders={() => { setStatsOpen(false); void addFolder(); }}
                     onClose={() => { setStatsOpen(false); requestAnimationFrame(() => statsButton.current?.focus()); }}
                     onLearnMore={() => menuActionsRef.current["user-guide"]?.()}
+                    onOpenPerson={(id) => { requestPerson(id); setStatsOpen(false); setScenesOn(false); setPeopleOn(true); setGrid(true); }}
                     onOpenPhoto={(p) => { setStatsOpen(false); void openLaunched(p.path); }}
                     onOpenInGrid={(ids, title) => { setStatsOpen(false); void showStatsResult(ids, title); }} />
       </Suspense>

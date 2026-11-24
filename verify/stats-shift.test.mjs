@@ -39,6 +39,9 @@ for (const [name, query, w, h] of [
   ['top images, no thumbnails', 'state=ready&thumbs=none', 1440, 900],
   ['top images, a failing first page', 'state=ready&top=error', 1440, 900],
   ['top images, a later page fails', 'state=ready&top=pagefail', 1440, 900],
+  ['people section', 'state=ready&faces=1&scrollTo=people', 1440, 900],
+  ['people section, light, no one named', 'state=ready&faces=none&theme=light&scrollTo=people', 1440, 900],
+  ['people section, the list fails', 'state=ready&faces=error&scrollTo=people', 1440, 900],
   ['loading', 'state=loading', 1440, 900],
   ['empty result', 'state=empty', 1440, 900],
   ['error', 'state=error', 1440, 900],
@@ -67,4 +70,16 @@ test('negative control: a hover that moves the Exposure and Time charts fails th
 test('negative control: a Top images card, label chip or strip frame that moves fails the measurement', { skip }, () => {
   const r = run('state=ready&bad=3');
   assert.ok(r.maxDelta > 0, 'the measurement did not notice a Top images card that moves on hover');
+});
+
+test('the People section: ten people, most photos first, a row each; hidden while Faces is off', { skip }, () => {
+  const text = (dom) => dom.slice(dom.indexOf('<body')).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+  const dump = (query) => execFileSync(CHROME, ['--headless=new', '--no-sandbox', '--disable-gpu', `--user-data-dir=${mkdtempSync(join(tmpdir(), 'stats-people-'))}`,
+    '--window-size=1440,900', '--virtual-time-budget=20000', '--dump-dom', `${BASE}?${query}`], { encoding: 'utf8', timeout: 120000, maxBuffer: 64 << 20 });
+  const on = dump('state=ready&faces=1');
+  assert.match(on, /id="people"/);
+  assert.equal((on.match(/class="st-people-row"/g) ?? []).length, 8);
+  assert.ok(text(on).indexOf('Maya') < text(on).indexOf('Dad') && text(on).indexOf('Dad') < text(on).indexOf('Nana'));
+  assert.doesNotMatch(dump('state=ready'), /id="people"/);
+  assert.match(text(dump('state=ready&faces=none')), /Nobody is named yet/);
 });

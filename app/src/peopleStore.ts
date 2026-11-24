@@ -127,6 +127,7 @@ export type PeopleState = {
   paused: boolean;
   scan: ScanView;
   loaded: boolean;                   // the lists have been read once
+  openPerson: number | null;         // a person another view asked the People view to open
   tick: number;                      // bumped whenever the faces changed (naming, a scan), for what shows one photo's faces
   suggestions: MergeSuggestion[];    // pairs the backend thinks are one person (never acted on by itself)
   data: PeopleData;
@@ -137,7 +138,7 @@ export type PeopleState = {
 
 const EMPTY_DATA: PeopleData = { people: [], groups: [], unknown: [], unknownMore: false, ignoredFaces: [], ignoredMore: false };
 const NO_STATUS_SCAN: ScanView = { kind: "off", done: 0, total: null, left: null, reason: null };
-const EMPTY: PeopleState = { on: false, status: null, failed: false, paused: false, scan: NO_STATUS_SCAN, loaded: false, tick: 0, suggestions: [], data: EMPTY_DATA, undo: null, error: "", busy: false };
+const EMPTY: PeopleState = { on: false, status: null, failed: false, paused: false, scan: NO_STATUS_SCAN, loaded: false, openPerson: null, tick: 0, suggestions: [], data: EMPTY_DATA, undo: null, error: "", busy: false };
 
 let state: PeopleState = EMPTY;
 const listeners = new Set<() => void>();
@@ -505,3 +506,6 @@ export function ensurePeople(): Promise<void> {
 // whether faces are on, for the places that show nothing when they are off (Find's row, the overlay, the card)
 export const useFacesOn = () => useSyncExternalStore(subscribe, () => !!state.status?.enabled && !!state.status?.installed);
 export const facesOn = () => !!state.status?.enabled && !!state.status?.installed;
+
+// another view (Statistics) asks People to open a person's page; the People view takes the request when it shows
+export const requestPerson = (id: number | null) => setPeople({ openPerson: id });

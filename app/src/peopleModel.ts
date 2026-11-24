@@ -375,3 +375,9 @@ export function joinPlan(ids: readonly number[], sizes: ReadonlyMap<number, numb
   const sorted = [...new Set(ids)].sort((a, b) => (sizes.get(b) ?? 0) - (sizes.get(a) ?? 0) || a - b);
   return sorted.length < 2 ? null : { into: sorted[0], from: sorted.slice(1) };
 }
+
+// Statistics > People: the named people with the most photos (a photo counts once however many files its shot has)
+export function topPeople(list: readonly PersonRow[], n = 8): PersonRow[] {
+  return list.filter((p) => p.state === "active" && p.photos > 0)
+    .sort((a, b) => b.photos - a.photos || a.name.localeCompare(b.name)).slice(0, n);
+}

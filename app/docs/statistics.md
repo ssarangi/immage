@@ -96,6 +96,12 @@ Statistics does not read).
 With the keyboard, Tab enters a chart and the arrow keys move between its
 marks; Enter or Space filters.
 
+## People
+
+While [People](people.md) is on, a **People** section at the end of the page lists the named people with the most photos: a
+row each with their face, name, a bar and the number of photos (a photo counts once, however many files its shot has). Click a
+row to open that person in People. The counts are the whole library's; the filters above do not narrow them.
+
 ## Filtering by clicking
 
 Every bar, slice, row, chip and wedge is a filter. Click one to set it, click

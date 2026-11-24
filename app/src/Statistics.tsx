@@ -30,14 +30,16 @@ import { StatsHeader } from "./stats/StatsHeader";
 import { StatsHero } from "./stats/StatsHero";
 import { StatsNav, type Tab } from "./stats/StatsNav";
 import { PlacesSection } from "./stats/PlacesSection";
+import { PeopleSection } from "./stats/PeopleSection";
+import { useFacesOn } from "./peopleStore";
 import { TimeSection } from "./stats/TimeSection";
 import { TopImagesSection } from "./stats/TopImagesSection";
 import { TipLayer } from "./stats/Tip";
 import { ViewContext, type ViewCtx } from "./stats/ctx";
 
 /** The sections on the page; the later phases add Exposure, Time, Places and Top images here. */
-const SECTION_IDS = ["cameras", "lenses", "exposure", "time", "places", "top"] as const;
-const ANCHOR: Record<string, string> = { overview: "st-top", cameras: "cameras", lenses: "lenses", exposure: "exposure", time: "time", places: "places", top: "top" };
+const SECTION_IDS = ["cameras", "lenses", "exposure", "time", "places", "top", "people"] as const;
+const ANCHOR: Record<string, string> = { overview: "st-top", cameras: "cameras", lenses: "lenses", exposure: "exposure", time: "time", places: "places", top: "top", people: "people" };
 
 export interface StatisticsProps {
   onClose(): void;
@@ -49,9 +51,12 @@ export interface StatisticsProps {
   /** the Folders panel's current folder, for the "This folder" scope */
   currentFolder?: string | null;
   api?: StatsApi;
+  /** a person's page in People (the People section's rows) */
+  onOpenPerson?(id: number): void;
 }
 
-export default function Statistics({ onClose, onOpenInGrid, onOpenPhoto, onAddFolders, onLearnMore, currentFolder = null, api = commandsApi }: StatisticsProps) {
+export default function Statistics({ onClose, onOpenInGrid, onOpenPhoto, onAddFolders, onLearnMore, currentFolder = null, api = commandsApi, onOpenPerson }: StatisticsProps) {
+  const faces = useFacesOn();
   const [state, update] = useStatsState();
   const data = useStatsData(api, state);
   const root = useRef<HTMLDivElement>(null);
@@ -135,6 +140,7 @@ export default function Statistics({ onClose, onOpenInGrid, onOpenPhoto, onAddFo
     { id: "time", label: t("stats.nav.time") },
     { id: "places", label: t("stats.nav.places") },
     { id: "top", label: t("stats.nav.top"), count: overview?.matches.top },
+    ...(faces ? [{ id: "people", label: t("stats.nav.people") }] : []),
   ];
   const matches = overview?.matches ?? null;
 
@@ -165,6 +171,7 @@ export default function Statistics({ onClose, onOpenInGrid, onOpenPhoto, onAddFo
                   <TimeSection />
                   <PlacesSection />
                   <TopImagesSection />
+                  {faces && <PeopleSection onOpenPerson={onOpenPerson} />}
                   {gridError && <p className="st-grid-error" role="alert">{gridError}</p>}
                   <div className="st-foot"><span>{overview ? t("stats.foot.computed", { n: nf(overview.photos) }) : " "}</span><span>{t("stats.foot.private")}</span></div>
                 </div>

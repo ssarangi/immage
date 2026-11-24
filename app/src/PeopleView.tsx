@@ -25,7 +25,7 @@ import {
 } from "./peopleModel";
 import {
   clearUndo, confirmTiles, deleteAllFaceData, groupFaces, ignoreTiles, failedPhotos, loadMoreIgnored, loadMoreUnknown, maybeFaces, mergeGroups, mergePeople, nameTiles, notPerson, notSame, personFaces,
-  refreshAll, renamePerson, scopeFolderPath, restorePeople, retryFailed, unignoreFaces, setCover, togglePause, turnOff, turnOn, undoLast, usePeople, type NameTarget, type Scope,
+  refreshAll, renamePerson, requestPerson, scopeFolderPath, restorePeople, retryFailed, unignoreFaces, setCover, togglePause, turnOff, turnOn, undoLast, usePeople, type NameTarget, type Scope,
 } from "./peopleStore";
 import { settings } from "./settings";
 
@@ -113,6 +113,10 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack,
     }
   }, [s.loaded, picked, section, counts.people, counts.review]);
 
+  // a request from another view (Statistics): that person's page, once the people are here
+  useEffect(() => {
+    if (s.openPerson !== null && s.loaded) { setPage({ id: s.openPerson, tab: "photos" }); setPicked(true); requestPerson(null); }
+  }, [s.openPerson, s.loaded]);
   const pagePerson = page ? data.people.find((x) => x.id === page.id) ?? null : null;
   useEffect(() => {
     if (!page || page.tab !== "faces") { setSheet((cur) => (cur?.person ? null : cur)); return; }

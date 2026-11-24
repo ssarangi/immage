@@ -46,6 +46,8 @@ Improvements
   face data**, plus **Same person strictness** (applies at once), **Scan thoroughness** (Thorough finds about 33% more
   faces, such as small ones in group photos, but is about 4 times slower, and re-scans in the background) and **Reprocess all faces**. Face counts now
   count photos once, however many files a shot has.
+- **Statistics > People:** with People on, Statistics has a People section listing the named people
+  with the most photos (a bar each); clicking a person opens their page.
 - **Person page:** double-click a person in People to open their page: their photos in the
   app's grid (with **Open in Grid**, which sets Find's People filter), and their faces to
   confirm, reject (**Not Maya**, **Not a face**) or choose as cover.

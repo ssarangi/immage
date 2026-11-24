@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NO_SEL, GAP, PAD, CAPTION, geometry, gridKey, keepSelected, mergeUndo, nameOptions, needsReview, scanView, sectionCounts,
-  scanNotes, scanJob, joinPlan, undoMs, suggestRows, capRows, lookAlikes, sectionTiles, select, stableOrder, tilePos, tilesInRect, totalHeight, viewKind, visibleRange } from '../app/src/peopleModel.ts';
+  scanNotes, scanJob, topPeople, joinPlan, undoMs, suggestRows, capRows, lookAlikes, sectionTiles, select, stableOrder, tilePos, tilesInRect, totalHeight, viewKind, visibleRange } from '../app/src/peopleModel.ts';
 
 const person = (id, name, o = {}) => ({ id, name, state: 'active', faces: 5, photos: 10, cover_face_id: null, cover_manual: false, suggestions: 0, ...o });
 const data = (o = {}) => ({ people: [], groups: [], unknown: [], unknownMore: false, ignoredFaces: [], ignoredMore: false, ...o });
@@ -210,4 +210,12 @@ test('joining groups: the biggest takes the others in', () => {
   assert.deepEqual(joinPlan([1, 3, 2, 4], sizes), { into: 2, from: [3, 4, 1] });   // ties by id
   assert.equal(joinPlan([2], sizes), null);
   assert.equal(joinPlan([2, 2], sizes), null);
+});
+
+test('Statistics > People: named people by photos, ignored and empty ones left out, ties by name, capped', () => {
+  const ps = [person(1, 'Zed', { photos: 5 }), person(2, 'Amy', { photos: 5 }), person(3, 'Big', { photos: 50 }), person(4, 'Old', { photos: 90, state: 'ignored' }),
+    person(5, 'None', { photos: 0 }), ...Array.from({ length: 10 }, (_, i) => person(10 + i, `P${i}`, { photos: 20 + i }))];
+  assert.deepEqual(topPeople(ps).map((p) => p.name).slice(0, 3), ['Big', 'P9', 'P8']);
+  assert.equal(topPeople(ps).length, 8);
+  assert.deepEqual(topPeople(ps.slice(0, 5), 8).map((p) => p.name), ['Big', 'Amy', 'Zed']);
 });
