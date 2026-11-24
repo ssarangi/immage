@@ -61,8 +61,9 @@ export function useEye(path: string): EyeLabel | null {
 export const eyeOf = (path: string): EyeLabel | null => (eyesActive() ? eyeVerdict(path) ?? null : null);
 
 // ---- Find's Closed eyes: the open folder's photos, in chunks, with a progress line ----
-export type EyesScan = { running: boolean; done: number; total: number };
-let scan: EyesScan = { running: false, done: 0, total: 0 };
+// `total` is the photos still to check when the run began (those with no verdict yet), `known` the folder's photos with a verdict now
+export type EyesScan = { running: boolean; done: number; total: number; known: number };
+let scan: EyesScan = { running: false, done: 0, total: 0, known: 0 };
 let scanToken = 0;
 const scanListeners = new Set<() => void>();
 const setScan = (s: EyesScan) => { scan = s; scanListeners.forEach((l) => l()); };
@@ -74,11 +75,12 @@ export const useEyesOn = () => useSyncExternalStore(subscribePeople, eyesActive)
 
 /** asks for every photo's verdict, chunk by chunk; a newer call (another folder) or `stopEyesScan` ends this one */
 export function startEyesScan(paths: readonly string[]) {
-  if (!eyesActive()) return;
   const token = ++scanToken;
+  if (!eyesActive()) { setScan({ running: false, done: 0, total: 0, known: 0 }); return; }
+  const known = () => paths.reduce((n, p) => n + (eyeVerdict(p) !== undefined ? 1 : 0), 0);
   void scanPaths(paths, (p) => peopleApi().eyesFor(p, null).then((r) => r.map((x) => ({ path: x.path, state: x.state, primaryFace: x.primaryFace }))), {
     have: (p) => eyeVerdict(p) !== undefined, onChunk: (r) => { setEyeVerdicts(r); },
-    progress: (done, total) => { if (token === scanToken) setScan({ running: done < total, done, total }); }, stopped: () => token !== scanToken,
-  }).then(() => { if (token === scanToken) setScan({ ...scan, running: false }); });
+    progress: (done, total) => { if (token === scanToken) setScan({ running: done < total, done, total, known: known() }); }, stopped: () => token !== scanToken,
+  }).catch(() => {}).then(() => { if (token === scanToken) setScan({ ...scan, running: false, known: known() }); });
 }
-export const stopEyesScan = () => { scanToken++; setScan({ running: false, done: 0, total: 0 }); };
+export const stopEyesScan = () => { scanToken++; setScan({ running: false, done: 0, total: 0, known: 0 }); };

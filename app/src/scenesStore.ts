@@ -155,15 +155,17 @@ function applyScores(scores: { path: string; version: number; quality: number | 
   const regions = state.regions.slice();
   const eyes = state.eyes.length === state.items.length ? state.eyes.slice() : state.items.map(() => null) as ScenesState["eyes"];
   const faceAdjust = state.faceAdjust.length === state.items.length ? state.faceAdjust.slice() : state.items.map(() => null) as ScenesState["faceAdjust"];
+  let changed = false;   // only a score that differs from the one the preview used makes it stale; the same one arriving again does not
   for (const s of scores) {
     const i = index.get(frameKey(s.path, s.version));
     if (i === undefined || s.quality === null) continue;
+    if (quality[i] !== s.quality || (s.faceAdjust !== undefined && faceAdjust[i] !== s.faceAdjust)) changed = true;
     quality[i] = s.quality;
     regions[i] = s.sharpRegion ?? null;
     if (s.eyes !== undefined) eyes[i] = s.eyes;
     if (s.faceAdjust !== undefined) faceAdjust[i] = s.faceAdjust;
   }
-  setScenes({ quality, regions, eyes, faceAdjust, previewStale: state.preview !== null });
+  setScenes({ quality, regions, eyes, faceAdjust, ...(changed && state.preview !== null ? { previewStale: true } : {}) });
 }
 
 // Scores a scene's unscored frames (the open scene first: under two seconds on a local disk)

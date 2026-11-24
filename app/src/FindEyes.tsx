@@ -22,7 +22,7 @@ export function ClosedEyesEditor({ state, send }: { state: FindState; send: (nex
                onChange={(e) => send({ ...state, filter: { ...state.filter, closedEyes: e.target.checked } })} />
       </div>
       <p className="faces-line" role="status">{on && scan.running ? t("library.find.eyes.progress", { done: formatNumber(scan.done), total: formatNumber(scan.total) })
-        : on && scan.total > 0 ? t("library.find.eyes.done", { n: scan.total, count: formatNumber(scan.total) }) : ""}</p>
+        : on && scan.known > 0 ? t("library.find.eyes.done", { n: scan.known, count: formatNumber(scan.known) }) : ""}</p>
     </div>
   );
 }
