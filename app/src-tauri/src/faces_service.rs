@@ -391,8 +391,8 @@ pub fn photos_under(folder: &Path, limit: usize, recursive: bool, skip: &dyn Fn(
 
 impl Service {
     /// The stored model version of the recognizer in use now (the setting, while its file is there).
-    fn model_version(&self) -> &'static str {
-        fm::model_version(self.models.recognizer(&self.runtime))
+    fn model_version(&self) -> String {
+        fm::version_for(&self.runtime, self.models.recognizer(&self.runtime))
     }
 
     fn failed(&self, path: &str, version: &str, generation: u64, f: Failure) {
@@ -409,7 +409,7 @@ impl Service {
                 let tries = self.ledger.fail(path, version, now_ms());
                 if tries >= MAX_PHOTO_TRIES {
                     // remembered, so the photo is not offered again until its file or the model changes
-                    let _ = self.store.put_failure(path, version, self.model_version(), "failed", &f.msg);
+                    let _ = self.store.put_failure(path, version, &self.model_version(), "failed", &f.msg);
                     eprintln!("faces {path}: given up: {}", f.msg);
                 }
             }
@@ -523,7 +523,7 @@ impl Service {
                     if self.models.enabled()
                         && selected(Path::new(&row.path), &selection)
                         && !policy.blocked(Path::new(&row.path))
-                        && !self.store.is_current(&row.path, &row.original_fingerprint, self.model_version()).ok()?
+                        && !self.store.is_current(&row.path, &row.original_fingerprint, &self.model_version()).ok()?
                         && !self.ledger.skipped(&row.path, &row.original_fingerprint, now)
                     {
                         total = total.saturating_add(1);
@@ -587,7 +587,7 @@ impl Service {
                     continue;
                 }
                 let Some(fp) = self.fingerprint_now(&path) else { continue };
-                if self.store.is_current(&path, &fp, self.model_version())? || self.ledger.skipped(&path, &fp, now_ms()) {
+                if self.store.is_current(&path, &fp, &self.model_version())? || self.ledger.skipped(&path, &fp, now_ms()) {
                     continue;
                 }
                 offered = true;
@@ -623,7 +623,7 @@ impl Service {
                 after = a.id;
                 let path = Path::new(&a.path);
                 // a network source nobody allowed is skipped on the path alone: nothing is stat'ed
-                let current = !selected(path, &selection) || policy.blocked(path) || self.store.is_current(&a.path, &a.original_fingerprint, self.model_version())?;
+                let current = !selected(path, &selection) || policy.blocked(path) || self.store.is_current(&a.path, &a.original_fingerprint, &self.model_version())?;
                 if current || (quiet < SHARE_QUIET && crate::volumes::on_network(path)) {
                     if leading {
                         lead = a.id;
@@ -653,13 +653,15 @@ impl Service {
 
     /// The photo's small picture: from its own file when it has a usable one, else rendered by the engine.
     fn picture(&self, path: &str, fingerprint: &str) -> Result<Arc<image::RgbImage>, String> {
-        if let Some((img, _)) = self.shared.get(path, fingerprint) {
+        // the picture at this detection size: a change of size must not hit a picture made at another
+        let key = format!("{fingerprint}:{}", fm::wanted_detect_size(&self.runtime));
+        if let Some((img, _)) = self.shared.get(path, &key) {
             self.progress.from_file.fetch_add(1, Ordering::AcqRel);
             return Ok(img);
         }
-        if let Some(pic) = analysis_image::picture(Path::new(path)) {
+        if let Some(pic) = analysis_image::picture_at(Path::new(path), fm::wanted_detect_size(&self.runtime)) {
             let img = Arc::new(pic.rgb);
-            self.shared.put(path, fingerprint, img.clone());
+            self.shared.put(path, &key, img.clone());
             self.progress.from_file.fetch_add(1, Ordering::AcqRel);
             return Ok(img);
         }
@@ -679,14 +681,14 @@ impl Service {
         limits.max_alloc = Some(16 * 1024 * 1024);
         reader.limits(limits);
         let img = Arc::new(reader.decode().map_err(|e| format!("could not decode the picture: {e}"))?.to_rgb8());
-        self.shared.put(path, fingerprint, img.clone());
+        self.shared.put(path, &key, img.clone());
         self.progress.rendered.fetch_add(1, Ordering::AcqRel);
         Ok(img)
     }
 
     fn faces_in(&self, root: &Path, img: &image::RgbImage) -> Result<Vec<NewFace>, String> {
         let arcface = (self.models.recognizer(&self.runtime) == fm::Recognizer::Arcface).then(|| self.models.arcface()).flatten();
-        let (faces, ms) = detect_and_embed(&self.engine, &self.runtime, root, arcface.as_deref(), img)?;
+        let (faces, ms) = detect_and_embed_with(&self.engine, &self.runtime, root, arcface.as_deref(), img, fm::wanted_detect_size(&self.runtime) > 1024)?;
         self.loaded.store(true, Ordering::Release);
         self.progress.last_ms.store(ms.round() as u64, Ordering::Release);
         Ok(faces)
@@ -715,7 +717,7 @@ impl Service {
             return Ok(());
         }
         // a RAW and its JPG are one picture: the second file takes the first's faces
-        let companion = self.store.companion(path, rgb.width(), rgb.height(), self.model_version())?;
+        let companion = self.store.companion(path, rgb.width(), rgb.height(), &self.model_version())?;
         let faces = match &companion {
             Some(primary) => {
                 self.progress.mirrored.fetch_add(1, Ordering::AcqRel);
@@ -730,7 +732,7 @@ impl Service {
             return Ok(());
         }
         let n = faces.len() as u64;
-        match job.commit(|| self.store.put_scan(path, fingerprint, self.model_version(), rgb.width(), rgb.height(), &faces, companion.as_deref())) {
+        match job.commit(|| self.store.put_scan(path, fingerprint, &self.model_version(), rgb.width(), rgb.height(), &faces, companion.as_deref())) {
             Some(r) => r.map(|_| ())?,
             None => return Ok(()),
         }
@@ -748,9 +750,9 @@ impl Service {
     /// Suggests a person for each unnamed face that resembles one, then groups the rest.
     fn reanalyze(&self) -> Result<(), String> {
         let r = self.models.recognizer(&self.runtime);
-        let model = fm::model_version(r);
+        let model = fm::version_for(&self.runtime, r);
         let decisions = Decisions { joined: self.store.face_links()?, apart: self.store.groups_not_same()? };
-        let (suggestions, groups) = analysis(&self.store.exemplars(model)?, &self.store.unnamed(model)?, &fm::thresholds(r), &Params::default(), &decisions);
+        let (suggestions, groups) = analysis(&self.store.exemplars(&model)?, &self.store.unnamed(&model)?, &fm::thresholds_for(r, fm::wanted_strictness(&self.runtime)), &Params::default(), &decisions);
         self.store.set_analysis(&suggestions, &groups)
     }
 }
@@ -758,9 +760,32 @@ impl Service {
 /// YuNet, then the recognizer for each face found (SFace, or ArcFace from `arcface`'s folder); also the
 /// milliseconds the engine spent.
 pub fn detect_and_embed(engine: &Tagged, runtime: &Path, root: &Path, arcface: Option<&Path>, img: &image::RgbImage) -> Result<(Vec<NewFace>, f64), String> {
+    detect_and_embed_with(engine, runtime, root, arcface, img, false)
+}
+
+/// The faces of a picture. The detector sees 640 px, so a picture is first squeezed whole into it; with `tiled`
+/// the picture is also looked at in 640 px squares at its own scale, which finds the small faces of group shots.
+pub fn detect_faces(engine: &Tagged, runtime: &Path, root: &Path, img: &image::RgbImage, tiled: bool) -> Result<(Vec<det::Face>, f64), String> {
     let (input, lb) = det::detector_input(img);
     let (tensors, mut total_ms) = fm::run(engine, runtime, root, Model::Detector, &[1, 3, 640, 640], &input)?;
-    let found = det::faces_from_outputs(&fm::detector_outputs(&tensors)?, &lb, img.width(), img.height());
+    let mut found = det::faces_from_outputs(&fm::detector_outputs(&tensors)?, &lb, img.width(), img.height());
+    if tiled {
+        for tile in det::tile_rects(img.width(), img.height(), 160) {
+            let sub = image::imageops::crop_imm(img, tile.0, tile.1, tile.2, tile.3).to_image();
+            let (input, lb) = det::detector_input(&sub);
+            let (tensors, ms) = fm::run(engine, runtime, root, Model::Detector, &[1, 3, 640, 640], &input)?;
+            total_ms += ms;
+            for f in det::faces_from_outputs(&fm::detector_outputs(&tensors)?, &lb, sub.width(), sub.height()) {
+                found.extend(det::face_from_tile(&f, tile, img.width(), img.height()).filter(|g| det::valid(g, img.width(), img.height())));
+            }
+        }
+        found = det::nms(found);
+    }
+    Ok((found, total_ms))
+}
+
+pub fn detect_and_embed_with(engine: &Tagged, runtime: &Path, root: &Path, arcface: Option<&Path>, img: &image::RgbImage, tiled: bool) -> Result<(Vec<NewFace>, f64), String> {
+    let (found, mut total_ms) = detect_faces(engine, runtime, root, img, tiled)?;
     let mut out = Vec::with_capacity(found.len());
     for f in found {
         let (tensor, aligned) = det::embedding_input(img, &f);
@@ -1154,5 +1179,58 @@ mod tests {
         let mut in_group: Vec<usize> = groups.iter().map(|g| g.1.iter().filter(|f| named.contains(f)).count()).filter(|n| *n > 0).collect();
         in_group.sort_unstable_by(|a, b| b.cmp(a));
         println!("regroup: the {} confirmed faces of the one named person fall into groups of {:?}", named.len(), in_group);
+    }
+
+    /// How many faces each detection size finds, on a read-only sample (counts and timings only):
+    /// IMMAGE_FACES_ROOT, IMMAGE_TEST_ENGINE, IMMAGE_TEST_ORT, IMMAGE_TEST_PHOTOS, [IMMAGE_FACES_LIMIT=40]
+    ///   cargo test opt_in_detect_sizes -- --ignored --nocapture
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "needs the Faces models, the built engine, ONNX Runtime and photos"]
+    fn opt_in_detect_sizes() {
+        let var = |k: &str| PathBuf::from(std::env::var_os(k).unwrap_or_else(|| panic!("set {k}")));
+        let (root, engine_path, ort, photos) = (var("IMMAGE_FACES_ROOT"), var("IMMAGE_TEST_ENGINE"), var("IMMAGE_TEST_ORT"), var("IMMAGE_TEST_PHOTOS"));
+        let limit: usize = std::env::var("IMMAGE_FACES_LIMIT").ok().and_then(|v| v.parse().ok()).unwrap_or(40);
+        let temp = tempfile::tempdir().unwrap();
+        let runtime = temp.path().join("runtime");
+        std::fs::create_dir_all(&runtime).unwrap();
+        fm::write_manifests(&root, &[("detector", "immage-yunet"), ("recognizer", "immage-sface")]).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        let wrapper = runtime.join("engine-with-test-ort");
+        std::fs::write(&wrapper, format!("#!/bin/sh\nexec '{}' \"$@\" --conf 'plugins/ai/ort_library_path={}'\n", engine_path.display(), ort.display())).unwrap();
+        std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let engine = crate::engine::Engine::spawn(&wrapper, &runtime, &runtime).expect("start the isolated engine");
+        let tagged = engine.tagged();
+        let mut files: Vec<PathBuf> = photos_under(&photos, 20000, true, &|_| false).into_iter().filter(|p| !p.to_string_lossy().contains("Processed")).collect();
+        let step = (files.len() / limit.max(1)).max(1);
+        files = files.into_iter().step_by(step).take(limit).collect();
+        // (edge, tiled)
+        let variants = [(1024u32, false), (1600, false), (1600, true), (2048, true)];
+        let mut found = vec![0usize; variants.len()];
+        let mut ms = vec![0f64; variants.len()];
+        let (mut small, mut photos_done, mut new_vs_base) = (0usize, 0usize, vec![0usize; variants.len()]);
+        for p in &files {
+            let Some(base_pic) = analysis_image::picture_at(p, 1024) else { continue };
+            photos_done += 1;
+            let mut base: Vec<det::Face> = Vec::new();
+            for (k, (edge, tiled)) in variants.iter().enumerate() {
+                let Some(pic) = analysis_image::picture_at(p, *edge) else { continue };
+                let t0 = Instant::now();
+                let (faces, _) = detect_faces(&tagged, &runtime, &root, &pic.rgb, *tiled).expect("detect");
+                ms[k] += t0.elapsed().as_secs_f64() * 1000.0;
+                found[k] += faces.len();
+                if k == 0 {
+                    small += faces.iter().filter(|f| (f.w * base_pic.rgb.width() as f32) < 48.0).count();
+                    base = faces.clone();
+                } else {
+                    new_vs_base[k] += faces.iter().filter(|f| base.iter().all(|b| det::iou(b, f) < 0.3)).count();
+                }
+            }
+        }
+        println!("detect sizes: photos {photos_done}");
+        for (k, (edge, tiled)) in variants.iter().enumerate() {
+            println!("detect sizes: {edge} px{}: faces {}, not found at 1024 {}, detection ms per photo {:.0}", if *tiled { " tiled" } else { "" }, found[k], new_vs_base[k], ms[k] / photos_done.max(1) as f64);
+        }
+        println!("detect sizes: faces at 1024 narrower than 48 px (of the 1024 picture): {small}");
     }
 }

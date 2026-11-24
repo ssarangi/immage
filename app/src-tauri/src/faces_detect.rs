@@ -187,6 +187,53 @@ pub fn roll_degrees(f: &Face, img_w: u32, img_h: u32) -> f32 {
     dy.atan2(dx).to_degrees().abs()
 }
 
+// ---- tiles --------------------------------------------------------------------
+
+/// The 640 px squares (x, y, w, h in pixels) that cover a picture with `overlap` px between neighbours, for
+/// finding faces that are too small once the whole picture is squeezed into the detector's 640 px. A picture
+/// no bigger than the detector's input has none (the letterbox pass sees it whole).
+pub fn tile_rects(w: u32, h: u32, overlap: u32) -> Vec<(u32, u32, u32, u32)> {
+    let t = DET_EDGE;
+    if w <= t && h <= t {
+        return Vec::new();
+    }
+    let starts = |len: u32| -> Vec<u32> {
+        if len <= t {
+            return vec![0];
+        }
+        let step = t - overlap;
+        let n = (len - t).div_ceil(step) + 1;
+        (0..n).map(|i| if i == n - 1 { len - t } else { i * step }).collect()
+    };
+    let (xs, ys) = (starts(w), starts(h));
+    let mut out = Vec::new();
+    for &y in &ys {
+        for &x in &xs {
+            out.push((x, y, t.min(w), t.min(h)));
+        }
+    }
+    out
+}
+
+/// A face found in a tile at (`tx`, `ty`), as the whole picture's normalised face, or None when its box touches
+/// a tile edge that is not the picture's edge (the tile next to it sees the whole face).
+pub fn face_from_tile(f: &Face, tile: (u32, u32, u32, u32), img_w: u32, img_h: u32) -> Option<Face> {
+    let (tx, ty, tw, th) = tile;
+    let (x0, y0, x1, y1) = (f.x * tw as f32, f.y * th as f32, (f.x + f.w) * tw as f32, (f.y + f.h) * th as f32);
+    let edge = 2.0;
+    let cut = (tx > 0 && x0 < edge) || (ty > 0 && y0 < edge) || (tx + tw < img_w && x1 > tw as f32 - edge) || (ty + th < img_h && y1 > th as f32 - edge);
+    if cut {
+        return None;
+    }
+    let map = |x: f32, y: f32| ((tx as f32 + x * tw as f32) / img_w as f32, (ty as f32 + y * th as f32) / img_h as f32);
+    let (nx, ny) = map(f.x, f.y);
+    let mut lm = f.lm;
+    for p in lm.iter_mut() {
+        *p = map(p.0, p.1);
+    }
+    Some(Face { x: nx, y: ny, w: f.w * tw as f32 / img_w as f32, h: f.h * th as f32 / img_h as f32, score: f.score, lm })
+}
+
 // ---- alignment ----------------------------------------------------------------
 
 /// The ArcFace 112 x 112 landmark template (same order as `Face::lm`).
@@ -392,6 +439,34 @@ mod tests {
             score,
             lm: [(mid.0 - w * 0.2, mid.1), (mid.0 + w * 0.2, mid.1), (mid.0, y + h * 0.6), (mid.0 - w * 0.15, y + h * 0.8), (mid.0 + w * 0.15, y + h * 0.8)],
         }
+    }
+
+    #[test]
+    fn tiles_cover_a_big_picture_with_overlap_and_a_small_one_has_none() {
+        assert!(tile_rects(640, 480, 160).is_empty());
+        let t = tile_rects(1600, 1067, 160);
+        assert_eq!(t.len(), 6, "{t:?}");
+        assert!(t.iter().all(|r| r.0 + r.2 <= 1600 && r.1 + r.3 <= 1067 && r.2 == 640 && r.3 == 640));
+        // every pixel is in a tile, neighbours overlap by at least 160
+        let xs: std::collections::BTreeSet<u32> = t.iter().map(|r| r.0).collect();
+        let xs: Vec<u32> = xs.into_iter().collect();
+        assert_eq!((xs[0], *xs.last().unwrap() + 640), (0, 1600));
+        assert!(xs.windows(2).all(|w| w[0] + 640 - w[1] >= 160));
+        // a thin picture is covered by one row
+        assert_eq!(tile_rects(2000, 500, 160).iter().map(|r| r.1).max(), Some(0));
+    }
+
+    #[test]
+    fn a_tiles_face_maps_back_and_one_cut_by_an_inner_edge_is_dropped() {
+        let f = Face { x: 0.5, y: 0.5, w: 0.1, h: 0.1, score: 0.9, lm: [(0.5, 0.5); 5] };
+        // tile at (320, 160), 640 square, in a 1600 x 1000 picture
+        let g = face_from_tile(&f, (320, 160, 640, 640), 1600, 1000).unwrap();
+        assert!((g.x - (320.0 + 320.0) / 1600.0).abs() < 1e-6 && (g.y - (160.0 + 320.0) / 1000.0).abs() < 1e-6);
+        assert!((g.w - 64.0 / 1600.0).abs() < 1e-6 && (g.h - 64.0 / 1000.0).abs() < 1e-6);
+        assert!((g.lm[0].0 - 640.0 / 1600.0).abs() < 1e-6);
+        let cut = Face { x: 0.0, ..f.clone() };
+        assert!(face_from_tile(&cut, (320, 160, 640, 640), 1600, 1000).is_none(), "cut by an inner edge");
+        assert!(face_from_tile(&cut, (0, 160, 640, 640), 1600, 1000).is_some(), "the picture's own edge is no cut");
     }
 
     #[test]

@@ -442,7 +442,7 @@ impl FaceStore {
         let like = format!("{}/{}.%", dir.replace('%', "\\%").replace('_', "\\_"), stem.replace('%', "\\%").replace('_', "\\_"));
         let db = self.db()?;
         let mut q = db
-            .prepare("SELECT path,width,height FROM photos WHERE path LIKE ?1 ESCAPE '\\' AND path<>?2 AND model=?3 AND status='done' AND companion_of IS NULL ORDER BY path")
+            .prepare("SELECT path,width,height FROM photos WHERE path LIKE ?1 ESCAPE '\\' AND path<>?2 AND model=?3 AND status='done' AND companion_of IS NULL AND fingerprint<>'' ORDER BY path")
             .map_err(|e| e.to_string())?;
         let rows = q
             .query_map(params![like, path, model], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?)))
@@ -465,26 +465,41 @@ impl FaceStore {
         let mut db = self.db()?;
         let tx = db.transaction().map_err(|e| e.to_string())?;
         struct Old {
+            id: i64,
             bbox: (f64, f64, f64, f64),
             person: Option<i64>,
             state: String,
-            rejections: Vec<i64>,
         }
         let mut old: Vec<Old> = Vec::new();
         {
-            let mut q = tx.prepare("SELECT id,x,y,w,h,person_id,state FROM faces WHERE path=?1 AND state<>'unreviewed'").map_err(|e| e.to_string())?;
+            let mut q = tx.prepare("SELECT id,x,y,w,h,person_id,state FROM faces WHERE path=?1").map_err(|e| e.to_string())?;
             let rows = q
-                .query_map([path], |r| Ok((r.get::<_, i64>(0)?, (r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?), r.get(5)?, r.get(6)?)))
+                .query_map([path], |r| Ok(Old { id: r.get(0)?, bbox: (r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?), person: r.get(5)?, state: r.get(6)? }))
                 .map_err(|e| e.to_string())?;
             for row in rows {
-                let (id, bbox, person, state) = row.map_err(|e| e.to_string())?;
-                let rejections: Vec<i64> = tx
-                    .prepare("SELECT person_id FROM person_rejections WHERE face_id=?1")
-                    .and_then(|mut s| s.query_map([id], |r| r.get(0)).and_then(|m| m.collect()))
-                    .map_err(|e| e.to_string())?;
-                old.push(Old { bbox, person, state, rejections });
+                old.push(row.map_err(|e| e.to_string())?);
             }
         }
+        // what hangs on the old faces: "not this person" answers, joined or separate groups, covers
+        let pairs_of = |table: &str, a: &str, b: &str| -> Result<Vec<(i64, i64)>, String> {
+            let mut out = Vec::new();
+            let mut q = tx.prepare(&format!("SELECT {a},{b} FROM {table}")).map_err(|e| e.to_string())?;
+            for row in q.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))).map_err(|e| e.to_string())? {
+                let (x, y) = row.map_err(|e| e.to_string())?;
+                if old.iter().any(|o| o.id == x || o.id == y) {
+                    out.push((x, y));
+                }
+            }
+            Ok(out)
+        };
+        let links = pairs_of("face_links", "face_a", "face_b")?;
+        let apart = pairs_of("groups_not_same", "face_a", "face_b")?;
+        let rejections = pairs_of("person_rejections", "face_id", "person_id")?;
+        let covers: Vec<(i64, i64)> = {
+            let mut q = tx.prepare("SELECT id,cover_face_id FROM people WHERE cover_face_id IS NOT NULL").map_err(|e| e.to_string())?;
+            let rows = q.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))).map_err(|e| e.to_string())?;
+            rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?.into_iter().filter(|(_, f)| old.iter().any(|o| o.id == *f)).collect()
+        };
         tx.execute("DELETE FROM faces WHERE path=?1", [path]).map_err(|e| e.to_string())?;
         tx.execute(
             "INSERT INTO photos(path,fingerprint,model,scanned_at,width,height,status,error,companion_of,shot) VALUES(?1,?2,?3,?4,?5,?6,'done',NULL,?7,?8)
@@ -492,11 +507,35 @@ impl FaceStore {
             params![path, fingerprint, model, now(), width, height, companion_of, shot_key(path)],
         )
         .map_err(|e| e.to_string())?;
-        let mut ids = Vec::new();
-        for f in faces {
+        // a new face is the old one it overlaps most (IoU >= 0.5), each old face at most once: a face is known by
+        // where it is in its photo, so a re-embed by another model keeps who it was named as
+        let mut candidates: Vec<(f64, usize, usize)> = Vec::new();
+        for (n, f) in faces.iter().enumerate() {
             let bbox = (f64::from(f.x), f64::from(f.y), f64::from(f.w), f64::from(f.h));
-            let inherit = old.iter().filter(|o| iou(o.bbox, bbox) >= 0.5).max_by(|a, b| iou(a.bbox, bbox).total_cmp(&iou(b.bbox, bbox)));
-            let (person, state) = inherit.map_or((None, "unreviewed".to_string()), |o| (o.person, o.state.clone()));
+            for (k, o) in old.iter().enumerate() {
+                let v = iou(o.bbox, bbox);
+                if v >= 0.5 {
+                    candidates.push((v, n, k));
+                }
+            }
+        }
+        candidates.sort_by(|a, b| b.0.total_cmp(&a.0));
+        let mut matched: Vec<Option<usize>> = vec![None; faces.len()];
+        let mut taken = vec![false; old.len()];
+        for (_, n, k) in candidates {
+            if matched[n].is_none() && !taken[k] {
+                matched[n] = Some(k);
+                taken[k] = true;
+            }
+        }
+        let mut ids = Vec::new();
+        let mut renamed: HashMap<i64, i64> = HashMap::new();
+        for (n, f) in faces.iter().enumerate() {
+            let inherit = matched[n].map(|k| &old[k]);
+            let (person, state) = match inherit {
+                Some(o) if o.state != "unreviewed" => (o.person, o.state.clone()),
+                _ => (None, "unreviewed".to_string()),
+            };
             tx.execute(
                 "INSERT INTO faces(path,x,y,w,h,score,lm,frontal,roll,aligned,emb,model,person_id,state) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
                 params![path, f.x, f.y, f.w, f.h, f.score, emb_blob(&f.lm), f.frontal, f.roll, f.aligned, emb_blob(&f.emb), model, person, state],
@@ -504,11 +543,37 @@ impl FaceStore {
             .map_err(|e| e.to_string())?;
             let id = tx.last_insert_rowid();
             if let Some(o) = inherit {
-                for p in &o.rejections {
-                    tx.execute("INSERT OR IGNORE INTO person_rejections(face_id,person_id) VALUES(?1,?2)", params![id, p]).map_err(|e| e.to_string())?;
-                }
+                renamed.insert(o.id, id);
             }
             ids.push(id);
+        }
+        let new_id = |x: i64| -> Option<i64> { if old.iter().any(|o| o.id == x) { renamed.get(&x).copied() } else { Some(x) } };
+        for (f, p) in rejections {
+            if let Some(f) = new_id(f) {
+                tx.execute("INSERT OR IGNORE INTO person_rejections(face_id,person_id) VALUES(?1,?2)", params![f, p]).map_err(|e| e.to_string())?;
+            }
+        }
+        for (table, rows) in [("face_links", links), ("groups_not_same", apart)] {
+            for (x, y) in rows {
+                if let (Some(x), Some(y)) = (new_id(x), new_id(y)) {
+                    tx.execute(&format!("INSERT OR IGNORE INTO {table}(face_a,face_b) VALUES(?1,?2)"), params![x.min(y), x.max(y)]).map_err(|e| e.to_string())?;
+                }
+            }
+        }
+        for (person, cover) in covers {
+            match renamed.get(&cover) {
+                Some(n) => {
+                    tx.execute("UPDATE people SET cover_face_id=?2 WHERE id=?1", params![person, n]).map_err(|e| e.to_string())?;
+                }
+                None => {
+                    tx.execute("UPDATE people SET cover_face_id=NULL,cover_manual=0 WHERE id=?1", [person]).map_err(|e| e.to_string())?;
+                }
+            }
+        }
+        // a person who lost a face (it is no longer found) may need another cover
+        let people: Vec<i64> = old.iter().filter_map(|o| o.person).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+        for p in people {
+            Self::refresh_cover(&tx, p)?;
         }
         if let Some(primary) = companion_of {
             // a mirror starts with what the user already decided about the primary's faces
@@ -553,6 +618,14 @@ impl FaceStore {
             })
             .map_err(|e| e.to_string())?;
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
+    /// Marks every scanned photo stale (its file fingerprint is cleared), so the scan reads them all again. People,
+    /// review decisions, covers and pair answers stay: a re-scan matches new faces to old ones by where they are in the
+    /// photo. Returns how many photos were marked.
+    pub fn mark_all_stale(&self) -> Result<u32, String> {
+        let db = self.db()?;
+        db.execute("UPDATE photos SET fingerprint='' WHERE fingerprint<>''", []).map(|n| n as u32).map_err(|e| e.to_string())
     }
 
     /// A photo the scan could not process: remembered so it is not retried at every pass.
@@ -1950,6 +2023,55 @@ mod tests {
         assert_eq!(s.schema_version().unwrap(), 3);
         assert_eq!(s.totals().unwrap().photos, 1);
         assert!(s.stats().unwrap().db_bytes == 0, "an in-memory store has no file");
+    }
+
+    #[test]
+    fn reprocessing_with_another_model_keeps_who_each_face_was_named_as() {
+        let s = store();
+        // a photo with three faces: Ann (cover), Bob, and one that is not Ann
+        let a = scan(&s, "/a.jpg", &[nf(0.05, 1.0), nf(0.35, 0.8), nf(0.65, 0.5)]);
+        let other = scan(&s, "/b.jpg", &[nf(0.05, 0.9), nf(0.4, 0.2)]);
+        let ann = s.create_person("Ann", &[a[0]]).unwrap();
+        let bob = s.create_person("Bob", &[a[1]]).unwrap();
+        s.set_cover(ann, a[0]).unwrap();
+        s.reject_for_person(ann, &[a[2]]).unwrap();
+        s.set_analysis(&[], &[(a[2], vec![a[2], other[1]])]).unwrap();
+        s.reject_faces(&[other[0]]).unwrap();
+        assert_eq!(s.mark_all_stale().unwrap(), 2);
+        assert!(!s.is_current("/a.jpg", "fp", "m1").unwrap(), "stale photos are scanned again");
+        // the new model finds the same faces a little differently, in another order, plus a new one, and loses face 2
+        let mut moved = nf(0.07, 0.3);
+        moved.w = 0.19;
+        let again = s.put_scan("/a.jpg", "fp", "m2", 1000, 800, &[nf(0.8, 0.1), moved, nf(0.36, 0.7)], None).unwrap();
+        let f = |i: usize| s.face(again[i]).unwrap().unwrap();
+        assert_eq!((f(1).person_id, f(1).state.as_str()), (Some(ann), "confirmed"), "Ann's face is found at the same place");
+        assert_eq!((f(2).person_id, f(2).state.as_str()), (Some(bob), "confirmed"));
+        assert_eq!((f(0).person_id, f(0).state.as_str()), (None, "unreviewed"), "a face new to the model is unreviewed");
+        // the cover follows the face, the answer about the lost face (not Ann) went with it
+        assert_eq!(s.list_people(false).unwrap().iter().find(|p| p.id == ann).unwrap().cover_face_id, Some(again[1]));
+        assert_eq!(s.exemplars("m2").unwrap().len(), 2);
+        assert!(s.unnamed("m2").unwrap().iter().all(|u| u.skip.is_empty()));
+        // a rejected "not a face" photo is untouched and still hidden
+        assert_eq!(s.face(other[0]).unwrap().unwrap().state, "rejected");
+    }
+
+    #[test]
+    fn a_reprocess_keeps_joined_groups_and_not_this_person_answers_by_where_the_faces_are() {
+        let s = store();
+        let (ids, a, b) = grouped(&s);
+        let p = s.create_person("Ann", &[ids[5]]).unwrap();
+        s.merge_groups(a, b).unwrap();
+        s.reject_for_person(p, &[ids[0]]).unwrap();
+        let (links, rej) = (s.face_links().unwrap().len(), 1);
+        assert!(links > 0);
+        s.mark_all_stale().unwrap();
+        // the same six faces, re-embedded
+        let faces: Vec<NewFace> = [(0.05, 1.0), (0.2, 0.9), (0.35, 0.8), (0.5, 0.7), (0.65, 0.6), (0.8, 0.1)].iter().map(|(x, e)| nf(*x, *e)).collect();
+        let again = s.put_scan("/a.jpg", "fp", "m2", 1000, 800, &faces, None).unwrap();
+        assert_eq!(s.face_links().unwrap().len(), links, "joined groups stay joined");
+        let u = s.unnamed("m2").unwrap();
+        assert_eq!(u.iter().find(|x| x.id == again[0]).unwrap().skip, vec![p; rej]);
+        assert_eq!(s.face(again[5]).unwrap().unwrap().person_id, Some(p));
     }
 
     #[test]

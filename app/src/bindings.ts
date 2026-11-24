@@ -151,6 +151,17 @@ export const commands = {
 	/**  `faces_crop` as the JPEG bytes (the page cannot read a path: the CSP has no file scheme), like `thumb_cached`. */
 	facesCropBytes: (face: number, size: number) => __TAURI_INVOKE<ArrayBuffer>("faces_crop_bytes", { face, size }),
 	facesRetry: () => __TAURI_INVOKE<void>("faces_retry"),
+	facesSettings: () => __TAURI_INVOKE<FacesSettings>("faces_settings"),
+	/**  Sets how readily faces are called the same person and regroups at once; nothing is scanned again. */
+	facesSetStrictness: (level: string) => __TAURI_INVOKE<FacesSettings>("faces_set_strictness", { level }),
+	/**
+	 *  Scans every photo again (Catalog, or the folders asked for), keeping people and review decisions: a new face is
+	 *  matched to an old one by where it is in its photo, so a face named Ann stays Ann when another model re-embeds it.
+	 *  Faces the model no longer finds lose their naming; progress comes through `faces-progress` as in any scan.
+	 */
+	facesReprocess: () => __TAURI_INVOKE<number>("faces_reprocess"),
+	/**  Sets the detection size. Photos scanned at another size are scanned again (naming is kept), so the page confirms first. */
+	facesSetDetectSize: (size: number) => __TAURI_INVOKE<FacesSettings>("faces_set_detect_size", { size }),
 	facesPeople: (includeRemoved: boolean) => __TAURI_INVOKE<PersonRow[]>("faces_people", { includeRemoved }),
 	facesGroups: () => __TAURI_INVOKE<ClusterRow[]>("faces_groups"),
 	facesList: (filter: FaceFilter, offset: number, limit: number) => __TAURI_INVOKE<FaceRow[]>("faces_list", { filter, offset, limit }),
@@ -1272,6 +1283,19 @@ export type FaceTotals = {
 	ignored_people: number,
 	/**  Photos the scan gave up on (could not be read). */
 	failed_photos: number,
+};
+
+/**  The settings Preferences > Faces shows. */
+export type FacesSettings = {
+	enabled: boolean,
+	/**  "catalog" or "folder" */
+	scope: string,
+	/**  "loose", "balanced" or "strict" */
+	strictness: string,
+	/**  "sface" or "arcface" */
+	recognizer: string,
+	/**  The long edge photos are decoded at for detection: 1024, 1600 or 2048 (larger also looks at tiles for small faces). */
+	detect_size: number,
 };
 
 /**  What Preferences > Faces shows: counts, sizes on disk and the model in use. Read only. */

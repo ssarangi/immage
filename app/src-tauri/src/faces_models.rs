@@ -42,6 +42,21 @@ pub fn model_version(r: Recognizer) -> &'static str {
         Recognizer::Arcface => "yunet-2023mar+arcface-w600k_r50",
     }
 }
+/// The long edge the photo is decoded at for detection (`faces.detect_size`): 1024 (default) or, finer and about four times
+/// slower per photo, 1600 or 2048, which also looks at the picture in 640 px tiles to find small faces (the detector takes
+/// 640 px, so a face under about 50 px in a 1024 picture is lost). On 40 of the owner's family photos: 54 faces at 1024,
+/// 55 at 1600 whole, 72 at 1600 tiled, 76 at 2048 tiled.
+pub const DETECT_SIZES: [u32; 3] = [1024, 1600, 2048];
+pub fn wanted_detect_size(runtime: &Path) -> u32 {
+    crate::settings::read_key(runtime, "faces.detect_size").and_then(|s| s.parse::<u32>().ok()).filter(|n| DETECT_SIZES.contains(n)).unwrap_or(1024)
+}
+/// The model version new scans store: a change of recognizer or of detection size makes stored faces stale.
+pub fn version_for(runtime: &Path, r: Recognizer) -> String {
+    match wanted_detect_size(runtime) {
+        1024 => model_version(r).to_string(),
+        n => format!("{}+d{n}", model_version(r)),
+    }
+}
 /// The hidden setting `faces.recognizer`: "sface" (default) or "arcface".
 pub fn wanted_recognizer(runtime: &Path) -> Recognizer {
     match crate::settings::read_key(runtime, "faces.recognizer").as_deref() {
@@ -64,6 +79,46 @@ pub fn thresholds(r: Recognizer) -> Thresholds {
         Recognizer::Sface => Thresholds { suggest: 0.45, cluster: 0.48, attach: 0.42, merge: 0.60 },
         Recognizer::Arcface => Thresholds { suggest: 0.40, cluster: 0.35, attach: 0.30, merge: 0.55 },
     }
+}
+
+/// How readily faces are called the same person (`faces.strictness`): loose joins more (and mistakes more), strict
+/// keeps more groups apart. The steps are 0.04 on each threshold: on the owner's SFace data the other people's
+/// nearest faces reach 0.47 at most (95th percentile) while one person's faces have a 5th percentile of 0.63 to each
+/// other, so a shift of 0.04 either way stays inside that gap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Strictness {
+    Loose,
+    Balanced,
+    Strict,
+}
+impl Strictness {
+    pub fn name(self) -> &'static str {
+        match self {
+            Strictness::Loose => "loose",
+            Strictness::Balanced => "balanced",
+            Strictness::Strict => "strict",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "loose" => Some(Strictness::Loose),
+            "balanced" => Some(Strictness::Balanced),
+            "strict" => Some(Strictness::Strict),
+            _ => None,
+        }
+    }
+}
+pub fn wanted_strictness(runtime: &Path) -> Strictness {
+    crate::settings::read_key(runtime, "faces.strictness").and_then(|s| Strictness::parse(&s)).unwrap_or(Strictness::Balanced)
+}
+pub fn thresholds_for(r: Recognizer, s: Strictness) -> Thresholds {
+    let t = thresholds(r);
+    let d = match s {
+        Strictness::Loose => -0.04,
+        Strictness::Balanced => 0.0,
+        Strictness::Strict => 0.04,
+    };
+    Thresholds { suggest: t.suggest + d, cluster: t.cluster + d, attach: t.attach + d, merge: t.merge + d }
 }
 
 pub const DETECTOR_FILE: &str = "face_detection_yunet/face_detection_yunet_2023mar.onnx";
@@ -381,6 +436,37 @@ pub fn detector_outputs(outputs: &[Tensor]) -> Result<crate::faces_detect::DetOu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detection_size_is_part_of_the_stored_version() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(wanted_detect_size(dir.path()), 1024);
+        assert_eq!(version_for(dir.path(), Recognizer::Sface), MODEL_VERSION, "the default keeps the version stored so far");
+        crate::settings::Settings::load(dir.path()).set("faces.detect_size", "1600").unwrap();
+        assert_eq!(wanted_detect_size(dir.path()), 1600);
+        assert_eq!(version_for(dir.path(), Recognizer::Sface), format!("{MODEL_VERSION}+d1600"));
+        assert_ne!(version_for(dir.path(), Recognizer::Arcface), version_for(dir.path(), Recognizer::Sface));
+        crate::settings::Settings::load(dir.path()).set("faces.detect_size", "999").unwrap();
+        assert_eq!(wanted_detect_size(dir.path()), 1024, "only the offered sizes");
+    }
+
+    #[test]
+    fn strictness_shifts_every_threshold_by_a_step_for_both_recognizers() {
+        for r in [Recognizer::Sface, Recognizer::Arcface] {
+            let (b, l, s) = (thresholds_for(r, Strictness::Balanced), thresholds_for(r, Strictness::Loose), thresholds_for(r, Strictness::Strict));
+            assert_eq!(b, thresholds(r));
+            for (lo, mid, hi) in [(l.suggest, b.suggest, s.suggest), (l.cluster, b.cluster, s.cluster), (l.attach, b.attach, s.attach), (l.merge, b.merge, s.merge)] {
+                assert!((mid - lo - 0.04).abs() < 1e-6 && (hi - mid - 0.04).abs() < 1e-6);
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(wanted_strictness(dir.path()), Strictness::Balanced);
+        crate::settings::Settings::load(dir.path()).set("faces.strictness", "strict").unwrap();
+        assert_eq!(wanted_strictness(dir.path()), Strictness::Strict);
+        crate::settings::Settings::load(dir.path()).set("faces.strictness", "nonsense").unwrap();
+        assert_eq!(wanted_strictness(dir.path()), Strictness::Balanced);
+        assert_eq!(Strictness::parse("loose").map(Strictness::name), Some("loose"));
+    }
 
     #[test]
     fn arcface_is_used_only_when_asked_for_and_its_exact_file_is_there() {

@@ -159,6 +159,69 @@ fn scan_folder(ai: &AiState, path: String, subfolders: bool, allow_network: bool
     Ok(())
 }
 
+/// The settings Preferences > Faces shows.
+#[derive(serde::Serialize, specta::Type)]
+pub struct FacesSettings {
+    pub enabled: bool,
+    /// "catalog" or "folder"
+    pub scope: String,
+    /// "loose", "balanced" or "strict"
+    pub strictness: String,
+    /// "sface" or "arcface"
+    pub recognizer: String,
+    /// The long edge photos are decoded at for detection: 1024, 1600 or 2048 (larger also looks at tiles for small faces).
+    pub detect_size: u32,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn faces_settings(ai: State<'_, AiState>) -> FacesSettings {
+    FacesSettings {
+        enabled: ai.faces.enabled(),
+        scope: if crate::faces_service::scope_is_folder(&ai.faces_runtime) { "folder" } else { "catalog" }.to_string(),
+        strictness: fm::wanted_strictness(&ai.faces_runtime).name().to_string(),
+        recognizer: if ai.faces.recognizer(&ai.faces_runtime) == fm::Recognizer::Arcface { "arcface" } else { "sface" }.to_string(),
+        detect_size: fm::wanted_detect_size(&ai.faces_runtime),
+    }
+}
+
+/// Sets the detection size. Photos scanned at another size are scanned again (naming is kept), so the page confirms first.
+#[tauri::command]
+#[specta::specta]
+pub fn faces_set_detect_size(app: AppHandle, ai: State<'_, AiState>, settings: State<'_, Settings>, size: u32) -> Result<FacesSettings, String> {
+    if !fm::DETECT_SIZES.contains(&size) {
+        return Err("Detection size is 1024, 1600 or 2048".into());
+    }
+    settings.set("faces.detect_size", &size.to_string())?;
+    let _ = app.emit("faces-changed", ());
+    Ok(faces_settings(ai))
+}
+
+/// Sets how readily faces are called the same person and regroups at once; nothing is scanned again.
+#[tauri::command]
+#[specta::specta]
+pub fn faces_set_strictness(app: AppHandle, ai: State<'_, AiState>, settings: State<'_, Settings>, level: String) -> Result<FacesSettings, String> {
+    let s = fm::Strictness::parse(&level).ok_or("Strictness is loose, balanced or strict")?;
+    settings.set("faces.strictness", s.name())?;
+    changed(&app, &ai);
+    Ok(faces_settings(ai))
+}
+
+/// Scans every photo again (Catalog, or the folders asked for), keeping people and review decisions: a new face is
+/// matched to an old one by where it is in its photo, so a face named Ann stays Ann when another model re-embeds it.
+/// Faces the model no longer finds lose their naming; progress comes through `faces-progress` as in any scan.
+#[tauri::command]
+#[specta::specta]
+pub fn faces_reprocess(app: AppHandle, ai: State<'_, AiState>) -> Result<u32, String> {
+    if !ai.faces.installed() {
+        return Err("Install the Faces model first".into());
+    }
+    let marked = ai.faces_store.mark_all_stale()?;
+    ai.faces_service.retry();
+    let _ = app.emit("faces-changed", ());
+    Ok(marked)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn faces_retry(ai: State<'_, AiState>) {
@@ -300,14 +363,14 @@ pub fn faces_not_same(app: AppHandle, ai: State<'_, AiState>, a: crate::faces_st
 #[specta::specta]
 pub async fn faces_merge_suggestions(ai: State<'_, AiState>) -> Result<Vec<crate::faces_cluster::MergeSuggestion>, String> {
     let r = ai.faces.recognizer(&ai.faces_runtime);
-    let (store, th) = (ai.faces_store.clone(), fm::thresholds(r));
+    let (store, th, runtime) = (ai.faces_store.clone(), fm::thresholds_for(r, fm::wanted_strictness(&ai.faces_runtime)), ai.faces_runtime.clone());
     tauri::async_runtime::spawn_blocking(move || {
-        let model = fm::model_version(r);
-        let mut groups = store.group_members(model)?;
+        let model = fm::version_for(&runtime, r);
+        let mut groups = store.group_members(&model)?;
         // the matrix is over the groups: the biggest 1500 are compared
         groups.sort_by_key(|g| std::cmp::Reverse(g.1.len()));
         groups.truncate(1500);
-        let people = store.people_members(model)?;
+        let people = store.people_members(&model)?;
         let skips = store.suggestion_skips()?;
         let g: Vec<(i64, Vec<&[f32]>)> = groups.iter().map(|(i, m)| (*i, m.iter().map(Vec::as_slice).collect())).collect();
         let p: Vec<(i64, Vec<&[f32]>)> = people.iter().map(|(i, m)| (*i, m.iter().map(Vec::as_slice).collect())).collect();
@@ -384,7 +447,7 @@ pub fn faces_stats(ai: State<'_, AiState>) -> Result<FacesStats, String> {
         crops_bytes,
         crops_files,
         recognizer: if r == fm::Recognizer::Arcface { "arcface" } else { "sface" }.to_string(),
-        model_version: fm::model_version(r).to_string(),
+        model_version: fm::version_for(&ai.faces_runtime, r),
         pack_installed: ai.faces.installed(),
         eyes_available: ai.faces.eyes().is_some(),
         arcface_available: ai.faces.arcface().is_some(),
