@@ -21,6 +21,7 @@ import {
   buildScenes, closeScene, loadAcceptStar, openScene, pauseScoring, rememberAccepted, setScenes, setScenesOn, toggleBlock, useScenes,
 } from "./scenesStore";
 import { SceneThumb } from "./SceneThumb";
+import { EyeBadge } from "./EyeBadge";
 import { ScenePiles } from "./ScenePiles";
 import { formatNumber, t } from "./i18n";
 
@@ -29,7 +30,7 @@ export function useCtx(entries: readonly ImageEntry[]): { ctx: Ctx<ImageEntry>; 
   const s = useScenes();
   const byKey = useMemo(() => new Map(entries.map((e) => [frameKey(e.path, e.version), e])), [entries]);
   const ctx = useMemo<Ctx<ImageEntry>>(() => ({
-    entries: s.items.map((it) => byKey.get(frameKey(it.path, it.version))), quality: s.quality, accepted: s.accepted,
+    entries: s.items.map((it) => byKey.get(frameKey(it.path, it.version))), quality: s.quality, accepted: s.accepted, eyes: s.eyes, faceAdjust: s.faceAdjust,
   }), [s.items, s.quality, s.accepted, byKey]);
   return { ctx, byKey };
 }
@@ -75,6 +76,7 @@ function Card({ scene, ctx, active, onOpen }: {
     onClick={() => onOpen(scene)}>
     <span className="scene-thumb">
       <SceneThumb entry={shown} />
+      {shown && <EyeBadge path={shown.path} />}
       <span className="scene-count" dir="ltr">{formatNumber(info.frames.length)}</span>
       <StateBadge state={state} />
       {stats.best !== null && <span className="scene-best" role="img" aria-label={t("cull.scenes.card.best")} title={t("cull.scenes.card.best")}>

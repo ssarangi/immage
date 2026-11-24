@@ -28,6 +28,8 @@ export type ScenesState = {
   items: ReturnType<typeof requestItems>;             // the build's photos, by index
   model: SceneModel | null;
   quality: (number | null)[];
+  eyes: ("open" | "semi" | "closed" | null)[];       // each frame's closed-eye verdict, by request index (Faces)
+  faceAdjust: (number | null)[];                    // what Faces adds to each frame's quality
   regions: (CullBlurRegion | null)[];                 // each frame's sharpest region, once scored
   accepted: ReadonlySet<string>;
   network: boolean;
@@ -49,7 +51,7 @@ export type ScenesState = {
 };
 
 const EMPTY: ScenesState = {
-  on: false, status: "idle", updating: false, progress: null, error: "", signature: "", items: [], model: null, quality: [], regions: [],
+  on: false, status: "idle", updating: false, progress: null, error: "", signature: "", items: [], model: null, quality: [], eyes: [], faceAdjust: [], regions: [],
   accepted: new Set(), network: false, hashed: 0, unhashed: 0, open: null, scoring: null, hideSingles: false,
   collapsed: new Set(), focus: 0, rules: DEFAULT_RULES, preview: null, previewStale: false, previewBusy: false,
   forced: new Map(), piles: false, ruleSession: null, ruleNote: null,
@@ -125,6 +127,7 @@ export async function buildScenes(entries: readonly SceneSource[], force = false
     const kept = at >= 0 ? sceneOfFrame(model, at) : -1;
     setScenes({
       status: "ready", updating: false, progress: null, items, model, quality, regions: build.regions as (CullBlurRegion | null)[],
+      eyes: (build.eyes ?? []) as ScenesState["eyes"], faceAdjust: (build.faceAdjust ?? []) as ScenesState["faceAdjust"],
       accepted: new Set(accepted.map((a) => frameKey(a.path, a.version))), network: build.network,
       hashed: build.hashed, unhashed: build.unhashed, open: kept >= 0 ? kept : null, focus: kept >= 0 ? kept : 0, collapsed: new Set(),
       preview: null, previewStale: false, forced: new Map(), piles: false,
@@ -146,17 +149,21 @@ export function stopScenes() {
 }
 
 // ---- scoring ----
-function applyScores(scores: { path: string; version: number; quality: number | null; sharpRegion?: CullBlurRegion | null }[]) {
+function applyScores(scores: { path: string; version: number; quality: number | null; sharpRegion?: CullBlurRegion | null; eyes?: ScenesState["eyes"][number]; faceAdjust?: number | null }[]) {
   const index = new Map(state.items.map((it, i) => [frameKey(it.path, it.version), i]));
   const quality = state.quality.slice();
   const regions = state.regions.slice();
+  const eyes = state.eyes.length === state.items.length ? state.eyes.slice() : state.items.map(() => null) as ScenesState["eyes"];
+  const faceAdjust = state.faceAdjust.length === state.items.length ? state.faceAdjust.slice() : state.items.map(() => null) as ScenesState["faceAdjust"];
   for (const s of scores) {
     const i = index.get(frameKey(s.path, s.version));
     if (i === undefined || s.quality === null) continue;
     quality[i] = s.quality;
     regions[i] = s.sharpRegion ?? null;
+    if (s.eyes !== undefined) eyes[i] = s.eyes;
+    if (s.faceAdjust !== undefined) faceAdjust[i] = s.faceAdjust;
   }
-  setScenes({ quality, regions, previewStale: state.preview !== null });
+  setScenes({ quality, regions, eyes, faceAdjust, previewStale: state.preview !== null });
 }
 
 // Scores a scene's unscored frames (the open scene first: under two seconds on a local disk)

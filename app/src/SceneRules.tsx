@@ -7,6 +7,7 @@
 // scene, and Apply records it as a cull session and applies it with the same cull_apply as Auto Cull, so Undo,
 // the history and the photos' badges are the ones Auto Cull has. Every box is the same size before and after a
 // preview, so numbers arriving move nothing.
+import { useFacesOn } from "./peopleStore";
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { applyProgress, watched, type ApplyProgress, type Watch } from "./rulesApply";
@@ -22,6 +23,7 @@ const APPLY_STALL_MS = 45_000;
 
 export function SceneRules({ entries, onChanges }: { entries: ImageEntry[]; onChanges: (changes: CullChange[]) => void }) {
   const s = useScenes();
+  const facesOn = useFacesOn();
   const { ctx } = useCtx(entries);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<ApplyProgress | null>(null);
@@ -108,6 +110,10 @@ export function SceneRules({ entries, onChanges }: { entries: ImageEntry[]; onCh
             {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{t("library.culling.stars", { count: n })}</option>)}
           </select>
         </div>
+        {facesOn && <div className="cull-session-row">
+          <label className="scene-check"><input type="checkbox" checked={r.preferOpenEyes !== false} onChange={(e) => setRules({ preferOpenEyes: e.target.checked })} />
+            <span>{t("cull.scenes.rules.preferEyes")}</span></label>
+        </div>}
         <div className="cull-session-row" role="radiogroup" aria-label={t("cull.scenes.rules.singles")}>
           <span className="scene-rule-label">{t("cull.scenes.rules.singles")}</span>
           <label className="scene-check"><input type="radio" name="scene-singles" checked={r.singlesKeep} onChange={() => setRules({ singlesKeep: true })} />
@@ -127,7 +133,8 @@ export function SceneRules({ entries, onChanges }: { entries: ImageEntry[]; onCh
           <span><bdi dir="ltr">{t("cull.scenes.rules.undecided")} {num(counts?.undecided)}</bdi></span>
         </p>
         <p className="note-plain scene-rule-state">{t(s.preview === null ? "cull.scenes.rules.nothingYet" : s.previewStale ? "cull.scenes.rules.stale" : nothingToDo ? "cull.scenes.rules.nothingToDo" : "cull.scenes.rules.promise")}
-          {counts && counts.alreadyRejected > 0 ? ` ${t("cull.scenes.rules.alreadyRejected", { n: counts.alreadyRejected, count: formatNumber(counts.alreadyRejected) })}` : ""}</p>
+          {counts && counts.alreadyRejected > 0 ? ` ${t("cull.scenes.rules.alreadyRejected", { n: counts.alreadyRejected, count: formatNumber(counts.alreadyRejected) })}` : ""}
+          {counts && counts.demotedForEyes > 0 ? ` ${t("cull.scenes.rules.demotedForEyes", { n: counts.demotedForEyes, count: formatNumber(counts.demotedForEyes) })}` : ""}</p>
         <div className="cull-actions">
           <button type="button" className="btn" disabled={!fresh || busy} onClick={() => setScenes({ piles: true })}>{t("cull.scenes.rules.review")}</button>
           <button type="button" className="btn primary" disabled={!fresh || busy || applied || nothingToDo} onClick={() => void apply()}>{t("cull.scenes.rules.apply")}</button>

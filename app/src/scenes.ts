@@ -106,6 +106,9 @@ export type Ctx<E extends Flags = Flags> = {
   entries: ReadonlyArray<E | undefined>;      // by request index
   quality: ReadonlyArray<number | null>;          // 0-1, by request index
   accepted: ReadonlySet<string>;
+  // what Faces adds (closed eyes, pose), by request index; absent while Faces is off or nothing was computed
+  eyes?: ReadonlyArray<"open" | "semi" | "closed" | null>;
+  faceAdjust?: ReadonlyArray<number | null>;
 };
 
 export type SceneStats = {
@@ -358,13 +361,14 @@ export function canMerge(model: SceneModel, scene: number): boolean {
 export const sceneOfFrame = (model: SceneModel, frame: number) => model.scenes.findIndex((s) => s.frames.includes(frame));
 
 // ---- the keep rules (P2) ----
-export const DEFAULT_RULES: Rules = { keepBest: 2, minQuality: 0, alwaysKeep: true, ratedAtLeast: 3, singlesKeep: false };
+export const DEFAULT_RULES: Rules = { keepBest: 2, minQuality: 0, alwaysKeep: true, ratedAtLeast: 3, singlesKeep: false, preferOpenEyes: true };
 export const clampRules = (r: Rules): Rules => ({
   keepBest: Math.max(0, Math.min(9, Math.round(r.keepBest) || 0)),
   minQuality: Math.max(0, Math.min(100, Math.round(r.minQuality) || 0)),
   alwaysKeep: !!r.alwaysKeep,
   ratedAtLeast: Math.max(1, Math.min(5, Math.round(r.ratedAtLeast) || 1)),
   singlesKeep: !!r.singlesKeep,
+  preferOpenEyes: r.preferOpenEyes !== false,
 });
 
 export type Pile = "keep" | "reject" | "undecided";
@@ -381,6 +385,7 @@ export function rulesScenes<E extends Flags>(model: SceneModel, items: ReadonlyA
       return {
         path: it.path, version: it.version, quality: ctx.quality[f] ?? null, rating: e?.rating ?? 0, rejected: !!e?.rejected,
         accepted: ctx.accepted.has(key), force: forced.get(key) ?? null,
+        eyes: ctx.eyes?.[f] ?? null, faceAdjust: ctx.faceAdjust?.[f] ?? null,
       };
     }),
   }));

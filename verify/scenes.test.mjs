@@ -231,8 +231,8 @@ test('a frame can be split off unless it starts its scene, and a scene merges un
 });
 
 test('the rules are clamped to what the panel allows', () => {
-  assert.deepEqual(clampRules({ keepBest: 14, minQuality: -3, alwaysKeep: true, ratedAtLeast: 9, singlesKeep: false }), { keepBest: 9, minQuality: 0, alwaysKeep: true, ratedAtLeast: 5, singlesKeep: false });
-  assert.deepEqual(clampRules({ keepBest: NaN, minQuality: 55.6, alwaysKeep: false, ratedAtLeast: 0, singlesKeep: true }), { keepBest: 0, minQuality: 56, alwaysKeep: false, ratedAtLeast: 1, singlesKeep: true });
+  assert.deepEqual(clampRules({ keepBest: 14, minQuality: -3, alwaysKeep: true, ratedAtLeast: 9, singlesKeep: false }), { keepBest: 9, minQuality: 0, alwaysKeep: true, ratedAtLeast: 5, singlesKeep: false, preferOpenEyes: true });
+  assert.deepEqual(clampRules({ keepBest: NaN, minQuality: 55.6, alwaysKeep: false, ratedAtLeast: 0, singlesKeep: true }), { keepBest: 0, minQuality: 56, alwaysKeep: false, ratedAtLeast: 1, singlesKeep: true, preferOpenEyes: true });
   assert.deepEqual(clampRules(DEFAULT_RULES), DEFAULT_RULES);
 });
 
@@ -242,8 +242,8 @@ test('the rules request carries each frame\'s score, rating, flags, accept and h
   const ctx = { entries: [flags('/a', { rating: 4 }), flags('/b', { rejected: true, version: 2 })], quality: [0.5, null], accepted: new Set([frameKey('/a', 0)]) };
   const forced = new Map([[frameKey('/b', 2), 'reject']]);
   assert.deepEqual(rulesScenes(m, items, ctx, forced), [{ frames: [
-    { path: '/a', version: 0, quality: 0.5, rating: 4, rejected: false, accepted: true, force: null },
-    { path: '/b', version: 2, quality: null, rating: 0, rejected: true, accepted: false, force: 'reject' },
+    { path: '/a', version: 0, quality: 0.5, rating: 4, rejected: false, accepted: true, force: null, eyes: null, faceAdjust: null },
+    { path: '/b', version: 2, quality: null, rating: 0, rejected: true, accepted: false, force: 'reject', eyes: null, faceAdjust: null },
   ] }]);
 });
 
@@ -283,4 +283,15 @@ test('a stalled or failing rules apply leaves its busy state with an error, and 
   assert.deepEqual(applyProgress({ job: 7, stage: 'apply', done: 3, total: 9 }, 7), { done: 3, total: 9 });
   assert.equal(applyProgress({ job: 8, stage: 'apply', done: 3, total: 9 }, 7), null);
   assert.equal(applyProgress({ job: 7, stage: 'measure', done: 3, total: 9 }, 7), null);
+});
+
+test('the rules request carries each frame\'s eye verdict and face adjustment, and preferOpenEyes survives clamping', () => {
+  const m = build([[[0, 1]]]);
+  const items = [{ path: '/a', version: 0 }, { path: '/b', version: 0 }];
+  const ctx = { entries: [flags('/a'), flags('/b')], quality: [0.5, 0.6], accepted: new Set(), eyes: ['open', 'closed'], faceAdjust: [0.03, -0.15] };
+  const frames = rulesScenes(m, items, ctx, new Map())[0].frames;
+  assert.deepEqual(frames.map((f) => [f.eyes, f.faceAdjust]), [['open', 0.03], ['closed', -0.15]]);
+  assert.equal(clampRules({ ...DEFAULT_RULES, preferOpenEyes: false }).preferOpenEyes, false);
+  assert.equal(clampRules({ ...DEFAULT_RULES }).preferOpenEyes, true);
+  assert.equal(DEFAULT_RULES.preferOpenEyes, true);
 });
