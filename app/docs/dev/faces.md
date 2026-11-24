@@ -34,6 +34,9 @@ offers the pairs below the merge threshold. A review decision triggers the analy
 ("sface" default, "arcface" only with the local non-commercial file in `<data>/faces-arcface/models/`) picks the embedding;
 thresholds per recognizer are in `faces_models::thresholds`. `cargo test opt_in_regroup_store -- --ignored` regroups a copy of a faces.sqlite and prints counts.
 
+Joining two groups (`faces_merge_groups`) and "Not the same" (`faces_not_same`) are remembered in `faces.sqlite`
+(`face_links`, `groups_not_same`, `people_not_same`, schema v2) by faces, not by group id, because groups are recomputed.
+
 ## Network shares
 Faces never reads, stats or lists a path on a network share (judged from the mount table, `volumes::MountSnapshot`)
 unless the user allowed that source (`faces.network_sources`, `faces_network_source`) or asked for that folder with

@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 pub const MAX_NAME: usize = 80;
 const UNDO_DEPTH: usize = 20;
 
@@ -74,6 +74,23 @@ CREATE TABLE clusters (
     size INTEGER NOT NULL
 );
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
+", "
+-- the user's answers about pairs: groups are recomputed, so a group pair is remembered by faces of each
+CREATE TABLE groups_not_same (
+    face_a INTEGER NOT NULL REFERENCES faces(id) ON DELETE CASCADE,
+    face_b INTEGER NOT NULL REFERENCES faces(id) ON DELETE CASCADE,
+    PRIMARY KEY (face_a, face_b)
+) WITHOUT ROWID;
+CREATE TABLE face_links (
+    face_a INTEGER NOT NULL REFERENCES faces(id) ON DELETE CASCADE,
+    face_b INTEGER NOT NULL REFERENCES faces(id) ON DELETE CASCADE,
+    PRIMARY KEY (face_a, face_b)
+) WITHOUT ROWID;
+CREATE TABLE people_not_same (
+    person_a INTEGER NOT NULL,
+    person_b INTEGER NOT NULL,
+    PRIMARY KEY (person_a, person_b)
+) WITHOUT ROWID;
 "];
 
 pub struct FaceStore {
@@ -153,6 +170,23 @@ pub struct FaceTotals {
     pub failed_photos: u32,
 }
 
+/// One side of a suggested pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum Side {
+    Group { id: i64 },
+    Person { id: i64 },
+}
+
+/// The pairs the suggestions skip, by current group and person ids (each pair ordered low, high).
+#[derive(Debug, Clone, Default)]
+pub struct Skips {
+    pub groups: std::collections::HashSet<(i64, i64)>,
+    pub people: std::collections::HashSet<(i64, i64)>,
+    /// (group, person): the user said the group is not them.
+    pub group_person: std::collections::HashSet<(i64, i64)>,
+}
+
 /// An unnamed face with what the grouping judges it by: size in pixels of the analysed picture, detector confidence, how frontal.
 #[derive(Debug, Clone)]
 pub struct Unnamed {
@@ -207,6 +241,11 @@ pub struct Undo {
     rejections_added: Vec<(i64, i64)>,
     rejections_removed: Vec<(i64, i64)>,
     created_person: Option<i64>,
+    /// Group rows as they were (id, representative, size), put back by an undo.
+    clusters: Vec<(i64, i64, i64)>,
+    links_added: Vec<(i64, i64)>,
+    groups_not_same_added: Vec<(i64, i64)>,
+    people_not_same_added: Vec<(i64, i64)>,
 }
 
 fn emb_blob(v: &[f32]) -> Vec<u8> {
@@ -910,6 +949,8 @@ impl FaceStore {
         db.execute("UPDATE faces SET person_id=?2 WHERE person_id=?1", params![from, into]).map_err(|e| e.to_string())?;
         db.execute("UPDATE people SET state='merged',merged_into=?2,cover_face_id=NULL WHERE id=?1", params![from, into]).map_err(|e| e.to_string())?;
         db.execute("UPDATE faces SET suggested_person=?2 WHERE suggested_person=?1", params![from, into]).map_err(|e| e.to_string())?;
+        // answers about a person who no longer exists go with them
+        db.execute("DELETE FROM people_not_same WHERE person_a=?1 OR person_b=?1", [from]).map_err(|e| e.to_string())?;
         Self::refresh_cover(&db, into)?;
         drop(db);
         self.push_undo(undo);
@@ -993,6 +1034,18 @@ impl FaceStore {
         for (f, p) in &u.rejections_removed {
             tx.execute("INSERT OR IGNORE INTO person_rejections(face_id,person_id) VALUES(?1,?2)", params![f, p]).map_err(|e| e.to_string())?;
         }
+        for (id, rep, size) in &u.clusters {
+            tx.execute("INSERT OR REPLACE INTO clusters(id,rep_face_id,size) VALUES(?1,?2,?3)", params![id, rep, size]).map_err(|e| e.to_string())?;
+        }
+        for (a, b) in &u.links_added {
+            tx.execute("DELETE FROM face_links WHERE face_a=?1 AND face_b=?2", params![a, b]).map_err(|e| e.to_string())?;
+        }
+        for (a, b) in &u.groups_not_same_added {
+            tx.execute("DELETE FROM groups_not_same WHERE face_a=?1 AND face_b=?2", params![a, b]).map_err(|e| e.to_string())?;
+        }
+        for (a, b) in &u.people_not_same_added {
+            tx.execute("DELETE FROM people_not_same WHERE person_a=?1 AND person_b=?2", params![a, b]).map_err(|e| e.to_string())?;
+        }
         if let Some(id) = u.created_person {
             tx.execute("DELETE FROM people WHERE id=?1", [id]).map_err(|e| e.to_string())?;
         }
@@ -1007,12 +1060,149 @@ impl FaceStore {
         Ok(Some(u.label))
     }
 
+    // ---- groups and pairs ------------------------------------------------------------
+
+    /// The group's best faces (its representative first), to remember it by.
+    fn group_keys(db: &Connection, group: i64) -> Result<Vec<i64>, String> {
+        db.prepare(
+            "SELECT f.id FROM faces f JOIN clusters c ON c.id=f.cluster_id WHERE f.cluster_id=?1 AND f.state='unreviewed' AND f.person_id IS NULL
+             ORDER BY (f.id=c.rep_face_id) DESC, f.score DESC, f.id LIMIT 3",
+        )
+        .and_then(|mut s| s.query_map([group], |r| r.get(0)).and_then(|m| m.collect()))
+        .map_err(|e| e.to_string())
+    }
+    fn cluster_row(db: &Connection, group: i64) -> Result<Option<(i64, i64, i64)>, String> {
+        db.query_row("SELECT id,rep_face_id,size FROM clusters WHERE id=?1", [group], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(|e| e.to_string())
+    }
+
+    /// Joins two unnamed groups without naming them. The decision is remembered (links between their best faces), so
+    /// the next analysis keeps them together; undo splits them again.
+    pub fn merge_groups(&self, from: i64, into: i64) -> Result<(), String> {
+        if from == into {
+            return Err("Choose two different groups".into());
+        }
+        let db = self.db()?;
+        let (a, b) = (Self::cluster_row(&db, from)?.ok_or("No such group")?, Self::cluster_row(&db, into)?.ok_or("No such group")?);
+        let (ka, kb) = (Self::group_keys(&db, from)?, Self::group_keys(&db, into)?);
+        let moved: Vec<i64> = db
+            .prepare("SELECT id FROM faces WHERE cluster_id=?1 OR cluster_id=?2")
+            .and_then(|mut s| s.query_map(params![from, into], |r| r.get(0)).and_then(|m| m.collect()))
+            .map_err(|e| e.to_string())?;
+        let mut undo = Undo { label: "Merge groups".into(), faces: Self::snapshot_faces(&db, &moved)?, clusters: vec![a, b], ..Undo::default() };
+        for (x, y) in ka.iter().zip(&kb) {
+            let (lo, hi) = (*x.min(y), *x.max(y));
+            let had = db.execute("INSERT OR IGNORE INTO face_links(face_a,face_b) VALUES(?1,?2)", params![lo, hi]).map_err(|e| e.to_string())? > 0;
+            if had {
+                undo.links_added.push((lo, hi));
+            }
+        }
+        db.execute("UPDATE faces SET cluster_id=?2 WHERE cluster_id=?1", params![from, into]).map_err(|e| e.to_string())?;
+        db.execute("DELETE FROM clusters WHERE id=?1", [from]).map_err(|e| e.to_string())?;
+        db.execute("UPDATE clusters SET size=(SELECT COUNT(*) FROM faces WHERE cluster_id=?1) WHERE id=?1", [into]).map_err(|e| e.to_string())?;
+        drop(db);
+        self.push_undo(undo);
+        Ok(())
+    }
+
+    /// "Not the same" for two groups, or two people: remembered, so neither a suggestion nor the automatic merge joins them.
+    pub fn not_same(&self, a: Side, b: Side) -> Result<(), String> {
+        let db = self.db()?;
+        let mut undo = Undo { label: "Not the same".into(), ..Undo::default() };
+        match (a, b) {
+            (Side::Group { id: x }, Side::Group { id: y }) => {
+                if x == y {
+                    return Err("Choose two different groups".into());
+                }
+                Self::cluster_row(&db, x)?.ok_or("No such group")?;
+                Self::cluster_row(&db, y)?.ok_or("No such group")?;
+                let (kx, ky) = (Self::group_keys(&db, x)?, Self::group_keys(&db, y)?);
+                for f in &kx {
+                    for g in &ky {
+                        let (lo, hi) = (*f.min(g), *f.max(g));
+                        if db.execute("INSERT OR IGNORE INTO groups_not_same(face_a,face_b) VALUES(?1,?2)", params![lo, hi]).map_err(|e| e.to_string())? > 0 {
+                            undo.groups_not_same_added.push((lo, hi));
+                        }
+                    }
+                }
+            }
+            (Side::Person { id: x }, Side::Person { id: y }) => {
+                if x == y {
+                    return Err("Choose two different people".into());
+                }
+                Self::check_person(&db, x)?;
+                Self::check_person(&db, y)?;
+                let (lo, hi) = (x.min(y), x.max(y));
+                if db.execute("INSERT OR IGNORE INTO people_not_same(person_a,person_b) VALUES(?1,?2)", params![lo, hi]).map_err(|e| e.to_string())? > 0 {
+                    undo.people_not_same_added.push((lo, hi));
+                }
+            }
+            (Side::Group { id: g }, Side::Person { id: p }) | (Side::Person { id: p }, Side::Group { id: g }) => {
+                // a group that is not them: every face of it is "not this person"
+                Self::check_person(&db, p)?;
+                let faces: Vec<i64> = db
+                    .prepare("SELECT id FROM faces WHERE cluster_id=?1 AND state='unreviewed' AND person_id IS NULL")
+                    .and_then(|mut s| s.query_map([g], |r| r.get(0)).and_then(|m| m.collect()))
+                    .map_err(|e| e.to_string())?;
+                drop(db);
+                return self.reject_for_person(p, &faces);
+            }
+        }
+        drop(db);
+        self.push_undo(undo);
+        Ok(())
+    }
+
+    /// The pairs of faces the user joined: the analysis keeps their groups together.
+    pub fn face_links(&self) -> Result<Vec<(i64, i64)>, String> {
+        let db = self.db()?;
+        let mut q = db.prepare("SELECT face_a,face_b FROM face_links").map_err(|e| e.to_string())?;
+        let rows = q.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+    /// The pairs of faces whose groups the user said are not the same person.
+    pub fn groups_not_same(&self) -> Result<Vec<(i64, i64)>, String> {
+        let db = self.db()?;
+        let mut q = db.prepare("SELECT face_a,face_b FROM groups_not_same").map_err(|e| e.to_string())?;
+        let rows = q.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+    /// What the suggestions must not offer, in current group and person ids.
+    pub fn suggestion_skips(&self) -> Result<Skips, String> {
+        let db = self.db()?;
+        let mut skips = Skips::default();
+        let owner = |db: &Connection| -> Result<HashMap<i64, i64>, String> {
+            let mut q = db.prepare("SELECT id,cluster_id FROM faces WHERE cluster_id IS NOT NULL AND state='unreviewed' AND person_id IS NULL").map_err(|e| e.to_string())?;
+            let rows = q.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))).map_err(|e| e.to_string())?;
+            rows.collect::<Result<HashMap<_, _>, _>>().map_err(|e| e.to_string())
+        };
+        let of = owner(&db)?;
+        let mut q = db.prepare("SELECT face_a,face_b FROM groups_not_same").map_err(|e| e.to_string())?;
+        for row in q.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))).map_err(|e| e.to_string())? {
+            let (a, b) = row.map_err(|e| e.to_string())?;
+            if let (Some(x), Some(y)) = (of.get(&a), of.get(&b)) {
+                skips.groups.insert((*x.min(y), *x.max(y)));
+            }
+        }
+        let mut q = db.prepare("SELECT person_a,person_b FROM people_not_same").map_err(|e| e.to_string())?;
+        for row in q.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))).map_err(|e| e.to_string())? {
+            skips.people.insert(row.map_err(|e| e.to_string())?);
+        }
+        let mut q = db.prepare("SELECT face_id,person_id FROM person_rejections").map_err(|e| e.to_string())?;
+        for row in q.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))).map_err(|e| e.to_string())? {
+            let (f, p) = row.map_err(|e| e.to_string())?;
+            if let Some(g) = of.get(&f) {
+                skips.group_person.insert((*g, p));
+            }
+        }
+        Ok(skips)
+    }
+
     // ---- privacy ------------------------------------------------------------------
 
     /// Every face, person, group and scan record: gone, and the file shrunk.
     pub fn delete_all(&self) -> Result<(), String> {
         let db = self.db()?;
-        db.execute_batch("DELETE FROM person_rejections; DELETE FROM clusters; DELETE FROM faces; DELETE FROM people; DELETE FROM photos; DELETE FROM meta;")
+        db.execute_batch("DELETE FROM person_rejections; DELETE FROM groups_not_same; DELETE FROM face_links; DELETE FROM people_not_same; DELETE FROM clusters; DELETE FROM faces; DELETE FROM people; DELETE FROM photos; DELETE FROM meta;")
             .map_err(|e| e.to_string())?;
         let _ = db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;");
         self.undo.lock().unwrap().clear();
@@ -1021,7 +1211,7 @@ impl FaceStore {
     /// Scan records and faces only, keeping the people (a re-scan after a model change).
     pub fn clear_index(&self) -> Result<(), String> {
         let db = self.db()?;
-        db.execute_batch("DELETE FROM person_rejections; DELETE FROM clusters; DELETE FROM faces; DELETE FROM photos; UPDATE people SET cover_face_id=NULL;")
+        db.execute_batch("DELETE FROM person_rejections; DELETE FROM groups_not_same; DELETE FROM face_links; DELETE FROM clusters; DELETE FROM faces; DELETE FROM photos; UPDATE people SET cover_face_id=NULL;")
             .map_err(|e| e.to_string())?;
         self.undo.lock().unwrap().clear();
         Ok(())
@@ -1048,7 +1238,15 @@ mod tests {
     #[test]
     fn the_schema_is_created_once_and_a_newer_one_is_refused() {
         let s = store();
-        assert_eq!(s.schema_version().unwrap(), 1);
+        assert_eq!(s.schema_version().unwrap(), 2);
+        // a database of the first version gains the pair tables and keeps its data
+        let old = Connection::open_in_memory().unwrap();
+        old.execute_batch(&format!("BEGIN; {} PRAGMA user_version = 1; COMMIT;", LADDER[0])).unwrap();
+        old.execute("INSERT INTO people(name,created_at) VALUES('Ann',1)", []).unwrap();
+        let migrated = FaceStore::from_connection(old).unwrap();
+        assert_eq!(migrated.schema_version().unwrap(), 2);
+        assert_eq!(migrated.list_people(false).unwrap().len(), 1);
+        assert!(migrated.face_links().unwrap().is_empty());
         let db = Connection::open_in_memory().unwrap();
         db.pragma_update(None, "user_version", 99).unwrap();
         assert!(FaceStore::from_connection(db).is_err());
@@ -1320,6 +1518,78 @@ mod tests {
         s.set_analysis(&[], &[(ids[1], vec![ids[1]])]).unwrap();
         assert_eq!(s.group_members("m1").unwrap().len(), 1);
         assert_eq!(s.people_members("m1").unwrap()[0].0, p);
+    }
+
+    fn grouped(s: &FaceStore) -> (Vec<i64>, i64, i64) {
+        let ids = scan(s, "/a.jpg", &[nf(0.05, 1.0), nf(0.2, 0.9), nf(0.35, 0.8), nf(0.5, 0.7), nf(0.65, 0.6), nf(0.8, 0.1)]);
+        s.set_analysis(&[], &[(ids[0], ids[..2].to_vec()), (ids[2], ids[2..5].to_vec())]).unwrap();
+        let of = |f: i64| s.face(f).unwrap().unwrap().cluster_id.unwrap();
+        let (a, b) = (of(ids[0]), of(ids[2]));
+        (ids, a, b)
+    }
+
+    #[test]
+    fn two_groups_join_without_a_name_and_undo_splits_them_again() {
+        let s = store();
+        let (ids, a, b) = grouped(&s);
+        assert!(s.merge_groups(a, a).is_err() && s.merge_groups(a, 999).is_err());
+        s.merge_groups(a, b).unwrap();
+        let g = s.list_clusters().unwrap();
+        assert_eq!((g.len(), g[0].size, g[0].id), (1, 5, b));
+        assert_eq!(s.list_faces(&FaceFilter::Cluster { id: b }, 0, 10).unwrap().len(), 5);
+        assert!(s.face_links().unwrap().len() >= 1, "the join is remembered for the next analysis");
+        assert_eq!(s.can_undo().as_deref(), Some("Merge groups"));
+        s.undo_last().unwrap();
+        let g = s.list_clusters().unwrap();
+        assert_eq!(g.iter().map(|c| c.size).collect::<Vec<_>>(), [3, 2]);
+        assert_eq!(s.face(ids[0]).unwrap().unwrap().cluster_id, Some(a));
+        assert!(s.face_links().unwrap().is_empty());
+    }
+
+    #[test]
+    fn not_the_same_is_remembered_for_groups_and_people_and_cleaned_up() {
+        let s = store();
+        let (ids, a, b) = grouped(&s);
+        assert!(s.not_same(Side::Group { id: a }, Side::Group { id: a }).is_err());
+        s.not_same(Side::Group { id: a }, Side::Group { id: b }).unwrap();
+        assert!(!s.groups_not_same().unwrap().is_empty());
+        let skips = s.suggestion_skips().unwrap();
+        assert!(skips.groups.contains(&(a.min(b), a.max(b))));
+        // groups are rebuilt with new ids: the pair is still known through its faces
+        s.set_analysis(&[], &[(ids[1], ids[..2].to_vec()), (ids[3], ids[2..5].to_vec())]).unwrap();
+        let (a2, b2) = (s.face(ids[0]).unwrap().unwrap().cluster_id.unwrap(), s.face(ids[2]).unwrap().unwrap().cluster_id.unwrap());
+        assert!(s.suggestion_skips().unwrap().groups.contains(&(a2.min(b2), a2.max(b2))));
+        // undo takes it back
+        s.undo_last().unwrap();
+        assert!(s.groups_not_same().unwrap().is_empty() && s.suggestion_skips().unwrap().groups.is_empty());
+        // people
+        let p = s.create_person("Ann", &[ids[0]]).unwrap();
+        let q = s.create_person("Anne", &[ids[1]]).unwrap();
+        s.not_same(Side::Person { id: p }, Side::Person { id: q }).unwrap();
+        assert!(s.suggestion_skips().unwrap().people.contains(&(p.min(q), p.max(q))));
+        // merging a person away cleans their pairs
+        s.merge(q, p).unwrap();
+        assert!(s.suggestion_skips().unwrap().people.is_empty());
+        // a group marked not them is never offered to that person
+        s.set_analysis(&[], &[(ids[3], ids[2..5].to_vec())]).unwrap();
+        let g = s.face(ids[3]).unwrap().unwrap().cluster_id.unwrap();
+        s.not_same(Side::Group { id: g }, Side::Person { id: p }).unwrap();
+        assert!(s.suggestion_skips().unwrap().group_person.contains(&(g, p)));
+        // a rescan of the photo drops the faces and so the group answers
+        s.not_same(Side::Group { id: g }, Side::Group { id: g + 100 }).unwrap_err();
+        s.delete_all().unwrap();
+        assert!(s.groups_not_same().unwrap().is_empty() && s.face_links().unwrap().is_empty() && s.suggestion_skips().unwrap().people.is_empty());
+    }
+
+    #[test]
+    fn a_rescan_that_replaces_the_faces_removes_their_pair_answers() {
+        let s = store();
+        let (_, a, b) = grouped(&s);
+        s.not_same(Side::Group { id: a }, Side::Group { id: b }).unwrap();
+        s.merge_groups(a, b).unwrap();
+        assert!(!s.groups_not_same().unwrap().is_empty() && !s.face_links().unwrap().is_empty());
+        scan(&s, "/a.jpg", &[nf(0.4, 0.5)]);
+        assert!(s.groups_not_same().unwrap().is_empty() && s.face_links().unwrap().is_empty());
     }
 
     #[test]

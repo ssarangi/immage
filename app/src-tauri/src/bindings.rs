@@ -90,6 +90,8 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::faces_cmds::faces_assign,
         crate::faces_cmds::faces_unassign,
         crate::faces_cmds::faces_merge_suggestions,
+        crate::faces_cmds::faces_merge_groups,
+        crate::faces_cmds::faces_not_same,
         crate::faces_cmds::faces_not_person,
         crate::faces_cmds::faces_not_face,
         crate::faces_cmds::faces_undo,

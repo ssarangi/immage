@@ -17,7 +17,7 @@ use crate::{
     analysis_image::{self, Shared},
     analysis_queue::{AnalysisQueue, Job},
     engine::Tagged,
-    faces_cluster::{self, Params, SUGGEST_SFACE},
+    faces_cluster::{self, Params},
     faces_detect as det,
     faces_models::{self as fm, Model, Models},
     faces_store::{FaceStore, NewFace, Unnamed},
@@ -749,7 +749,8 @@ impl Service {
     fn reanalyze(&self) -> Result<(), String> {
         let r = self.models.recognizer(&self.runtime);
         let model = fm::model_version(r);
-        let (suggestions, groups) = analysis(&self.store.exemplars(model)?, &self.store.unnamed(model)?, &fm::thresholds(r), &Params::default());
+        let decisions = Decisions { joined: self.store.face_links()?, apart: self.store.groups_not_same()? };
+        let (suggestions, groups) = analysis(&self.store.exemplars(model)?, &self.store.unnamed(model)?, &fm::thresholds(r), &Params::default(), &decisions);
         self.store.set_analysis(&suggestions, &groups)
     }
 }
@@ -808,9 +809,16 @@ pub fn is_seed(f: &Unnamed) -> bool {
     f.px >= SEED_MIN_PX && f.score >= SEED_MIN_SCORE && f.frontal >= SEED_MIN_FRONTAL
 }
 
+/// What the user decided about pairs of faces: `joined` pairs end up in one group, `apart` pairs never do.
+#[derive(Default, Clone, Debug)]
+pub struct Decisions {
+    pub joined: Vec<(i64, i64)>,
+    pub apart: Vec<(i64, i64)>,
+}
+
 /// The pure part of `reanalyze`: (suggestions, groups) for the unnamed faces given every confirmed face.
 /// A suggestion is never a decision: the page shows it for the user to confirm or reject.
-pub fn analysis(exemplars: &[(i64, i64, Vec<f32>)], unnamed: &[Unnamed], th: &fm::Thresholds, params: &Params) -> (Vec<(i64, i64, f32)>, Vec<(i64, Vec<i64>)>) {
+pub fn analysis(exemplars: &[(i64, i64, Vec<f32>)], unnamed: &[Unnamed], th: &fm::Thresholds, params: &Params, decisions: &Decisions) -> (Vec<(i64, i64, f32)>, Vec<(i64, Vec<i64>)>) {
     let ex: Vec<(i64, &[f32])> = exemplars.iter().map(|(p, _, e)| (*p, e.as_slice())).collect();
     let mut suggestions = Vec::new();
     let mut rest: Vec<usize> = Vec::new();
@@ -822,8 +830,55 @@ pub fn analysis(exemplars: &[(i64, i64, Vec<f32>)], unnamed: &[Unnamed], th: &fm
     }
     let embs: Vec<&[f32]> = rest.iter().map(|&i| unnamed[i].emb.as_slice()).collect();
     let seed: Vec<bool> = rest.iter().map(|&i| is_seed(&unnamed[i])).collect();
+    let at: std::collections::HashMap<i64, usize> = rest.iter().enumerate().map(|(k, &i)| (unnamed[i].id, k)).collect();
+    let pairs = |p: &[(i64, i64)]| -> Vec<(usize, usize)> { p.iter().filter_map(|(a, b)| Some((*at.get(a)?, *at.get(b)?))).collect() };
+    let mut clusters = faces_cluster::group_faces(&embs, &seed, th, params, &pairs(&decisions.apart));
+    // a group that holds both faces of a pair the user said are different people is split between them
+    for (x, y) in pairs(&decisions.apart) {
+        if let Some(g) = clusters.iter().position(|g| g.contains(&x) && g.contains(&y)) {
+            let members = std::mem::take(&mut clusters[g]);
+            let (mut cx, mut cy) = (embs[x].to_vec(), embs[y].to_vec());
+            let mut sides = (Vec::new(), Vec::new());
+            for _ in 0..3 {
+                sides = (Vec::new(), Vec::new());
+                for &m in &members {
+                    if m == x || (m != y && det::cosine(embs[m], &cx) >= det::cosine(embs[m], &cy)) {
+                        sides.0.push(m);
+                    } else {
+                        sides.1.push(m);
+                    }
+                }
+                let mean = |s: &Vec<usize>| {
+                    let mut v = vec![0f32; cx.len()];
+                    for &m in s {
+                        v.iter_mut().zip(embs[m]).for_each(|(a, b)| *a += b);
+                    }
+                    det::l2_normalise(&mut v);
+                    v
+                };
+                (cx, cy) = (mean(&sides.0), mean(&sides.1));
+            }
+            clusters[g] = sides.0;
+            clusters.push(sides.1);
+        }
+    }
+    clusters.retain(|g| g.len() >= params.min_size);
+    // groups the user joined stay joined, and a loose face joined to a group goes into it
+    for (a, b) in pairs(&decisions.joined) {
+        let find = |c: &Vec<Vec<usize>>, x: usize| c.iter().position(|g| g.contains(&x));
+        match (find(&clusters, a), find(&clusters, b)) {
+            (Some(x), Some(y)) if x != y => {
+                let moved = std::mem::take(&mut clusters[y]);
+                clusters[x].extend(moved);
+            }
+            (Some(x), None) => clusters[x].push(b),
+            (None, Some(y)) => clusters[y].push(a),
+            _ => {}
+        }
+        clusters.retain(|g| !g.is_empty());
+    }
     let mut groups = Vec::new();
-    for c in faces_cluster::group_faces(&embs, &seed, th, params) {
+    for c in clusters {
         let rep = rest[faces_cluster::medoid(&embs, &c)];
         groups.push((unnamed[rep].id, c.iter().map(|&k| unnamed[rest[k]].id).collect()));
     }
@@ -858,7 +913,7 @@ mod tests {
             u(6, at(3.04), vec![]),
             u(9, at(4.5), vec![]), // alone
         ];
-        let (sug, groups) = analysis(&exemplars, &unnamed, &fm::thresholds(fm::Recognizer::Sface), &Params::default());
+        let (sug, groups) = analysis(&exemplars, &unnamed, &fm::thresholds(fm::Recognizer::Sface), &Params::default(), &Decisions::default());
         let by: std::collections::HashMap<i64, i64> = sug.iter().map(|s| (s.0, s.1)).collect();
         assert_eq!((by[&1], by[&2]), (7, 8));
         assert!(!by.contains_key(&3) || by[&3] != 7);
@@ -957,13 +1012,31 @@ mod tests {
         let exemplars = vec![(7, 100, at(0.0))];
         let u = |id: i64, a: f32, px: f32| Unnamed { id, emb: at(a), skip: vec![], px, score: 0.9, frontal: 0.9 };
         let unnamed = vec![u(1, 0.2, 100.0), u(2, 0.25, 30.0), u(3, 2.0, 100.0), u(4, 2.05, 100.0), u(5, 2.1, 20.0), u(6, 4.0, 20.0)];
-        let (sug, groups) = analysis(&exemplars, &unnamed, &fm::thresholds(fm::Recognizer::Sface), &Params::default());
+        let (sug, groups) = analysis(&exemplars, &unnamed, &fm::thresholds(fm::Recognizer::Sface), &Params::default(), &Decisions::default());
         let named: Vec<i64> = sug.iter().map(|s| s.0).collect();
         assert_eq!(named, [1, 2], "alike faces are suggested whatever their size");
         assert_eq!(groups.len(), 1);
         let mut m = groups[0].1.clone();
         m.sort();
         assert_eq!(m, [3, 4, 5], "the small face joins the group; the lone small face starts none");
+    }
+
+    #[test]
+    fn joined_groups_stay_joined_and_apart_groups_stay_apart() {
+        let u = |id: i64, a: f32| Unnamed { id, emb: at(a), skip: vec![], px: 120.0, score: 0.9, frontal: 0.9 };
+        let th = fm::thresholds(fm::Recognizer::Sface);
+        // two groups far apart (angle 0 and 1.5), and two alike groups (3.0 and 3.05)
+        let unnamed = vec![u(1, 0.0), u(2, 0.01), u(3, 1.5), u(4, 1.51), u(5, 3.0), u(6, 3.01), u(7, 3.05), u(8, 3.06)];
+        let none = analysis(&[], &unnamed, &th, &Params::default(), &Decisions::default()).1;
+        let sizes = |g: &Vec<(i64, Vec<i64>)>| { let mut s: Vec<usize> = g.iter().map(|x| x.1.len()).collect(); s.sort(); s };
+        assert_eq!(sizes(&none), [2, 2, 4], "alike faces group on their own");
+        // the user joined the far-apart groups: they stay one group
+        let joined = analysis(&[], &unnamed, &th, &Params::default(), &Decisions { joined: vec![(1, 3)], apart: vec![] }).1;
+        assert_eq!(sizes(&joined), [4, 4]);
+        // the user said the alike groups (5,6) and (7,8) are not the same person: not merged by the merge pass
+        let apart = analysis(&[], &unnamed, &th, &Params::default(), &Decisions { joined: vec![], apart: vec![(5, 7)] }).1;
+        assert!(apart.iter().all(|g| !(g.1.contains(&5) && g.1.contains(&7))), "{apart:?}");
+        assert_eq!(sizes(&apart), [2, 2, 2, 2], "the four alike faces fall into the two pairs");
     }
 
     #[test]
@@ -1041,7 +1114,7 @@ mod tests {
             store.put_scan(&format!("/synthetic/{i}.jpg"), "fp", fm::MODEL_VERSION, pic.rgb.width(), pic.rgb.height(), &faces, None).unwrap();
         }
         let recognizer = if arcface.is_some() { fm::Recognizer::Arcface } else { fm::Recognizer::Sface };
-        let (sug, groups) = analysis(&[], &store.unnamed(fm::MODEL_VERSION).unwrap(), &fm::thresholds(recognizer), &Params::default());
+        let (sug, groups) = analysis(&[], &store.unnamed(fm::MODEL_VERSION).unwrap(), &fm::thresholds(recognizer), &Params::default(), &Decisions::default());
         let sizes: Vec<usize> = { let mut s: Vec<usize> = groups.iter().map(|g| g.1.len()).collect(); s.sort_unstable_by(|a, b| b.cmp(a)); s };
         let grouped: usize = sizes.iter().sum();
         per_photo_wall.sort_by(|a, b| a.total_cmp(b));
@@ -1073,7 +1146,7 @@ mod tests {
         let named: std::collections::HashSet<i64> = rows.iter().filter(|r| r.1).map(|r| r.0.id).collect();
         let unnamed: Vec<Unnamed> = rows.into_iter().map(|r| r.0).collect();
         let started = Instant::now();
-        let (_, groups) = analysis(&[], &unnamed, &fm::thresholds(fm::Recognizer::Sface), &Params::default());
+        let (_, groups) = analysis(&[], &unnamed, &fm::thresholds(fm::Recognizer::Sface), &Params::default(), &Decisions::default());
         let sizes: Vec<usize> = { let mut s: Vec<usize> = groups.iter().map(|g| g.1.len()).collect(); s.sort_unstable_by(|a, b| b.cmp(a)); s };
         let grouped: usize = sizes.iter().sum();
         println!("regroup: faces {}, groups {} {:?}, loose {}, took {} ms", unnamed.len(), groups.len(), sizes, unnamed.len() - grouped, started.elapsed().as_millis());

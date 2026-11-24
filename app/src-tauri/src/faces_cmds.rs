@@ -275,6 +275,25 @@ pub fn faces_failed_photos(ai: State<'_, AiState>, limit: u32) -> Result<Vec<Str
     ai.faces_store.failed_photos(limit.clamp(1, 1000))
 }
 
+/// Joins two unnamed groups without naming them (undoable). The analysis keeps them together afterwards.
+#[tauri::command]
+#[specta::specta]
+pub fn faces_merge_groups(app: AppHandle, ai: State<'_, AiState>, from_group: i64, into_group: i64) -> Result<(), String> {
+    ai.faces_store.merge_groups(from_group, into_group)?;
+    changed(&app, &ai);
+    Ok(())
+}
+
+/// "Not the same" for two groups, two people, or a group and a person; remembered, so the suggestions and the
+/// automatic merge leave the pair alone (undoable).
+#[tauri::command]
+#[specta::specta]
+pub fn faces_not_same(app: AppHandle, ai: State<'_, AiState>, a: crate::faces_store::Side, b: crate::faces_store::Side) -> Result<(), String> {
+    ai.faces_store.not_same(a, b)?;
+    changed(&app, &ai);
+    Ok(())
+}
+
 /// Pairs the page may offer to join: groups that look like one person, a group that looks like a named
 /// person (using all their confirmed faces), two people that look alike. Strongest first; only a suggestion.
 #[tauri::command]
@@ -289,9 +308,10 @@ pub async fn faces_merge_suggestions(ai: State<'_, AiState>) -> Result<Vec<crate
         groups.sort_by_key(|g| std::cmp::Reverse(g.1.len()));
         groups.truncate(1500);
         let people = store.people_members(model)?;
+        let skips = store.suggestion_skips()?;
         let g: Vec<(i64, Vec<&[f32]>)> = groups.iter().map(|(i, m)| (*i, m.iter().map(Vec::as_slice).collect())).collect();
         let p: Vec<(i64, Vec<&[f32]>)> = people.iter().map(|(i, m)| (*i, m.iter().map(Vec::as_slice).collect())).collect();
-        Ok(crate::faces_cluster::merge_suggestions(&g, &p, &th, 200))
+        Ok(crate::faces_cluster::merge_suggestions(&g, &p, &th, &skips, 200))
     })
     .await
     .map_err(|e| e.to_string())?

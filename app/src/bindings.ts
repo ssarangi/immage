@@ -168,6 +168,13 @@ export const commands = {
 	 *  person (using all their confirmed faces), two people that look alike. Strongest first; only a suggestion.
 	 */
 	facesMergeSuggestions: () => __TAURI_INVOKE<MergeSuggestion[]>("faces_merge_suggestions"),
+	/**  Joins two unnamed groups without naming them (undoable). The analysis keeps them together afterwards. */
+	facesMergeGroups: (fromGroup: number, intoGroup: number) => __TAURI_INVOKE<null>("faces_merge_groups", { fromGroup, intoGroup }),
+	/**
+	 *  "Not the same" for two groups, two people, or a group and a person; remembered, so the suggestions and the
+	 *  automatic merge leave the pair alone (undoable).
+	 */
+	facesNotSame: (a: Side, b: Side) => __TAURI_INVOKE<null>("faces_not_same", { a, b }),
 	/**  "Not this person": rejects a suggestion or a naming, for good. */
 	facesNotPerson: (person: number, faces: number[]) => __TAURI_INVOKE<null>("faces_not_person", { person, faces }),
 	/**  "Not a face": a false detection. */
@@ -2757,6 +2764,9 @@ export type ShutterRow = {
 	top: number,
 	cover: PhotoRef | null,
 };
+
+/**  One side of a suggested pair. */
+export type Side = { kind: "group"; id: number } | { kind: "person"; id: number };
 
 export type Source = {
 	id: number,
