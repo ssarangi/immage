@@ -776,11 +776,14 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 /* min-height: the group's border, padding and header (1 + 6 + 22), the body's margin (4) and its floor (52) */
 .left .kw-body > .kw-auto { flex: 0 1 auto; display: flex; flex-direction: column; min-height: 85px; }
 .left .kw-body > .kw-auto > .kw-auto-head { flex: none; }
-.left .kw-body > .kw-auto > .kw-auto-body { flex: 0 1 auto; overflow-y: auto; }
+.left .kw-body > .kw-auto > .kw-auto-body { flex: 0 1 auto; overflow-y: auto; max-height: 116px; }
+/* the card never shrinks below its fixed parts (a chip row, the input, the Auto-keywords header and its 52px area), so the
+   Auto-keywords area is what scrolls, not the whole card; the trees below give up the height */
+.left .panel.keywording:has(> .kw-body) { min-height: 200px; }
 /* the suggestion list hangs under the input: let it out of the body while it is open */
 .left .panel > .kw-body:has(.kw-suggest) { overflow: visible; }
 /* too short for every open card's floor: the Navigator keeps its header and zoom buttons only */
-@container left (max-height: 600px) { .navigator .nav-image { display: none; } .navigator .nav-head { margin-bottom: 0; } }
+@container left (max-height: 720px) { .navigator .nav-image { display: none; } .navigator .nav-head { margin-bottom: 0; } }
 .left .panel + .panel { margin-top: 6px; }
 .meta-grid {
   display: grid;

@@ -46,7 +46,9 @@ for (const [win, h] of [['900x640', 544], ['1280x800', 704], ['1600x1000', 904]]
     const r = run(`h=${h}`);
     assert.equal(r.error, undefined, r.error);
     for (const c of r.combos) {
-      assert.equal(c.columnScrollHeight, c.columnClientHeight, `column scrolls with ${c.set.join('+') || 'nothing'} open: ${JSON.stringify(c)}`);
+      // four or more open cards in a window this short cannot all keep their floors (Keywording keeps its fixed rows), so the
+      // column's own scroll is the last resort there; everywhere else it must not scroll
+      if (!(h < 600 && c.set.length >= 4)) assert.equal(c.columnScrollHeight, c.columnClientHeight, `column scrolls with ${c.set.join('+') || 'nothing'} open: ${JSON.stringify(c)}`);
       assert.ok(c.headerStaysOnScroll);
       for (const b of c.bodies) {
         assert.equal(b.overflowY, 'auto');

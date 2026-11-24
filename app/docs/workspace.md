@@ -74,7 +74,8 @@ moves: the Folders and Catalog trees scroll under the **Include subfolders**
 switch and above the **Add folder** button (and the Catalog's progress card),
 and in Keywording only the Auto-keywords chips scroll, under the keyword chips,
 the input, the Recent keywords and the group's title row. Each open card keeps
-at least about two rows. In a card too short even for its fixed parts, the whole
+at least about two rows, and Keywording always keeps its chips, input and
+the Auto-keywords title row in view. In a card too short even for its fixed parts, the whole
 card body scrolls as a last resort. A folded card is only its title. In a very short window the
 Navigator shows just its title and zoom buttons so the open cards fit.
 
