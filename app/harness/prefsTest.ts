@@ -101,6 +101,11 @@ export async function runPrefsTest() {
   let facesReport: Record<string, unknown> | null = null;
   if (faces) {
     document.getElementById("prefs-tab-faces")!.click(); await wait(300);
+    if (new URLSearchParams(location.search).get("arcface") === "0") {   // no ArcFace file here: the choice is not on the page at all
+      check(![...box.querySelectorAll("button")].some((b) => b.textContent === "ArcFace") && !(box.textContent ?? "").includes("Face matching model"), "faces: the ArcFace choice shows without the model file");
+      check((box.textContent ?? "").includes("SFace (default)"), "faces: the recognizer is not named");
+      return { ok: fail.length === 0, fail, pages, moved: 0, faces: { deleted: 0, noArcface: true, calls: [] } };
+    }
     const rows = () => [...box.querySelectorAll(".faces-stats dt, .faces-stats dd, .faces-line, .pref-card, .pack")].map((e) => JSON.stringify(rect(e)));
     const before = rows(), vals = [...box.querySelectorAll(".faces-stats dd")].map((e) => e.textContent);
     faces.bump(); await wait(600);
@@ -128,7 +133,7 @@ export async function runPrefsTest() {
     check(faces.calls.includes("strictness:strict") && btn("Stricter groups")?.getAttribute("aria-pressed") === "true", "faces: strictness did not apply");
     check(btn("Balanced") !== undefined, "faces: no Balanced choice");
     btn("Thorough")?.click(); await wait(150);
-    check(!!box.querySelector(".faces-confirm button") && /re-scans your photos/.test(box.querySelector(".faces-confirm")?.textContent ?? ""), "faces: no re-scan note for Thorough");
+    check(!!box.querySelector(".faces-confirm button") && /takes about 4 times longer\. Your photos will be scanned again/.test(box.querySelector(".faces-confirm")?.textContent ?? ""), "faces: no re-scan note for Thorough");
     check(!faces.calls.some((c) => c.startsWith("detect:")), "faces: thoroughness applied without the confirmation");
     check(JSON.stringify(lay()) === JSON.stringify(l0), "faces: the layout moved when the note came up");
     [...box.querySelectorAll<HTMLButtonElement>(".faces-confirm button")].find((b) => b.textContent === "Cancel")?.click(); await wait(120);
@@ -138,6 +143,14 @@ export async function runPrefsTest() {
     [...box.querySelectorAll<HTMLButtonElement>(".faces-confirm button")].find((b) => b.textContent === "Change")?.click(); await wait(200);
     check(faces.calls.includes("detect:1600"), "faces: Change did not set 1600");
     check(!faces.calls.includes("detect:2048"), "faces: 2048 was offered");
+    // the thoroughness text says what it costs; the recognizer choice (ArcFace is available on this fake) asks first
+    check(/About 33% more faces found, but about 4 times slower/.test(box.textContent ?? "") && /Balanced \(default\): fastest\./.test(box.textContent ?? ""), "faces: the thoroughness numbers are not on the page");
+    btn("ArcFace")?.click(); await wait(150);
+    check(/Switching re-processes all photos/.test(box.querySelector(".faces-confirm")?.textContent ?? ""), "faces: no note for the recognizer");
+    check(!faces.calls.includes("recognizer:arcface"), "faces: the recognizer changed without the confirmation");
+    check(JSON.stringify(lay()) === JSON.stringify(l0), "faces: the layout moved when the recognizer note came up");
+    [...box.querySelectorAll<HTMLButtonElement>(".faces-confirm button")].find((b) => b.textContent === "Change")?.click(); await wait(200);
+    check(faces.calls.includes("recognizer:arcface") && btn("ArcFace")?.getAttribute("aria-pressed") === "true", "faces: ArcFace did not apply");
     const rp = btn("Reprocess all faces...");
     rp?.click(); await wait(200);
     check(!!document.querySelector(".modal.pack-dialog") && /Names you gave are kept/.test(document.querySelector(".modal.pack-dialog")?.textContent ?? ""), "faces: no reprocess dialog");

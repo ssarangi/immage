@@ -50,7 +50,7 @@ for (const [label, size, extra] of [['1100x720', '1100,720', ''], ['800x600 (ico
     assert.equal(r.ok, true);
     // the Faces page was exercised: its numbers changed with nothing moving, Delete asked first and said what goes
     assert.ok(r.faces && r.faces.deleted === 0, 'the Faces page was not tested');
-    assert.deepEqual(r.faces.calls, ['strictness:strict', 'detect:1600', 'reprocess']);
+    assert.deepEqual(r.faces.calls, ['strictness:strict', 'detect:1600', 'recognizer:arcface', 'reprocess']);
   });
 }
 
@@ -63,4 +63,11 @@ test('the containment check fails on the old pane that scrolled through the moda
 test('the containment check fails when the well takes the height of its content and the footer moves (negative control)', { skip }, () => {
   const r = report('break=shift', '1100,720');
   assert.equal(r.ok, false);
+});
+
+test('the face matching model choice is not on the page without the ArcFace file', { skip }, () => {
+  const r = report('arcface=0', '1100,720');
+  assert.equal(r.error, undefined, r.error);
+  assert.deepEqual(r.fail, []);
+  assert.equal(r.faces.noArcface, true);
 });

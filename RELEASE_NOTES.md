@@ -43,8 +43,8 @@ Improvements
 - **Preferences > Faces:** a Faces tab with the People switch, the model card, what the recognizer and
   closed-eye detection are, how many network folders are left out, the numbers the face store holds
   (photos, faces, people, groups, unreadable photos, database and picture-cache sizes) and **Delete all
-  face data**, plus **Same person strictness** (applies at once), **Scan thoroughness** (Thorough finds small
-  faces, such as in group photos, and re-scans in the background) and **Reprocess all faces**. Face counts now
+  face data**, plus **Same person strictness** (applies at once), **Scan thoroughness** (Thorough finds about 33% more
+  faces, such as small ones in group photos, but is about 4 times slower, and re-scans in the background) and **Reprocess all faces**. Face counts now
   count photos once, however many files a shot has.
 - **Person page:** double-click a person in People to open their page: their photos in the
   app's grid (with **Open in Grid**, which sets Find's People filter), and their faces to

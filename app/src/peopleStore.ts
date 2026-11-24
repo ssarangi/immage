@@ -51,6 +51,7 @@ export type PeopleApi = {
   setStrictness(level: string): Promise<FacesSettings>;
   setDetectSize(size: number): Promise<FacesSettings>;
   reprocess(): Promise<number>;
+  setRecognizer(kind: string): Promise<FacesSettings>;
   mergeGroups(from: number, into: number): Promise<void>;
   notSame(a: Side, b: Side): Promise<void>;
   undo(): Promise<string | null>;
@@ -90,6 +91,7 @@ const real: PeopleApi = {
   setStrictness: (level) => commands.facesSetStrictness(level),
   setDetectSize: (size) => commands.facesSetDetectSize(size),
   reprocess: () => commands.facesReprocess(),
+  setRecognizer: (kind) => commands.facesSetRecognizer(kind),
   mergeGroups: async (from, into) => { await commands.facesMergeGroups(from, into); },
   notSame: async (a, b) => { await commands.facesNotSame(a, b); },
   undo: () => commands.facesUndo(),

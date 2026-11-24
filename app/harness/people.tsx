@@ -216,8 +216,8 @@ const fake: PeopleApi = {
                   crops_bytes: db.faces.length * 3000, crops_files: db.faces.length, recognizer: "sface", model_version: "sface-2021dec", pack_installed: scan.installed,
                   eyes_available: false, arcface_available: false });
   },
-  settings: () => wait({ enabled: scan.enabled, scope: folderScope ? "folder" : "catalog", strictness: "balanced", recognizer: "sface", detect_size: 1024 }),
-  setStrictness: () => fake.settings(), setDetectSize: () => fake.settings(), reprocess: () => { calls.push("reprocess"); return wait(db.faces.length); },
+  settings: () => wait({ enabled: scan.enabled, scope: folderScope ? "folder" : "catalog", strictness: "balanced", recognizer: "sface", detect_size: 1024, arcface_available: false }),
+  setRecognizer: () => fake.settings(), setStrictness: () => fake.settings(), setDetectSize: () => fake.settings(), reprocess: () => { calls.push("reprocess"); return wait(db.faces.length); },
   mergeGroups: (from, into) => { mutate(`mergeGroups:${from}:${into}`, () => { for (const f of db.faces) if (f.cluster === from) f.cluster = into; }); return wait(undefined); },
   notSame: (a: Side, b: Side) => { mutate(`notSame:${a.kind}:${a.id}:${b.id}`, () => { notSamePairs.add(pairKey(a.kind, a.id, b.id)); }); return wait(undefined); },
   undo: () => { const prev = undoStack.pop(); calls.push("undo"); if (!prev) return wait(null); db = prev; sizes = null; ghosts = []; return wait("undone"); },

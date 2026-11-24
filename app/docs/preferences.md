@@ -854,9 +854,13 @@ Preferences > Faces (between Culling and Plugins) holds everything about [People
 - **Recognition**:
   - **Same person strictness** (Looser groups, Balanced, Stricter groups): looser puts more faces under one person (and may mix
     people), stricter keeps people apart (and may split one person). It applies at once and nothing is re-scanned.
-  - **Scan thoroughness** (Balanced, the default, or Thorough): Thorough also looks for small faces, as in group photos, and is
-    roughly four times slower. Changing it says that your photos are re-scanned in the background, with the names and groups you
-    made kept, and waits for you to confirm.
+  - **Scan thoroughness**: *Balanced (default)* is the fastest. *Thorough* also scans in tiles to find small faces, for example in
+    group photos: about 33% more faces found, but about 4 times slower (measured on a family photo sample). Changing it says that
+    Thorough scanning takes about 4 times longer and that your photos will be scanned again in the background, with the names and
+    groups you made kept, and waits for you to confirm.
+  - **Face matching model**: shown only when an ArcFace test build is installed locally. SFace is the default and licence-clean;
+    ArcFace has a non-commercial licence and is not part of Immage releases. Switching asks first, re-processes all photos and
+    keeps the names and groups you made. Without the ArcFace file the row is a plain line saying SFace is in use.
   - **Reprocess all faces...** re-scans every photo with the current settings after a confirmation: names are kept where the same
     face is found again, and a face the scan no longer finds loses its name. The scan strip in People shows the progress.
 - **Model**: the Faces model's own card, with the same download (and its consent), check and remove states as under AI models.

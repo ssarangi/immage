@@ -40,6 +40,7 @@ export function FacesPrefs({ onOpenPeople }: { onOpenPeople?: () => void }) {
   // what the recognition settings are now (re-read after each change), a thoroughness change waiting for its confirmation, and the note after a reprocess
   const [cfg, setCfg] = useState<FacesSettings | null>(null);
   const [pendingSize, setPendingSize] = useState<number | null>(null);
+  const [pendingKind, setPendingKind] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const alive = useRef(true);
 
@@ -58,7 +59,13 @@ export function FacesPrefs({ onOpenPeople }: { onOpenPeople?: () => void }) {
 
   const strict = cfg?.strictness ?? "balanced", detail = cfg?.detect_size === 1600 ? 1600 : 1024;
   const setStrict = (level: string) => { if (level !== strict) void peopleApi().setStrictness(level).then((x) => setCfg(x), () => readCfg()); };
-  const askDetail = (size: number) => setPendingSize(size === detail ? null : size);
+  const askDetail = (size: number) => { setPendingKind(null); setPendingSize(size === detail ? null : size); };
+  const askKind = (k: string) => { setPendingSize(null); setPendingKind(k === (cfg?.recognizer ?? "sface") ? null : k); };
+  const applyKind = () => {
+    const k = pendingKind;
+    setPendingKind(null);
+    if (k !== null) void peopleApi().setRecognizer(k).then((x) => { setCfg(x); void refreshStatus(); read(); }, () => readCfg());
+  };
   const applyDetail = () => {
     const size = pendingSize;
     setPendingSize(null);
@@ -104,7 +111,17 @@ export function FacesPrefs({ onOpenPeople }: { onOpenPeople?: () => void }) {
           <PrefSwitch checked={enabled} disabled={busy || (!enabled && !installed)} onChange={onSwitch} aria-label={t("prefs.faces.switch")} />
         </PrefRow>
         <p className="faces-line" role="status">{reason}</p>
-        <PrefRow id="Recognizer" label={t("prefs.faces.recognizer")}><span className="faces-val">{recognizer}</span></PrefRow>
+        {stats?.arcface_available ? (
+          <PrefRow id="Recognizer" label={t("prefs.faces.matching")}
+                   hint={<>{t("prefs.faces.matching.sface")}<br />{t("prefs.faces.matching.arcface")}</>}>
+            <div className="segmented small" role="group" aria-label={t("prefs.faces.matching")}>
+              {(["sface", "arcface"] as const).map((v) => (
+                <button key={v} className={(cfg?.recognizer ?? stats.recognizer) === v ? "active" : ""} aria-pressed={(cfg?.recognizer ?? stats.recognizer) === v}
+                        disabled={!cfg} onClick={() => askKind(v)}>{v === "sface" ? "SFace" : "ArcFace"}</button>
+              ))}
+            </div>
+          </PrefRow>
+        ) : <PrefRow id="Recognizer" label={t("prefs.faces.recognizer")}><span className="faces-val">{recognizer}</span></PrefRow>}
         <PrefRow id="Eye detection" label={t("prefs.faces.eyes")}><span className="faces-val faces-wrap">{eyes}</span></PrefRow>
         <p className="faces-line" role="status">{notes.network > 0 ? t("prefs.faces.network", { n: notes.network, count: formatNumber(notes.network) }) : ""}</p>
         {onOpenPeople && <div className="faces-act"><button type="button" className="btn small" onClick={onOpenPeople}>{t("prefs.faces.open")}</button></div>}
@@ -118,7 +135,7 @@ export function FacesPrefs({ onOpenPeople }: { onOpenPeople?: () => void }) {
             ))}
           </div>
         </PrefRow>
-        <PrefRow id="Scan thoroughness" label={t("prefs.faces.detail")} hint={t("prefs.faces.detailHint")}>
+        <PrefRow id="Scan thoroughness" label={t("prefs.faces.detail")} hint={<>{t("prefs.faces.detail.balancedHint")}<br />{t("prefs.faces.detail.thoroughHint")}</>}>
           <div className="segmented small" role="group" aria-label={t("prefs.faces.detail")}>
             {([1024, 1600] as const).map((v) => (
               <button key={v} className={detail === v ? "active" : ""} aria-pressed={detail === v} disabled={!cfg} onClick={() => askDetail(v)}>{t(v === 1024 ? "prefs.faces.detail.balanced" : "prefs.faces.detail.thorough")}</button>
@@ -126,10 +143,10 @@ export function FacesPrefs({ onOpenPeople }: { onOpenPeople?: () => void }) {
           </div>
         </PrefRow>
         <div className="faces-confirm" role="status">
-          {pendingSize !== null && <>
-            <span>{t("prefs.faces.rescanNote")}</span>
-            <button type="button" className="btn small primary" onClick={applyDetail}>{t("prefs.faces.change")}</button>
-            <button type="button" className="btn small" onClick={() => setPendingSize(null)}>{t("aimodels.act.cancel")}</button>
+          {(pendingSize !== null || pendingKind !== null) && <>
+            <span>{pendingKind !== null ? t("prefs.faces.rescanNoteKind") : pendingSize === 1600 ? t("prefs.faces.rescanNoteThorough") : t("prefs.faces.rescanNote")}</span>
+            <button type="button" className="btn small primary" onClick={pendingKind !== null ? applyKind : applyDetail}>{t("prefs.faces.change")}</button>
+            <button type="button" className="btn small" onClick={() => { setPendingSize(null); setPendingKind(null); }}>{t("aimodels.act.cancel")}</button>
           </>}
         </div>
         <p className="faces-line" role="status">{note}</p>

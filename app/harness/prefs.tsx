@@ -49,19 +49,20 @@ let bumped = 0;
 const stat = (): FacesStats => ({
   store: { files: 4210 + bumped * 1000, photos: 4100 + bumped * 1000, faces: 9120 + bumped * 5000, people: 14 + bumped, ignored_people: 1, groups: 37 + bumped * 100, unassigned: 1820, rejected: 3,
            failed: 34, db_bytes: 38_000_000 + bumped * 4_000_000, models: [] },
-  crops_bytes: 120_000_000 + bumped * 60_000_000, crops_files: 9000, recognizer: "sface", model_version: "sface-2021dec", pack_installed: true, eyes_available: false, arcface_available: false,
+  crops_bytes: 120_000_000 + bumped * 60_000_000, crops_files: 9000, recognizer: "sface", model_version: "sface-2021dec", pack_installed: true, eyes_available: false, arcface_available: q.get("arcface") !== "0",
 });
 const status = (): FacesStatus => ({
   enabled: true, recognizer: "sface", installed: true, eyes_available: false,
   totals: { photos: stat().store.photos, faces: stat().store.faces, people: stat().store.people, unreviewed: 40, groups: 37, suggestions: 3, unknown: 1820, ignored_faces: 3, ignored_people: 1, failed_photos: 34 },
   scanned: 0, faces_found: 0, pending: 0, folders_waiting: 0, offline_folders: 0, skipped_network_sources: 2, infer_ms: null, health: "ok", failure: null, undo: null,
 });
-let cfg: FacesSettings = { enabled: true, scope: "folder", strictness: "balanced", recognizer: "sface", detect_size: 1024 };
+let cfg: FacesSettings = { enabled: true, scope: "folder", strictness: "balanced", recognizer: "sface", detect_size: 1024, arcface_available: q.get("arcface") !== "0" };
 const calls: string[] = [];
 const fakes: Partial<PeopleApi> = {
   settings: () => Promise.resolve({ ...cfg }),
   setStrictness: (level) => { calls.push(`strictness:${level}`); cfg = { ...cfg, strictness: level }; return Promise.resolve({ ...cfg }); },
   setDetectSize: (size) => { calls.push(`detect:${size}`); cfg = { ...cfg, detect_size: size }; return Promise.resolve({ ...cfg }); },
+  setRecognizer: (kind) => { calls.push(`recognizer:${kind}`); cfg = { ...cfg, recognizer: kind }; return Promise.resolve({ ...cfg }); },
   reprocess: () => { calls.push("reprocess"); return Promise.resolve(4100); },
   status: () => Promise.resolve(status()), paused: () => Promise.resolve(false), stats: () => Promise.resolve(stat()), people: () => Promise.resolve([]), groups: () => Promise.resolve([]),
   list: () => Promise.resolve([]), mergeSuggestions: () => Promise.resolve([]), failedPhotos: (n) => Promise.resolve(Array.from({ length: Math.min(n, 34) }, (_, i) => `/synthetic/broken_${i}.jpg`)),
