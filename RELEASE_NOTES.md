@@ -274,6 +274,8 @@ Performance
 
 Bug fixes
 
+- **Filmstrip:** it now has a thin border, so a thumbnail cut off at its edge no
+  longer looks like a drawing fault.
 - **Navigator:** when the viewer is larger than the zoomed photo (a small photo at
   100%, say), the rectangle now covers the whole picture instead of sitting
   shifted off it.
