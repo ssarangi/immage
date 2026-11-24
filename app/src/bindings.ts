@@ -396,7 +396,7 @@ export const commands = {
 	 *  `scenes_score` counting the eyes of `eye_mode` (default: the main subject's) in each frame's `eyes`, `faceAdjust`
 	 *  and `adjustedQuality`.
 	 */
-	scenesScoreFor: (job: number, items: CullTarget[], eyeMode: EyeMode | null) => __TAURI_INVOKE<SceneScore[]>("scenes_score_for", { job, items, eyeMode }),
+	scenesScoreFor: (job: number, items: CullTarget[], eyeMode: EyeMode | null, eyesRank: boolean | null) => __TAURI_INVOKE<SceneScore[]>("scenes_score_for", { job, items, eyeMode, eyesRank }),
 	/**
 	 *  Remembers a split or a merge the user made, so every later grouping replays it. `action` is
 	 *  "split" (a scene starts at this frame) or "merge" (the frame's scene joins the next scene of its
@@ -1135,6 +1135,11 @@ export type CullSettings = {
 	eyeMode?: EyeMode,
 	/**  let the faces Faces stored (pose, eyes) adjust the quality score; nothing happens while Faces is off */
 	useFaces?: boolean,
+	/**
+	 *  let closed (or looking down) eyes lower a frame's score by 0.15 (`cull.eyes_rank`); off by default, when the
+	 *  eye verdict is only shown as a factor and the pose alone adjusts the score
+	 */
+	eyesRank?: boolean,
 };
 
 export type CullStatus = "keep" | "reject";
@@ -2730,7 +2735,8 @@ export type Rules = {
 	/**  a scene of one frame is kept (else left undecided) */
 	singlesKeep: boolean,
 	/**
-	 *  rank frames by their score with the faces' adjustment (closed eyes lower it); it only changes the order,
+	 *  rank frames by their score with the faces' adjustment (closed or looking-down eyes lower it); off by default, since
+	 *  the eye model cannot tell eyes cast down from shut ones. It only changes the order,
 	 *  never the minimum-quality rule, so a closed-eye frame is not rejected for its eyes alone
 	 */
 	preferOpenEyes?: boolean,
@@ -2844,6 +2850,8 @@ export type ScenesRequest = {
 	params?: SceneParams | null,
 	/**  whose closed eyes count (default: the main subject's) */
 	eyeMode?: EyeMode | null,
+	/**  whether eyes rank (`Rules.preferOpenEyes`): `faceAdjust` and `adjustedQuality` include the eye penalty only then */
+	eyesRank?: boolean | null,
 };
 
 export type SchemaEnumValue = {

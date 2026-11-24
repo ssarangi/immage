@@ -60,6 +60,9 @@ pub struct ScenesRequest {
     /// whose closed eyes count (default: the main subject's)
     #[serde(default)]
     pub eye_mode: Option<EyeMode>,
+    /// whether eyes rank (`Rules.preferOpenEyes`): `faceAdjust` and `adjustedQuality` include the eye penalty only then
+    #[serde(default)]
+    pub eyes_rank: Option<bool>,
 }
 
 /// One scene: indexes into the request's items, in capture order.
@@ -120,11 +123,11 @@ pub struct SceneScore {
 }
 
 /// What Faces stored about a frame's faces, as the three per-frame fields.
-fn face_fields(quality: Option<f64>, q: &crate::faces_culling::FaceQuality) -> (Option<EyeLabel>, Option<f64>, Option<f64>) {
+fn face_fields(quality: Option<f64>, q: &crate::faces_culling::FaceQuality, rank_eyes: bool) -> (Option<EyeLabel>, Option<f64>, Option<f64>) {
     if q.faces == 0 {
         return (None, None, quality);
     }
-    let adjust = f64::from(q.adjust);
+    let adjust = f64::from(q.adjust_with(rank_eyes));
     (q.eye, Some(adjust), quality.map(|v| (v + adjust).max(0.0)))
 }
 
@@ -273,7 +276,7 @@ pub(crate) async fn scenes_build(app: AppHandle, caches: State<'_, Caches>, job:
             let mode = request.eye_mode.unwrap_or_default();
             for (i, item) in request.items.iter().enumerate() {
                 let q = crate::faces_eyes::quality_of(&ctx.store, &item.path, mode);
-                let (eyes, adjust, adjusted) = face_fields(built.quality[i], &q);
+                let (eyes, adjust, adjusted) = face_fields(built.quality[i], &q, request.eyes_rank.unwrap_or(false));
                 built.eyes[i] = eyes;
                 built.face_adjust[i] = adjust;
                 built.adjusted_quality[i] = adjusted;
@@ -319,15 +322,16 @@ pub(crate) async fn scenes_set_accepted(state: State<'_, AppState>, path: String
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn scenes_score(app: AppHandle, job: u64, items: Vec<CullTarget>) -> Result<Vec<SceneScore>, String> {
-    scenes_score_for(app, job, items, None).await
+    scenes_score_for(app, job, items, None, None).await
 }
 
 /// `scenes_score` counting the eyes of `eye_mode` (default: the main subject's) in each frame's `eyes`, `faceAdjust`
 /// and `adjustedQuality`.
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn scenes_score_for(app: AppHandle, job: u64, items: Vec<CullTarget>, eye_mode: Option<EyeMode>) -> Result<Vec<SceneScore>, String> {
+pub(crate) async fn scenes_score_for(app: AppHandle, job: u64, items: Vec<CullTarget>, eye_mode: Option<EyeMode>, eyes_rank: Option<bool>) -> Result<Vec<SceneScore>, String> {
     let eye_mode = eye_mode.unwrap_or_default();
+    let eyes_rank = eyes_rank.unwrap_or(false);
     let (cancel, _entry) = register(job);
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
@@ -369,7 +373,7 @@ pub(crate) async fn scenes_score_for(app: AppHandle, job: u64, items: Vec<CullTa
                         let (eyes, face_adjust, adjusted_quality) = match &faces {
                             Some(ctx) if error.is_none() => {
                                 let _ = crate::faces_eyes::ensure_photo(ctx, &target.path);
-                                face_fields(quality, &crate::faces_eyes::quality_of(&ctx.store, &target.path, eye_mode))
+                                face_fields(quality, &crate::faces_eyes::quality_of(&ctx.store, &target.path, eye_mode), eyes_rank)
                             }
                             _ => (None, None, quality),
                         };
@@ -491,7 +495,7 @@ mod tests {
         let store = dir.path().join("scenes.sqlite");
         let items = vec![item("a", "07:10:00"), item("b", "07:10:02"), item("c", "07:10:04"), item("d", "07:40:00"), item("e", "07:40:01")];
         let seeds: HashMap<String, u32> = [("a", 1), ("b", 1), ("c", 2), ("d", 3)].iter().map(|(n, s)| (n.to_string(), *s)).collect();
-        let request = ScenesRequest { items, params: None, eye_mode: None };
+        let request = ScenesRequest { items, params: None, eye_mode: None, eyes_rank: None };
         let cancel = AtomicBool::new(false);
         let first = build(&request, &reader(seeds.clone()), &store, None, 2, &cancel, &|_, _| {}).unwrap().unwrap();
         assert_eq!(first.blocks.len(), 2);
@@ -513,7 +517,7 @@ mod tests {
         let items = vec![item("a", "07:10:00"), item("b", "07:10:02"), item("c", "07:10:04")];
         Store::open(&store).unwrap().override_put("/fake/c", 0, "split").unwrap();
         let seeds: HashMap<String, u32> = [("a", 1), ("b", 1), ("c", 1)].iter().map(|(n, s)| (n.to_string(), *s)).collect();
-        let request = ScenesRequest { items, params: None, eye_mode: None };
+        let request = ScenesRequest { items, params: None, eye_mode: None, eyes_rank: None };
         let got = build(&request, &reader(seeds), &store, None, 1, &AtomicBool::new(false), &|_, _| {}).unwrap().unwrap();
         assert_eq!(got.blocks[0].scenes.len(), 2);
     }
@@ -524,7 +528,7 @@ mod tests {
         let store = dir.path().join("scenes.sqlite");
         let items = vec![item("a", "07:10:00"), item("b", "07:10:02"), item("c", "07:10:04"), item("d", "07:10:06")];
         let seeds: HashMap<String, u32> = ["a", "b", "c", "d"].iter().map(|n| (n.to_string(), 1)).collect();
-        let request = ScenesRequest { items, params: None, eye_mode: None };
+        let request = ScenesRequest { items, params: None, eye_mode: None, eyes_rank: None };
         let groups = |store: &Path| {
             let got = build(&request, &reader(seeds.clone()), store, None, 1, &AtomicBool::new(false), &|_, _| {}).unwrap().unwrap();
             got.blocks[0].scenes.iter().map(|s| s.frames.clone()).collect::<Vec<_>>()
@@ -542,7 +546,7 @@ mod tests {
     #[test]
     fn a_cancelled_build_returns_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        let request = ScenesRequest { items: vec![item("a", "07:10:00")], params: None, eye_mode: None };
+        let request = ScenesRequest { items: vec![item("a", "07:10:00")], params: None, eye_mode: None, eyes_rank: None };
         let got = build(&request, &reader(HashMap::new()), &dir.path().join("s.sqlite"), None, 1, &AtomicBool::new(true), &|_, _| {}).unwrap();
         assert!(got.is_none());
     }
@@ -554,7 +558,7 @@ mod tests {
         from_file.from_file = true;
         let mut none = item("z", "07:10:00");
         none.taken_at.clear();
-        let request = ScenesRequest { items: vec![none, from_file], params: None, eye_mode: None };
+        let request = ScenesRequest { items: vec![none, from_file], params: None, eye_mode: None, eyes_rank: None };
         let got = build(&request, &reader(HashMap::new()), &dir.path().join("s.sqlite"), None, 1, &AtomicBool::new(false), &|_, _| {}).unwrap().unwrap();
         assert!(got.blocks[0].approx && !got.blocks[0].no_time);
         assert!(got.blocks[1].no_time && got.blocks[1].start_ms.is_none());
@@ -572,7 +576,7 @@ mod tests {
             sharp_region: Some(CullBlurRegion { x: 0.5, y: 0.25, width: 0.375, height: 0.375 }),
         };
         cull.cache_put(&CullTarget { path: "/fake/a".into(), version: 0 }, 1, 1, "h", &analysis).unwrap();
-        let request = ScenesRequest { items: vec![item("a", "07:10:00"), item("b", "07:10:01")], params: None, eye_mode: None };
+        let request = ScenesRequest { items: vec![item("a", "07:10:00"), item("b", "07:10:01")], params: None, eye_mode: None, eyes_rank: None };
         let got = build(&request, &reader(HashMap::new()), &dir.path().join("s.sqlite"), Some(&cull_path), 1, &AtomicBool::new(false), &|_, _| {}).unwrap().unwrap();
         assert_eq!(got.quality, vec![Some(0.84), None]);
         assert_eq!(got.regions[0].map(|r| (r.x, r.y)), Some((0.5, 0.25)));
@@ -594,7 +598,7 @@ mod tests {
                 SceneItem { path: format!("/fake/{i}.jpg"), version: 0, name: format!("{i}.jpg"), taken_at: when, from_file: false }
             })
             .collect();
-        let request = ScenesRequest { items, params: None, eye_mode: None };
+        let request = ScenesRequest { items, params: None, eye_mode: None, eyes_rank: None };
         let read = |item: &SceneItem| item.name.trim_end_matches(".jpg").parse::<usize>().ok().map(|i| pictures[(i / 8) % 40].clone());
         let cancel = AtomicBool::new(false);
         let cold = build(&request, &read, &store, None, 4, &cancel, &|_, _| {}).unwrap().unwrap();

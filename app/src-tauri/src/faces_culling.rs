@@ -116,13 +116,35 @@ pub struct FaceQuality {
     pub eye_face: Option<i64>,
     /// added to the quality score, -0.2 to +0.04
     pub adjust: f32,
+    /// the pose part of `adjust` alone: what applies while eyes do not rank (`CullSettings.eyes_rank` off)
+    pub pose_adjust: f32,
     pub factors: Vec<CullFactor>,
 }
 
 impl FaceQuality {
+    /// What is added to the quality score: pose alone, or with the eye penalty when eyes rank.
+    pub fn adjust_with(&self, rank_eyes: bool) -> f32 {
+        if rank_eyes { self.adjust } else { self.pose_adjust }
+    }
+
+    /// The decision factors: with eyes not ranking the eye factor is only context and says the score is unchanged.
+    pub fn factors_with(&self, rank_eyes: bool) -> Vec<CullFactor> {
+        self.factors
+            .iter()
+            .map(|f| {
+                let mut f = f.clone();
+                if f.id == "eye_state" && !rank_eyes && f.impact == "supporting" {
+                    f.impact = "context".into();
+                    f.detail = format!("{} - shown only, the score is not changed", f.label);
+                }
+                f
+            })
+            .collect()
+    }
+
     /// Nothing known: no faces, no change.
     pub fn none() -> Self {
-        Self { faces: 0, primary: None, frontal: None, eye: None, eye_face: None, adjust: 0.0, factors: Vec::new() }
+        Self { faces: 0, primary: None, frontal: None, eye: None, eye_face: None, adjust: 0.0, pose_adjust: 0.0, factors: Vec::new() }
     }
 }
 
@@ -184,12 +206,12 @@ pub fn assess(faces: &[CullFace], mode: EyeMode) -> FaceQuality {
         };
         let (name, detail, impact) = match label {
             EyeLabel::Open => ("Eyes open", format!("Eyes open (counted: {who}): no change"), "context"),
-            EyeLabel::Semi => ("Eyes half closed", format!("Half closed or looking down (counted: {who}): shown only, no effect on the score"), "context"),
-            EyeLabel::Closed => ("Eyes closed", format!("Closed eyes: {eye_adjust:+.2}, strong signal, not a hard rule (counted: {who})"), "supporting"),
+            EyeLabel::Semi => ("Eyes half closed or looking down", format!("Half closed or looking down (counted: {who}): shown only, no effect on the score"), "context"),
+            EyeLabel::Closed => ("Eyes closed or looking down", format!("Eyes closed or looking down: {eye_adjust:+.2} when eyes rank, not a hard rule (counted: {who})"), "supporting"),
         };
         factors.push(CullFactor { id: "eye_state".into(), label: name.into(), detail, impact: impact.into() });
     }
-    FaceQuality { faces: faces.len() as u32, primary: Some(primary.id), frontal: Some(primary.frontal), eye: eye.map(|e| e.0), eye_face: eye.map(|e| e.1), adjust, factors }
+    FaceQuality { faces: faces.len() as u32, primary: Some(primary.id), frontal: Some(primary.frontal), eye: eye.map(|e| e.0), eye_face: eye.map(|e| e.1), adjust, pose_adjust: pose.clamp(MIN_ADJUST, MAX_ADJUST), factors }
 }
 
 #[cfg(test)]

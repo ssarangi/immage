@@ -94,6 +94,10 @@ pub struct CullSettings {
     /// let the faces Faces stored (pose, eyes) adjust the quality score; nothing happens while Faces is off
     #[serde(default = "default_true")]
     pub use_faces: bool,
+    /// let closed (or looking down) eyes lower a frame's score by 0.15 (`cull.eyes_rank`); off by default, when the
+    /// eye verdict is only shown as a factor and the pose alone adjusts the score
+    #[serde(default)]
+    pub eyes_rank: bool,
 }
 
 impl Default for CullSettings {
@@ -108,6 +112,7 @@ impl Default for CullSettings {
             highlight_percent: default_highlights(),
             eye_mode: EyeMode::MainSubject,
             use_faces: true,
+            eyes_rank: false,
         }
     }
 }
@@ -228,7 +233,7 @@ pub fn plan(inputs: &[Input], settings: &CullSettings) -> Vec<Planned> {
 /// the only thing it does: no rule here rejects a frame for its faces.
 pub fn plan_with_faces(inputs: &[Input], faces: &[Option<FaceQuality>], settings: &CullSettings) -> Vec<Planned> {
     let face_of = |i: usize| faces.get(i).and_then(|f| f.as_ref()).filter(|_| settings.use_faces);
-    let score: Vec<f64> = inputs.iter().enumerate().map(|(i, input)| (input.analysis.quality_score + face_of(i).map_or(0.0, |f| f64::from(f.adjust))).max(0.0)).collect();
+    let score: Vec<f64> = inputs.iter().enumerate().map(|(i, input)| (input.analysis.quality_score + face_of(i).map_or(0.0, |f| f64::from(f.adjust_with(settings.eyes_rank)))).max(0.0)).collect();
     let scored: Vec<(ImageHash, f64)> = inputs.iter().zip(&score).map(|(i, q)| (i.hash.clone(), *q)).collect();
     let groups = if settings.group_similar { cull::group_similar(&scored, settings.similarity_threshold) } else { Vec::new() };
 
@@ -304,10 +309,9 @@ pub fn plan_with_faces(inputs: &[Input], faces: &[Option<FaceQuality>], settings
                 });
             }
             if let Some(face) = face_of(index) {
-                for factor in &face.factors {
-                    let mut factor = factor.clone();
+                for mut factor in face.factors_with(settings.eyes_rank) {
                     // a closed-eye frame that is the best there is stays Keep, and says so
-                    if factor.id == "eye_state" && factor.impact == "supporting" && matches!(reason, CullReason::Unique | CullReason::BestInGroup) {
+                    if factor.id == "eye_state" && settings.eyes_rank && factor.label.starts_with("Eyes closed") && matches!(reason, CullReason::Unique | CullReason::BestInGroup) {
                         factor.detail = format!("{}. {} - no better frame in this set", factor.detail, factor.label);
                     }
                     factors.push(factor);
@@ -473,7 +477,7 @@ mod tests {
         let scene = sharp_scene(320, 240, 0);
         // the same picture twice: equal scores, so the first would win a tie
         let inputs = vec![input("/s/closed.jpg", analyze(&scene)), input("/s/open.jpg", analyze(&scene))];
-        let settings = CullSettings { duplicate_ratio: DuplicateRatio::Less, filter_blurry: false, ..Default::default() };
+        let settings = CullSettings { duplicate_ratio: DuplicateRatio::Less, filter_blurry: false, eyes_rank: true, ..Default::default() };
         let plain = plan(&inputs, &settings);
         assert_eq!(by_path(&plain, "/s/closed.jpg").reason, CullReason::BestInGroup);
         let faces = vec![Some(face_quality(0.9, Some(EyeLabel::Closed))), Some(face_quality(0.9, Some(EyeLabel::Open)))];
@@ -482,11 +486,33 @@ mod tests {
         assert_eq!((open.proposed, open.reason), (CullStatus::Keep, CullReason::BestInGroup));
         assert_eq!((closed.proposed, closed.reason), (CullStatus::Reject, CullReason::DuplicateOf));
         assert!(closed.quality_score < open.quality_score, "the stored score is the adjusted one");
-        assert!(closed.factors.iter().any(|f| f.id == "eye_state" && f.impact == "supporting" && f.detail.contains("Closed eyes")));
+        assert!(closed.factors.iter().any(|f| f.id == "eye_state" && f.impact == "supporting" && f.detail.contains("closed or looking down")));
         assert!(open.factors.iter().any(|f| f.id == "face_pose") && open.factors.iter().any(|f| f.id == "eye_state" && f.impact == "context"));
         // the reject reason is still the duplicate, not the eyes
         assert!(closed.factors.iter().any(|f| f.id == "duplicate" && f.impact == "reject"));
         assert!(!closed.factors.iter().any(|f| f.id == "eye_state" && f.impact == "reject"));
+    }
+
+    #[test]
+    fn eyes_change_neither_the_score_nor_the_order_unless_they_rank() {
+        use crate::faces_culling::EyeLabel;
+        let scene = sharp_scene(320, 240, 0);
+        let inputs = vec![input("/s/closed.jpg", analyze(&scene)), input("/s/open.jpg", analyze(&scene))];
+        let faces = vec![Some(face_quality(0.9, Some(EyeLabel::Closed))), Some(face_quality(0.9, Some(EyeLabel::Open)))];
+        let base = CullSettings { duplicate_ratio: DuplicateRatio::Less, filter_blurry: false, ..Default::default() };
+        assert!(!base.eyes_rank, "eyes do not rank by default");
+        let off = plan_with_faces(&inputs, &faces, &base);
+        let (closed, open) = (by_path(&off, "/s/closed.jpg"), by_path(&off, "/s/open.jpg"));
+        // the same pose, so the same score and the capture order decides
+        assert_eq!(closed.quality_score, open.quality_score);
+        assert_eq!((closed.proposed, open.proposed), (CullStatus::Keep, CullStatus::Reject));
+        let eye = closed.factors.iter().find(|f| f.id == "eye_state").unwrap();
+        assert_eq!(eye.impact, "context");
+        assert!(eye.label.contains("looking down") && eye.detail.contains("not changed"), "{eye:?}");
+        let on = plan_with_faces(&inputs, &faces, &CullSettings { eyes_rank: true, ..base });
+        assert!(by_path(&on, "/s/closed.jpg").quality_score < by_path(&on, "/s/open.jpg").quality_score);
+        assert_eq!(by_path(&on, "/s/open.jpg").proposed, CullStatus::Keep);
+        assert_eq!(by_path(&on, "/s/closed.jpg").factors.iter().find(|f| f.id == "eye_state").unwrap().impact, "supporting");
     }
 
     #[test]
@@ -495,7 +521,7 @@ mod tests {
         let inputs = vec![input("/s/only.jpg", analyze(&other_scene())), input("/s/other.jpg", analyze(&sharp_scene(320, 240, 5)))];
         for eye in [EyeLabel::Closed] {
             let faces = vec![Some(face_quality(0.9, Some(eye))), None];
-            for settings in [CullSettings::default(), CullSettings { filter_blurry: false, highlight_percent: 100, ..Default::default() }] {
+            for settings in [CullSettings { eyes_rank: true, ..Default::default() }, CullSettings { filter_blurry: false, highlight_percent: 100, eyes_rank: true, ..Default::default() }] {
                 let out = plan_with_faces(&inputs, &faces, &settings);
                 let only = by_path(&out, "/s/only.jpg");
                 let base = plan(&inputs, &settings);
@@ -535,6 +561,7 @@ mod tests {
         assert_eq!(s.highlight_percent, 15);
         assert_eq!(s.shoot_type, "general");
         assert!(s.use_faces);
+        assert!(!s.eyes_rank);
         assert_eq!(s.eye_mode, EyeMode::MainSubject);
     }
 

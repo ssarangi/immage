@@ -37,19 +37,16 @@ pub struct Rules {
     pub rated_at_least: u32,
     /// a scene of one frame is kept (else left undecided)
     pub singles_keep: bool,
-    /// rank frames by their score with the faces' adjustment (closed eyes lower it); it only changes the order,
+    /// rank frames by their score with the faces' adjustment (closed or looking-down eyes lower it); off by default, since
+    /// the eye model cannot tell eyes cast down from shut ones. It only changes the order,
     /// never the minimum-quality rule, so a closed-eye frame is not rejected for its eyes alone
-    #[serde(default = "yes")]
+    #[serde(default)]
     pub prefer_open_eyes: bool,
-}
-
-fn yes() -> bool {
-    true
 }
 
 impl Default for Rules {
     fn default() -> Self {
-        Self { keep_best: 2, min_quality: 0, always_keep: true, rated_at_least: 3, singles_keep: false, prefer_open_eyes: true }
+        Self { keep_best: 2, min_quality: 0, always_keep: true, rated_at_least: 3, singles_keep: false, prefer_open_eyes: false }
     }
 }
 
@@ -315,8 +312,8 @@ pub fn plan_items(
             if frame.eyes == Some(EyeLabel::Closed) {
                 factors.push(CullFactor {
                     id: "eye_state".into(),
-                    label: "Eyes closed".into(),
-                    detail: "Eyes closed: the score is lowered (-0.15 for the main face), a strong signal but not a hard rule".into(),
+                    label: "Eyes closed or looking down".into(),
+                    detail: "Eyes closed or looking down: the score is lowered (-0.15 for the main face), a strong signal but not a hard rule".into(),
                     impact: "supporting".into(),
                 });
             }
@@ -420,7 +417,8 @@ mod tests {
     #[test]
     fn older_rules_and_frames_fill_their_defaults() {
         let r: Rules = serde_json::from_str(r#"{"keepBest":2,"minQuality":0,"alwaysKeep":true,"ratedAtLeast":3,"singlesKeep":false}"#).unwrap();
-        assert!(r.prefer_open_eyes);
+        assert!(!r.prefer_open_eyes, "off by default");
+        assert!(!Rules::default().prefer_open_eyes);
         let frame: RuleFrame = serde_json::from_str(r#"{"path":"/a.jpg"}"#).unwrap();
         assert_eq!((frame.eyes, frame.face_adjust), (None, None));
     }

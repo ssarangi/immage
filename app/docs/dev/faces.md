@@ -65,7 +65,8 @@ The eye crop is centred 0.10 to 0.15 eye distances below the YuNet landmark (it 
 verdict averages three crops (`faces_detect::EYE_CROPS`); the stored `eye_model` carries a `rule2` suffix so a recipe or rule change recomputes.
 The verdict (`faces_eyes::decide`) is conservative: closed only when the worse eye's mean is under 0.15 and both under 0.25, half closed
 (shown, costs nothing) under 0.4, unknown when one eye's crops disagree by more than 0.5. Known limit: the model cannot tell eyes cast down from
-eyes shut, so on a portraits folder about 30% of eligible faces are still `closed` and only about a third of those are truly shut.
+eyes shut (the verdict is `closed` in the API, `Eyes closed or looking down` in text), so eyes do NOT rank by default: `CullSettings.eyesRank`
+and `Rules.preferOpenEyes` are off, the eye factor is context only and the score gets the pose part alone (`FaceQuality::adjust_with`); so on a portraits folder about 30% of eligible faces are still `closed` and only about a third of those are truly shut.
 The model's output is the probability of an OPEN eye (polarity confirmed).
 `cargo test opt_in_real_eyes -- --ignored --nocapture` (needs the same variables as `opt_in_real_faces`, plus `IMMAGE_FACES_EYES`)
 prints the eye step's counts and timings only. Notes: notes/faces-p4-backend-notes.md.
