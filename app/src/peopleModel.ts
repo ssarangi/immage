@@ -274,20 +274,35 @@ export function mergeUndo(prev: UndoEntry | null, next: UndoEntry): UndoEntry {
 export type ScanKind = "off" | "idle" | "scanning" | "paused" | "waiting" | "blocked" | "retrying";
 export type ScanView = { kind: ScanKind; done: number; total: number | null; left: number | null; reason: string | null };
 
-// from faces_status and the shared pause. `left` is the estimate in seconds, once a photo has been timed
-export function scanView(s: Pick<FacesStatus, "enabled" | "installed" | "scanned" | "pending" | "infer_ms" | "health" | "failure" | "folders_waiting">, paused: boolean): ScanView {
-  const done = s.scanned;
-  const pend = s.pending;
-  const total = pend === null ? null : done + pend;
-  const base = { done, total, left: pend !== null && s.infer_ms ? Math.round((pend * s.infer_ms) / 1000) : null, reason: s.failure };
+// Where the scan's numbers come from. In the Catalog scope the backend counts the photos still to scan (`pending`).
+// In the folder scope it counts only the folders waiting, never photos, so the total is the open folder's own photo
+// count (`folderTotal`, null when that folder is not the one scanned) and "done" is the photos the store holds.
+export type ScanCtx = { folderScope: boolean; folderTotal: number | null };
+export const NO_CTX: ScanCtx = { folderScope: false, folderTotal: null };
+
+// from faces_status and the shared pause. `left` is the estimate in seconds, only once a photo has been timed
+export function scanView(s: Pick<FacesStatus, "enabled" | "installed" | "scanned" | "pending" | "infer_ms" | "health" | "failure" | "folders_waiting"> & { totals?: Pick<FaceTotals, "photos"> },
+                         paused: boolean, ctx: ScanCtx = NO_CTX): ScanView {
+  const folder = ctx.folderScope;
+  const stored = s.totals?.photos ?? 0;
+  const done = folder ? Math.max(s.scanned, ctx.folderTotal === null ? stored : Math.min(stored, ctx.folderTotal)) : s.scanned;
+  const pend = folder ? (ctx.folderTotal === null ? null : Math.max(0, ctx.folderTotal - done)) : s.pending;
+  const total = folder ? ctx.folderTotal : pend === null ? null : done + pend;
+  const left = pend !== null && pend > 0 && s.infer_ms ? Math.max(1, Math.round((pend * s.infer_ms) / 1000)) : null;
+  const base = { done, total, left, reason: s.failure };
   if (!s.enabled || !s.installed) return { ...base, kind: "off" };
   if (s.health === "blocked") return { ...base, kind: "blocked" };
   if (s.health === "retrying") return { ...base, kind: "retrying" };
-  const busy = (pend ?? 0) > 0 || s.folders_waiting > 0;
+  const busy = folder ? s.folders_waiting > 0 && (total === null || done < total) : (pend ?? 0) > 0 || s.folders_waiting > 0;
   if (busy && paused) return { ...base, kind: "paused" };
   if (busy) return { ...base, kind: "scanning" };
-  if (pend === null && s.scanned === 0) return { ...base, kind: "waiting" };
+  if (pend === null && done === 0) return { ...base, kind: "waiting" };
   return { ...base, kind: "idle" };
+}
+
+// the activity line and the strip say the same thing: both read this (total 0 means no count yet)
+export function scanJob(v: ScanView): { done: number; total: number; paused: boolean } | null {
+  return v.kind === "scanning" || v.kind === "paused" ? { done: v.done, total: v.total ?? 0, paused: v.kind === "paused" } : null;
 }
 
 export type ViewKind = "consent" | "loading" | "error" | "scanning" | "none" | "ready";

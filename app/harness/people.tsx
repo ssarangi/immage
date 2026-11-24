@@ -11,6 +11,7 @@
 //           (faces, scan running) | review (default) | naming (review, the name box open) | error
 //   offline, net, failed  numbers for the strip notes (folders offline, network sources left out, photos not read)
 //   offline, net, failed  counts for the strip notes (folders offline, network sources left out, photos not read)
+//   folderscope=1  the folder scan (36 of 333 photos stored, one folder waiting); nofolder=1  no folder is open
 //   many    the number of faces (default 1400; 5000 for the scale run)
 //   theme   a built-in theme id        dir  ltr | rtl        w  width of the view in px (default 1440)
 //   break=1 adds styles that move things (the shift test must catch it)
@@ -22,7 +23,8 @@ import "../src/styles.css";
 import { BUILTIN_THEMES, THEME_TOKENS } from "../src/themes";
 import type { ClusterRow, FaceFilter, FaceRow, FacesStatus, PackInfo, PersonRow } from "../src/bindings";
 import { PeopleView } from "../src/PeopleView";
-import { peopleState, refreshAll, resetPeople, setPeopleApi, setPeopleOn, startPeople, type PeopleApi } from "../src/peopleStore";
+import { settings } from "../src/settings";
+import { peopleState, refreshAll, resetPeople, setPeopleApi, setPeopleOn, setScanFolderTotal, startPeople, type PeopleApi } from "../src/peopleStore";
 import { runPeopleShift } from "./peopleShift";
 
 const q = new URLSearchParams(location.search);
@@ -49,6 +51,7 @@ type Db = { faces: F[]; people: P[]; nextPerson: number };
 const NAMES = ["Dad", "Maya", "Sam", "Nana", "Alex", "Marcus", "Zoe", "Old statue"];
 const total = Number(q.get("many") ?? 1400);
 const mode = q.get("state") ?? "review";
+const folderScope = q.get("folderscope") === "1";   // the folder scan: the backend counts folders, not photos
 
 function seed(): Db {
   const faces: F[] = [];
@@ -75,9 +78,10 @@ const calls: string[] = [];
 const snap = (): Db => ({ faces: db.faces.map((f) => ({ ...f })), people: db.people.map((p) => ({ ...p })), nextPerson: db.nextPerson });
 const mutate = (label: string, fn: () => void) => { calls.push(label); undoStack.push(snap()); fn(); sizes = null; };
 
-const scan = { offline: Number(q.get("offline") ?? 0), net: Number(q.get("net") ?? 0), failed: Number(q.get("failed") ?? 0), enabled: mode !== "off" && mode !== "download" && mode !== "installed", installed: mode !== "off" && mode !== "download", scanned: 0, pending: null as number | null, health: "ok", failure: null as string | null, paused: false, fail: mode === "error" };
+const scan = { photos: null as number | null, fw: 0, offline: Number(q.get("offline") ?? 0), net: Number(q.get("net") ?? 0), failed: Number(q.get("failed") ?? 0), enabled: mode !== "off" && mode !== "download" && mode !== "installed", installed: mode !== "off" && mode !== "download", scanned: 0, pending: null as number | null, health: "ok", failure: null as string | null, paused: false, fail: mode === "error" };
 if (mode === "scanning" || mode === "partial") { scan.scanned = 340; scan.pending = 1240; }
 if (mode === "empty") { db = { faces: [], people: [], nextPerson: 1 }; scan.scanned = 0; scan.pending = 0; }
+if (folderScope) { scan.enabled = true; scan.installed = true; scan.pending = 1; scan.fw = 1; scan.scanned = 0; scan.photos = 36; }
 if (mode === "scanning") db = { faces: [], people: [], nextPerson: 1 };
 else if (mode === "review" || mode === "naming" || mode === "off") scan.scanned = total, scan.pending = 0;
 
@@ -97,11 +101,11 @@ const faceRow = (f: F): FaceRow => ({ id: f.id, path: f.path, x: 0.2, y: 0.2, w:
 const status = (): FacesStatus => {
   const unrev = db.faces.filter((f) => f.state === "unreviewed" && f.person === null);
   const groups = new Set(unrev.filter((f) => f.cluster !== null).map((f) => f.cluster)).size;
-  return { enabled: scan.enabled, installed: scan.installed, eyes_available: false, scanned: scan.scanned, faces_found: db.faces.length, pending: scan.pending, folders_waiting: 0,
-    infer_ms: scan.pending ? 300 : null, health: scan.health, failure: scan.failure, undo: undoStack.length ? "change" : null, offline_folders: scan.offline,
+  return { enabled: scan.enabled, installed: scan.installed, eyes_available: false, scanned: scan.scanned, faces_found: db.faces.length, pending: scan.pending, folders_waiting: scan.fw,
+    infer_ms: scan.pending && !scan.fw ? 300 : null, health: scan.health, failure: scan.failure, undo: undoStack.length ? "change" : null, offline_folders: scan.offline,
     skipped_network_sources: scan.net,
-    totals: { failed_photos: scan.failed, ignored_faces: db.faces.filter((f) => f.state === "rejected").length, ignored_people: db.people.filter((p) => p.state === "ignored").length,
-              unknown: db.faces.filter((f) => isUnknown(f)).length, photos: db.faces.length, faces: db.faces.filter((f) => f.state !== "rejected").length, people: db.people.filter((p) => p.state === "active").length,
+    totals: { photos: scan.photos ?? db.faces.length, failed_photos: scan.failed, ignored_faces: db.faces.filter((f) => f.state === "rejected").length, ignored_people: db.people.filter((p) => p.state === "ignored").length,
+              unknown: db.faces.filter((f) => isUnknown(f)).length, faces: db.faces.filter((f) => f.state !== "rejected").length, people: db.people.filter((p) => p.state === "active").length,
               unreviewed: unrev.length, groups, suggestions: unrev.filter((f) => f.maybe !== null).length } };
 };
 const svg = (face: number) => {
@@ -168,18 +172,19 @@ const packFor = (m: string): PackInfo => m === "download"
   ? { ...PACK_BASE, state: "downloading", progress: { id: "faces", done: 3_100_000, total: 8_600_000, bytes_per_sec: 2_000_000, eta_s: 3, phase: "download" } }
   : m === "off" ? PACK_BASE : { ...PACK_BASE, state: "installed", bytes_on_disk: 8_600_000, files_ok: 2, verified_at: 1 };
 
-type H = { calls: string[]; scan: typeof scan; fake: PeopleApi; db: () => Db; setPack: (m: string) => void; tick: () => void; changed: () => void; peopleState: typeof peopleState };
+type H = { calls: string[]; scan: typeof scan; folderScope: boolean; fake: PeopleApi; db: () => Db; setPack: (m: string) => void; tick: () => void; changed: () => void; peopleState: typeof peopleState };
 
 function Harness() {
   const [pack, setPack] = useState<PackInfo>(packFor(mode));
   const [width] = useState(Number(q.get("w") ?? 1440));
   useEffect(() => {
     const h: H = {
-      calls, scan, fake, db: () => db, setPack: (m) => { scan.installed = m === "installed"; setPack(packFor(m)); }, peopleState,
+      calls, scan, folderScope, fake, db: () => db, setPack: (m) => { scan.installed = m === "installed"; setPack(packFor(m)); }, peopleState,
       tick: () => { if (scan.pending) { scan.scanned += 10; scan.pending = Math.max(0, scan.pending - 10); } listeners.forEach((l) => l.progress({ scanned: scan.scanned, pending: scan.pending, faces_found: db.faces.length })); },
       changed: () => listeners.forEach((l) => l.changed()),
     };
     (window as unknown as { __h: H }).__h = h;
+    if (folderScope) { settings.set("faces.scope", "folder"); settings.set("faces.scope_folder", "/synthetic/Shoot"); setScanFolderTotal("/synthetic/Shoot", 333); }
     const stop = startPeople();
     resetPeople({ on: false });
     setPeopleOn(true);
@@ -199,7 +204,7 @@ function Harness() {
     <div style={{ position: "fixed", inset: 0, width, display: "flex" }}>
       <div style={{ position: "relative", flex: 1, display: "flex" }}>
         <div className="people-host">
-          <PeopleView folder="/synthetic/Shoot" hasCatalog={true} pack={pack} onPack={(a) => { if (a === "download") { calls.push("pack:download"); setPack(packFor("installed")); scan.installed = true; } }} />
+          <PeopleView folder={q.get("nofolder") === "1" ? null : "/synthetic/Shoot"} hasCatalog={true} pack={pack} onPack={(a) => { if (a === "download") { calls.push("pack:download"); setPack(packFor("installed")); scan.installed = true; } }} />
         </div>
       </div>
     </div>

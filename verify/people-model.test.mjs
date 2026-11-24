@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NO_SEL, GAP, PAD, CAPTION, geometry, gridKey, keepSelected, mergeUndo, nameOptions, needsReview, scanView, sectionCounts,
-  scanNotes, sectionTiles, select, stableOrder, tilePos, tilesInRect, totalHeight, viewKind, visibleRange } from '../app/src/peopleModel.ts';
+  scanNotes, scanJob, sectionTiles, select, stableOrder, tilePos, tilesInRect, totalHeight, viewKind, visibleRange } from '../app/src/peopleModel.ts';
 
 const person = (id, name, o = {}) => ({ id, name, state: 'active', faces: 5, photos: 10, cover_face_id: null, cover_manual: false, suggestions: 0, ...o });
 const data = (o = {}) => ({ people: [], groups: [], unknown: [], unknownMore: false, ignoredFaces: [], ignoredMore: false, ...o });
@@ -159,4 +159,23 @@ test('scan notes: unreadable photos, offline folders, network sources left out',
   s.totals.failed_photos = 34;
   assert.deepEqual(scanNotes(s), { failed: 34, offline: 2, network: 4 });
   assert.deepEqual(scanNotes(status()), { failed: 0, offline: 0, network: 0 });
+});
+
+test('scan view in the folder scope: photos of the open folder, no ETA without a rate, strip and activity agree', () => {
+  const folder = { folderScope: true, folderTotal: 333 };
+  const s = status({ scanned: 0, pending: 1, folders_waiting: 1, totals: { photos: 36, faces: 37, people: 0, unreviewed: 37, groups: 0, suggestions: 0, unknown: 0, ignored_faces: 0, ignored_people: 0, failed_photos: 0 } });
+  const v = scanView(s, false, folder);
+  assert.deepEqual([v.kind, v.done, v.total, v.left], ['scanning', 36, 333, null]);   // pending counts folders there: ignored
+  assert.deepEqual(scanJob(v), { done: 36, total: 333, paused: false });
+  assert.equal(scanView({ ...s, infer_ms: 400 }, false, folder).left, 119);            // (333 - 36) photos at 0.4 s
+  assert.equal(scanView({ ...s, infer_ms: null }, false, folder).left, null);
+  assert.equal(scanView(s, true, folder).kind, 'paused');
+  const unknownTotal = scanView(s, false, { folderScope: true, folderTotal: null });
+  assert.deepEqual([unknownTotal.kind, unknownTotal.total], ['scanning', null]);
+  const end = scanView({ ...s, folders_waiting: 0, totals: { ...s.totals, photos: 333 } }, false, folder);
+  assert.equal(end.kind, 'idle');
+  assert.equal(scanJob(end), null);
+  const cat = scanView(status({ scanned: 100, pending: 900, infer_ms: 200 }), false);
+  assert.deepEqual([cat.done, cat.total, cat.left], [100, 1000, 180]);
+  assert.equal(scanView(status({ scanned: 100, pending: 900 }), false).left, null);
 });

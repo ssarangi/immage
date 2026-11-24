@@ -86,10 +86,16 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
   const counts = useMemo(() => sectionCounts(data, s.status?.totals ?? null), [data, s.status?.totals]);
   const names = useMemo(() => new Map(data.people.filter((p) => p.state === "active").map((p) => [p.id, p.name])), [data.people]);
 
-  // the first time the lists arrive: land on To review when there is something to review
+  // until the user picks a section the view lands on To review when there is something there: when the lists first
+  // arrive, and later (while no one is named yet) when the first groups come in during a scan
+  const landed = useRef(false);
   useEffect(() => {
-    if (s.loaded && !picked) { setPicked(true); if (counts.review > 0) setSection("review"); }
-  }, [s.loaded, picked, counts.review]);
+    if (!s.loaded || picked || section !== "people") return;
+    if (!landed.current || counts.people === 0) {
+      landed.current = true;
+      if (counts.review > 0) setSection("review");
+    }
+  }, [s.loaded, picked, section, counts.people, counts.review]);
 
   // tiles keep the order the user is looking at; only a section change or a sort starts it afresh
   const order = useRef<{ id: string; keys: string[] }>({ id: "", keys: [] });
@@ -107,7 +113,7 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
   useEffect(() => { setSel((p) => keepSelected(p, keys)); }, [keys]);
 
   const apply = useCallback((a: SelAction) => setSel((p) => select(p, a, keys)), [keys]);
-  const goSection = (x: Section) => { setSection(x); setSheet(null); setSel(NO_SEL); setNaming(null); setQuery(""); };
+  const goSection = (x: Section) => { setPicked(true); setSection(x); setSheet(null); setSel(NO_SEL); setNaming(null); setQuery(""); };
   const selected = [...sel.keys].map((k) => byKey.get(k)).filter((x): x is Tile => !!x);
   const target = selected.length ? selected : tiles[sel.active] ? [tiles[sel.active]] : [];
   const nameable = target.filter((x) => x.kind !== "person");
@@ -203,8 +209,11 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
 
   // ---- rows ----
   const scan = s.scan;
+  // the count as far as it is known, and the time left only once photos have been timed: never a placeholder
   const stripText = scan.kind === "scanning"
-    ? t("people.scan.line", { done: formatNumber(scan.done), total: scan.total == null ? "?" : formatNumber(scan.total), left: scan.left == null ? "..." : etaText(scan.left) })
+    ? scan.total === null ? t("people.scan.lineCount", { done: formatNumber(scan.done), n: scan.done })
+      : scan.left === null ? t("people.scan.lineNoEta", { done: formatNumber(scan.done), total: formatNumber(scan.total) })
+      : t("people.scan.line", { done: formatNumber(scan.done), total: formatNumber(scan.total), left: etaText(scan.left) })
     : scan.kind === "paused" ? t("people.scan.paused", { n: scan.total == null ? 0 : Math.max(0, scan.total - scan.done), count: formatNumber(scan.total == null ? 0 : Math.max(0, scan.total - scan.done)) })
     : scan.kind === "waiting" ? t("people.scan.counting")
     : scan.kind === "retrying" ? t("people.scan.retrying", { reason: scan.reason ?? "" })

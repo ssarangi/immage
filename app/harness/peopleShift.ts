@@ -10,9 +10,10 @@
 // the browser's own layout-shift entries. verify/people-shift.test.mjs runs it in headless Chrome and asserts
 // zero; break=1 is the negative control.
 import { clearUndo, peopleState, refreshAll, setPeople } from "../src/peopleStore";
+import { scanJob } from "../src/peopleModel";
 
 type R = { x: number; y: number; w: number; h: number };
-type H = { calls: string[]; scan: { offline: number; net: number; failed: number; enabled: boolean; installed: boolean; scanned: number; pending: number | null; health: string; failure: string | null; paused: boolean };
+type H = { calls: string[]; folderScope: boolean; scan: { photos: number | null; fw: number; offline: number; net: number; failed: number; enabled: boolean; installed: boolean; scanned: number; pending: number | null; health: string; failure: string | null; paused: boolean };
            db: () => { faces: { id: number; person: number | null; state: string; cluster: number | null; maybe: number | null; path: string }[] };
            setPack: (m: string) => void; tick: () => void };
 const h = () => (window as unknown as { __h: H }).__h;
@@ -85,8 +86,42 @@ function typeInto(input: HTMLInputElement, value: string) {
 const tiles = () => $$(".ptile");
 const grid = () => $<HTMLElement>(".people-scroll")!;
 
+// the folder scan: the backend counts folders, so the strip says "N of M photos" from the open folder's own count,
+// never a placeholder; the activity line reads the same numbers; and a pointer on the grid does not stop the page
+// from filling in (the counts and an empty grid always move)
+async function folderRun(out: Record<string, unknown>, fail: (m: string) => void) {
+  const text = () => $(".people-strip-text")?.textContent ?? "";
+  await frames(6);
+  const first = text();
+  out.strip = [first];
+  if (!/^Finding faces: 36 of 333 photos$/.test(first)) fail(`folder scope: the strip says "${first}"`);
+  if (first.includes("?") || first.includes("...")) fail(`folder scope: the strip shows a placeholder: "${first}"`);
+  const job = scanJob(peopleState().scan);
+  out.job = job;
+  if (!job || job.done !== 36 || job.total !== 333) fail(`folder scope: the activity line has ${JSON.stringify(job)}`);
+  h().scan.photos = 120; await refreshAll(true); await frames(3);
+  out.strip = [first, text()];
+  if (!/of 333 photos$/.test(text()) || !text().includes("120")) fail(`folder scope: after more photos the strip says "${text()}"`);
+  // faces arrive while the pointer rests on the (empty) grid
+  grid().dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerId: 3 }));   // React reads pointerenter from pointerover
+  if ($$(".ptile").length) fail("folder scope: tiles before any face");
+  const db = h().db();
+  for (let k = 0; k < 6; k++) db.faces.push({ id: 100 + k, path: `/synthetic/f${k}.jpg`, person: null, state: "unreviewed", cluster: 1, maybe: null });
+  await refreshAll(); await frames(4);
+  await frames(120);   // the poll and the 2 s gap
+  out.tiles = $$(".ptile").length;
+  if (!$$(".ptile").length) fail("hold: the grid stayed empty while the pointer was on it");
+  // the scan ends: the strip clears and the lists are read again
+  h().scan.fw = 0; h().scan.photos = 333; h().scan.pending = 0; await refreshAll(true); await frames(4);
+  out.after = text();
+  if (text() !== "") fail(`folder scope: the strip still says "${text()}" after the scan`);
+  if (peopleState().scan.kind !== "idle") fail(`folder scope: the scan is "${peopleState().scan.kind}" after it ended`);
+}
+
 async function consentRun(out: Record<string, unknown>, fail: (m: string) => void) {
   const card = () => $(".people-consent")!;
+  const radios = $$<HTMLInputElement>(".people-consent input[type=radio]");
+  out.defaultScope = radios[0].checked ? "catalog" : "folder";
   const steps: Record<string, R> = {};
   const all: Map<Element, R>[] = [];
   const SKIP = ".people-slot > *, .people-bar-track i, .people-consent .check, .people-radio";
@@ -108,7 +143,7 @@ async function consentRun(out: Record<string, unknown>, fail: (m: string) => voi
   const d3 = diff(before, snapshot(card()), SKIP);
   (out.consent as { max: number }).max = Math.max((out.consent as { max: number }).max, d3.max);
   // scope: the radio for the open folder, then back
-  click($$<HTMLInputElement>(".people-consent input[type=radio]")[1]);
+  click($$<HTMLInputElement>(".people-consent input[type=radio]")[0]); await frames(2); click($$<HTMLInputElement>(".people-consent input[type=radio]")[1]);
   await frames(2);
   const d4 = diff(before, snapshot(card()), SKIP);
   (out.consent as { max: number }).max = Math.max((out.consent as { max: number }).max, d4.max);
@@ -143,6 +178,11 @@ export async function runPeopleShift() {
   out.styleOffenders = auditStyles();
   if ((out.styleOffenders as string[]).length) fail(`state rules touch a size: ${(out.styleOffenders as string[]).slice(0, 3).join("; ")}`);
 
+  if (h().folderScope) {
+    await folderRun(out, fail);
+    out.ok = (out.failures as string[]).length === 0;
+    return out;
+  }
   if (!peopleState().status?.enabled) {
     await consentRun(out, fail);
     drain(true);

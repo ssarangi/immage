@@ -12,7 +12,7 @@ import type { ClusterRow, FaceFilter, FaceRow, FacesStatus, PersonRow } from "./
 import { settings } from "./settings";
 import { setScanJob } from "./background";
 import {
-  mergeUndo, faceKey, groupKey, keyId, maybeKey, needsReview, scanView, type PeopleData, type ScanView, type UndoEntry, type UndoKind,
+  mergeUndo, faceKey, groupKey, keyId, maybeKey, needsReview, scanJob, scanView, type PeopleData, type ScanCtx, type ScanView, type UndoEntry, type UndoKind,
 } from "./peopleModel";
 
 export type PeopleApi = {
@@ -126,10 +126,23 @@ const UNKNOWN_PAGE = 500;
 let holds = 0, dirty = false, lastRead = 0, timer: ReturnType<typeof setTimeout> | undefined, reading = false;
 const READ_GAP_MS = 2000;
 
+// the folder scope has no photo total in the backend: the page knows the scanned folder's photo count
+let folderTotal: number | null = null;
+const scanCtx = (): ScanCtx => ({ folderScope: settings.get(SCOPE_KEY) === "folder", folderTotal });
+export function setScanFolderTotal(open: string | null, n: number) {
+  const next = open !== null && n > 0 && open === settings.get(SCOPE_FOLDER_KEY) ? n : null;
+  if (next === folderTotal) return;
+  folderTotal = next;
+  if (state.status) applyStatus(state.status, state.paused);
+}
+
 function applyStatus(s: FacesStatus, paused: boolean) {
-  const scan = scanView(s, paused);
+  const before = state.scan.kind;
+  const scan = scanView(s, paused, scanCtx());
   setPeople({ status: s, failed: false, paused, scan });
-  setScanJob(scan.kind === "scanning" || scan.kind === "paused" ? { done: scan.done, total: scan.total ?? 0, paused: scan.kind === "paused" } : null);
+  setScanJob(scanJob(scan));
+  // the scan ended: the lists are read once more, whatever the pointer is over
+  if ((before === "scanning" || before === "paused") && scan.kind === "idle" && state.on) void refreshAll(true);
 }
 
 export async function refreshStatus() {
@@ -143,7 +156,6 @@ export async function refreshStatus() {
 // read runs per READ_GAP_MS, so a long scan does not repaint the grid on every photo.
 export async function refreshAll(force = false) {
   if (!state.on) { await refreshStatus(); return; }
-  if (holds > 0 && !force) { dirty = true; return; }
   if (reading) { dirty = true; return; }
   const wait = lastRead + READ_GAP_MS - Date.now();
   if (wait > 0 && !force) { schedule(wait); return; }
@@ -157,6 +169,10 @@ export async function refreshAll(force = false) {
     // more than the first page was loaded before: keep that much, so the grid does not shrink under the user
     const keep = prev.length > unknown.length && unknown.length === UNKNOWN_PAGE ? await api.list({ kind: "unknown" }, 0, prev.length) : unknown;
     applyStatus(s, paused);
+    // a pointer on the grid keeps the tiles still, but only when there are tiles to keep: the counts and the
+    // strip always move, and a grid that is empty fills at once
+    const held = holds > 0 && !force && (state.data.people.length + state.data.groups.length + state.data.unknown.length + state.data.ignoredFaces.length) > 0;
+    if (held) { dirty = true; return; }
     setPeople({ data: { people, groups, unknown: keep, unknownMore: keep.length >= UNKNOWN_PAGE && keep.length % UNKNOWN_PAGE === 0, ignoredFaces: ignored, ignoredMore: ignored.length >= UNKNOWN_PAGE }, loaded: true });
   } catch (e) {
     if (!state.status) setPeople({ failed: true }); else setPeople({ error: String(e) });
@@ -346,6 +362,7 @@ export const maybeFaces = (id: number, limit = 200) => api.list({ kind: "suggest
 
 export type Scope = "catalog" | "folder";
 export const SCOPE_KEY = "faces.scope";
+export const SCOPE_FOLDER_KEY = "faces.scope_folder";
 export const CONSENT_KEY = "faces.consent_at";
 
 // the consent line was ticked: it is recorded locally, the scope is kept for the scan, People turns on
@@ -353,6 +370,7 @@ export async function turnOn(scope: Scope, folder: string | null) {
   setPeople({ busy: true, error: "" });
   try {
     settings.set(SCOPE_KEY, scope);
+    if (scope === "folder" && folder) settings.set(SCOPE_FOLDER_KEY, folder); else settings.remove(SCOPE_FOLDER_KEY);
     settings.set(CONSENT_KEY, new Date().toISOString());
     if (scope === "folder" && folder) await api.scanFolder(folder);
     await api.setEnabled(true);

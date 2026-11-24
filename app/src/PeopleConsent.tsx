@@ -6,17 +6,19 @@
 // 2: what to scan. 3: the consent line and the button. Face data is biometric, so nothing starts before
 // the box is ticked, and the box is the consent record (peopleStore.turnOn).
 import { UserRound } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { PackInfo } from "./bindings";
 import { packView, uiFmt, type ActionId } from "./aiPacks";
 import { t } from "./i18n";
 import type { Scope } from "./peopleStore";
 
-export function PeopleConsent({ pack, folder, hasCatalog, busy, error, onPack, onTurnOn }: {
-  pack: PackInfo | null; folder: string | null; hasCatalog: boolean; busy: boolean; error: string;
+export function PeopleConsent({ pack, folder, busy, error, onPack, onTurnOn }: {
+  pack: PackInfo | null; folder: string | null; hasCatalog?: boolean; busy: boolean; error: string;
   onPack: (a: ActionId) => void; onTurnOn: (scope: Scope) => void;
 }) {
-  const [scope, setScope] = useState<Scope>(hasCatalog || !folder ? "catalog" : "folder");
+  const [scope, setScope] = useState<Scope>(folder ? "folder" : "catalog");   // the open folder is the safe default: the Catalog may hold network sources
+  const [touched, setTouched] = useState(false);
+  useEffect(() => { if (!touched) setScope(folder ? "folder" : "catalog"); }, [folder, touched]);
   const [agreed, setAgreed] = useState(false);
   const why = useId();
   const view = pack ? packView(pack, t, uiFmt) : null;
@@ -50,9 +52,9 @@ export function PeopleConsent({ pack, folder, hasCatalog, busy, error, onPack, o
           <i aria-hidden="true">2</i>
           <div role="radiogroup" aria-label={t("people.consent.scan")}>
             <h3>{t("people.consent.scan")}</h3>
-            <label className="people-radio"><input type="radio" name="people-scope" checked={scope === "catalog"} onChange={() => setScope("catalog")} />{t("people.consent.scopeCatalog")}</label>
+            <label className="people-radio"><input type="radio" name="people-scope" checked={scope === "catalog"} onChange={() => { setTouched(true); setScope("catalog"); }} />{t("people.consent.scopeCatalog")}</label>
             <label className="people-radio" aria-disabled={!folder}>
-              <input type="radio" name="people-scope" checked={scope === "folder"} disabled={!folder} onChange={() => setScope("folder")} />
+              <input type="radio" name="people-scope" checked={scope === "folder"} disabled={!folder} onChange={() => { setTouched(true); setScope("folder"); }} />
               {folder ? t("people.consent.scopeFolder", { name: folderName }) : t("people.consent.scopeNone")}
             </label>
           </div>

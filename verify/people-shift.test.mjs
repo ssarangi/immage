@@ -129,3 +129,18 @@ test('real counts, the 2 x 2 collage, the quiet strip notes and restoring an ign
   assert.match(r.ignored.undo, /Took 1 face back/);
   assert.ok(r.ignored.after < r.ignored.before);
 });
+
+test('the folder scan says "N of M photos" from the open folder, never a placeholder, and the page fills in under a resting pointer', { skip }, () => {
+  const r = report(dump('shift=1&state=scanning&folderscope=1&theme=dark'));
+  assert.equal(r.error, undefined, r.error);
+  assert.deepEqual(r.failures, []);
+  assert.equal(r.strip[0], 'Finding faces: 36 of 333 photos');
+  assert.deepEqual([r.job.done, r.job.total], [36, 333]);
+  assert.ok(r.tiles > 0);
+  assert.equal(r.after, '');
+});
+
+test('the consent card starts on the open folder, and on the Catalog only when no folder is open', { skip }, () => {
+  assert.equal(report(dump('shift=1&state=off&theme=dark')).defaultScope, 'folder');
+  assert.equal(report(dump('shift=1&state=off&nofolder=1&theme=dark')).defaultScope, 'catalog');
+});

@@ -136,7 +136,7 @@ import "./scenes.css";
 import { ScenesView } from "./ScenesView";
 import { PeoplePane } from "./PeoplePane";
 import "./people.css";
-import { peopleState, setPeopleOn, startPeople, usePeopleBadge, usePeopleOn } from "./peopleStore";
+import { peopleState, setPeopleOn, setScanFolderTotal, startPeople, usePeopleBadge, usePeopleOn } from "./peopleStore";
 import { SceneRules } from "./SceneRules";
 import { scenesState, setScenesOn, useScenesOn } from "./scenesStore";
 import { KeywordingPanel } from "./Keywording";
@@ -6440,6 +6440,9 @@ export default function App() {
   const peopleBadge = usePeopleBadge();
   const viewNow: ViewMode = peopleOn ? "people" : scenesOn ? "scenes" : grid ? "grid" : "edit";
   useEffect(() => startPeople(), []);
+  // the folder scan has no photo total of its own: the open folder's photo count is the strip's "of M"
+  const localCount = images.filter((i) => !isRemote(i)).length;
+  useEffect(() => { setScanFolderTotal(folder, reading ? 0 : localCount); }, [folder, localCount, reading]);
   const hasPhoto = current !== null;
   const disabledMenuActions = useMemo(
     () => disabledViewActions(grid, hasPhoto, hasCullingPhotos, cropping, preview),

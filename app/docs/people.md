@@ -15,7 +15,7 @@ Until it is on, the People view is one card with three steps.
 1. **Model.** The Faces model (YuNet and SFace, about 39 MB). The step shows its state and
    the same Download button as Preferences > General > AI models. A model that is already
    installed there is already done here.
-2. **What to scan.** The whole Catalog, or only the open folder (then nothing else is scanned).
+2. **What to scan.** Only the open folder (the default while a folder is open, and then nothing else is scanned), or the whole Catalog (the default when no folder is open; it may include network sources, which are left out).
 3. **Start.** Tick *I understand this stores face data on this computer*, then **Turn on
    People**. The box is your consent and is recorded on this computer. The button says why
    it waits (no model, box not ticked) in the line above it.
@@ -25,7 +25,7 @@ not available yet.
 
 ## The view
 
-A strip at the top shows the scan: *Finding faces: 1,204 of 48,210 photos - about 2 h left*,
+A strip at the top shows the scan: *Finding faces: 1,204 of 48,210 photos - about 2 h left* (the time appears once photos have been timed; for a folder scan the total is the folder's photo count),
 with **Pause** (and **Resume**). The same line is in the activity area under the photo, where
 **Stop** pauses it. What has been found is kept. A problem shows in the strip with **Try again**. Quiet notes sit beside it: *N photos could
 not be read - Show* (a list of the photos, with **Try again**), *N folders offline* (their
