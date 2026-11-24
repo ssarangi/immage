@@ -100,7 +100,7 @@ With People on, **Shift+F** (or **View > Show faces on photo**, or the switch in
 draws a box around each face on the open photo in the editor. The boxes follow the picture as you zoom and pan: a solid
 outline is a named face, dashed a suggestion, dotted a face nobody has a name for. The name shows on hover or keyboard
 focus (Tab moves from face to face, left to right). Click a face to name it or give it to someone else in the name box,
-or say **Not Maya** or **Not a face**; each is undoable for a few seconds like the rest of People. The boxes are never
+or say **Not Maya** or **Not a face**; each is undoable for a few seconds like the rest of People. The same boxes (and the same Shift+F) work in the Grid's photo preview (F), where they follow Fit and 100%. The boxes are never
 part of the photo or an export, and nothing is drawn while People is off.
 
 The **People** card in the Library column (shut until you open it, and absent while People is off) lists the open

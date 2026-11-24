@@ -53,7 +53,7 @@ function fixture(overrides = {}) {
     document: { querySelector: selector => selector.includes(':hover') ? {getAttribute: () => '3'} : null },
     setTargets: v => calls.push(['targets', v]), keywordGeneration: { current: 0 }, space: {current:false}, setSpaceHeld() {},
     setPhoto: v => calls.push(['photo', v]), keywords: v => calls.push(['keywords', v.map(i => i.imgid)]),
-    setZoom: v => calls.push(['zoom', v]),
+    setZoom: v => calls.push(['zoom', v]), facesRef: { current: false }, toggleFaces: () => calls.push(['faces']),
     onMeta: (i, v) => calls.push(['meta', i.imgid, v]), ...overrides };
   const press = (key, target = {}, shiftKey = false) => createHandler(env)({key, shiftKey, target: {closest: () => false, ...target},
     preventDefault() {}, stopImmediatePropagation() {}});
@@ -409,4 +409,34 @@ test('critique target: asked, hovered, selection, then the open photo, then the 
   assert.equal(pickCritiqueTarget(l, undefined, null, null, new Set(), 2).imgid, 2);
   assert.equal(pickCritiqueTarget(l, undefined, null, null, new Set(), 9).imgid, 1);
   assert.equal(pickCritiqueTarget([], undefined, null, null, new Set(), undefined), undefined);
+});
+
+test('Shift+F in the lightbox shows the face boxes when Faces is on; plain F and Shift+F with Faces off still close it', () => {
+  const k = (key, o) => cullingKey(key, { photo: 1, keywordsOpen: false, writing: false, blocked: false, modalOpen: false, hasTarget: true, hasCurrent: true, ...o });
+  assert.deepEqual(k('f', { shift: true, faces: true }).action, { type: 'toggleFaces' });
+  assert.deepEqual(k('f', { shift: false, faces: true }).action, { type: 'toggleLightbox' });
+  assert.deepEqual(k('f', { shift: true, faces: false }).action, { type: 'toggleLightbox' });
+  // in the grid, with no photo open, Shift+F keeps opening the lightbox
+  assert.deepEqual(cullingKey('f', { photo: null, keywordsOpen: false, writing: false, blocked: false, modalOpen: false, hasTarget: true, hasCurrent: false, shift: true, faces: true }).action, { type: 'toggleLightbox' });
+});
+
+test('the lightbox draws the face boxes inside the photo box (so they follow fit and zoom), only while Faces is on', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../app/src/GridCulling.tsx', import.meta.url), 'utf8');
+  const photoBox = src.slice(src.indexOf('<div className="culling-photo"'), src.indexOf('</div>', src.indexOf('<CullOverlay')));
+  assert.match(photoBox, /showFaces && facesOn && <FaceOverlay path=\{current\.path\}/);
+  assert.match(src, /faces: facesRef\.current/);
+});
+
+test('the real key handler: Shift+F toggles the face boxes with Faces on and never closes the lightbox, plain F still does', () => {
+  const photo = { imgid: 2, labels: 0 };
+  const on = fixture({ photo: 2, current: photo, facesRef: { current: true } });
+  on.press('F', {}, true);
+  assert.deepEqual(on.calls, [['faces']]);
+  const plain = fixture({ photo: 2, current: photo, facesRef: { current: true } });
+  plain.press('f');
+  assert.deepEqual(plain.calls, [['photo', null]]);
+  const off = fixture({ photo: 2, current: photo });
+  off.press('F', {}, true);
+  assert.deepEqual(off.calls, [['photo', null]]);   // Faces off: Shift+F is plain F
 });

@@ -14,8 +14,13 @@ import { LABEL_COLORS, fetchCachedThumb, fetchThumb, fileKind, type ImageEntry }
 import { KeywordingPanel, parseKeyword } from "./Keywording";
 import { ZoomBar } from "./Toolbar";
 import { formatNumber, t } from "./i18n";
+import { FaceOverlay } from "./FaceOverlay";
+import { useFacesOn } from "./peopleStore";
 import type { SceneLightbox } from "./SceneLightbox";
 import { regionCentre } from "./scenes";
+
+// whether the lightbox shows the face boxes, kept while the app runs
+let lightboxFaces = false;
 
 export function GridCulling({ images: gridImages, allImages, selection, anchor, thumbnail, activeEditorId, prepare, onEdit, onMeta, onKeywords, onCullChanges, onOpenCullPrefs, scene }: {
   images: ImageEntry[]; allImages: ImageEntry[]; selection: Set<number>; anchor: number | null;
@@ -64,6 +69,13 @@ export function GridCulling({ images: gridImages, allImages, selection, anchor, 
   zoomRef.current = zoom;
   const setZoom = (value: number | null) => { zoomRef.current = value; setZoomState(value); };
   const detailed = zoom !== null;
+  // the face boxes over the photo: Shift+F, kept between photos and openings, only while Faces is on
+  const facesOn = useFacesOn();
+  const [showFaces, setShowFacesState] = useState(lightboxFaces);
+  const [faceSel, setFaceSel] = useState<number | null>(null);
+  const facesRef = useRef(facesOn);
+  facesRef.current = facesOn;
+  const toggleFaces = () => { lightboxFaces = !lightboxFaces; setShowFacesState(lightboxFaces); };
   const cameraFit = cameraPreviews && !detailed;
   const current = images.find(i => i.imgid === photo) ?? (scene ? images.find(i => i.imgid === scene.startId) : undefined);
   // auto cull under review: the inspector beside the photo, its overlay over it
@@ -206,7 +218,7 @@ export function GridCulling({ images: gridImages, allImages, selection, anchor, 
           || !!focused?.closest('input:not([type="range"]),textarea,[contenteditable=true]'),
         modalOpen: !!document.querySelector(".modal-backdrop"),
         hasTarget: !!target || chosen.length > 0, hasCurrent: !!current,
-        scene: !!scene && photo !== null, shift: e.shiftKey,
+        scene: !!scene && photo !== null, shift: e.shiftKey, faces: facesRef.current,
       });
       if (kind === "ignore") return;
       e.stopImmediatePropagation();
@@ -218,6 +230,7 @@ export function GridCulling({ images: gridImages, allImages, selection, anchor, 
         case "closeLightbox": if (sel.pinned !== null) setSel({ ...sel, pinned: null }); else setPhoto(null); break;
         case "toggleLightbox": direction.current = 1; setPhoto(photo ? null : target?.imgid ?? null); break;
         case "keywords": void keywords(current ? [current] : keywordTargets(allImages, selection, target?.imgid)); break;
+        case "toggleFaces": toggleFaces(); break;
         case "toggleZoom": {
           // in the scene view Z centres the 100% view on the frame's sharpest region; a second press returns to Fit
           const centre = action.sharp && scene && zoomRef.current === null ? regionCentre(scene.sharpRegion(current!)) : null;
@@ -469,6 +482,7 @@ export function GridCulling({ images: gridImages, allImages, selection, anchor, 
             <div className="culling-photo" style={{ position: "relative", width: "max-content", height: "max-content" }}>
               <canvas ref={canvas} style={{ maxWidth: "none", flexShrink: 0, display: "block" }} />
               {scene && !detailed && scene.overlay(current)}
+              {showFaces && facesOn && <FaceOverlay path={current.path} selected={faceSel} onSelect={setFaceSel} />}
               <CullOverlay critique={crit.critique} sel={sel} onSel={setSel} decision={decision}
                 loading={crit.phase === "loading" && tab === "critique"} />
             </div>

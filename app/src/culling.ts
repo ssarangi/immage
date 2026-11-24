@@ -75,6 +75,7 @@ export function fallbackPhoto<T extends { imgid: number }>(images: T[], previous
 export type CullingAction =
   | { type: "closeKeywords" | "closeLightbox" | "toggleLightbox" | "keywords" | "holdSpace" | "toggleReject" | "none" }
   | { type: "toggleZoom"; sharp: boolean }
+  | { type: "toggleFaces" }
   | { type: "step"; by: -1 | 1 }
   | { type: "decide"; state: "accepted" | "undecided" }
   | { type: "scene"; by: -1 | 1 }
@@ -112,6 +113,8 @@ export function cullingKey(k: string, s: {
   // the scene view: A accepts, U clears, N and Shift+N change scene, S splits the scene at this frame,
   // M merges it with the next scene, Z zooms to the sharpest region and Shift+Z to the centre (inert elsewhere)
   scene?: boolean; shift?: boolean;
+  // Faces is on: Shift+F in the lightbox shows or hides the face boxes (plain F still closes the lightbox)
+  faces?: boolean;
 }): { kind: "ignore" | "swallow" | "consume"; action?: CullingAction } {
   const none = { type: "none" } as const;
   if (s.keywordsOpen && k === "escape") {
@@ -129,7 +132,7 @@ export function cullingKey(k: string, s: {
   const c = s.hasCurrent;
   let action: CullingAction = none;
   if (k === "escape") action = s.keywordsOpen ? { type: "closeKeywords" } : { type: "closeLightbox" };
-  else if (k === "f") action = { type: "toggleLightbox" };
+  else if (k === "f") action = s.shift && s.faces && s.photo !== null ? { type: "toggleFaces" } : { type: "toggleLightbox" };
   else if (k === "k") action = { type: "keywords" };
   else if (k === "z") { if (c) action = { type: "toggleZoom", sharp: !!s.scene && !s.shift }; }
   else if (k === "arrowleft" || k === "arrowright") { if (c) action = { type: "step", by: k === "arrowleft" ? -1 : 1 }; }

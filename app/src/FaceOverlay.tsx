@@ -31,8 +31,8 @@ export function FaceOverlay({ path, selected, onSelect }: { path: string; select
         <button key={f.face} type="button" ref={(el) => { if (el) refs.current.set(f.face, el); else refs.current.delete(f.face); }}
                 className={`face-box${selected === f.face ? " selected" : ""}`} data-state={f.state} data-side={labelSide(f)} style={boxStyle(f)}
                 aria-label={faceAria(f, i, faces.length, t)} aria-haspopup="dialog" aria-expanded={pick?.face.face === f.face}
-                onFocus={() => onSelect(f.face)} onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => { onSelect(f.face); setPick({ face: f, rect: e.currentTarget.getBoundingClientRect() }); }}>
+                onFocus={() => onSelect(f.face)} onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); onSelect(f.face); setPick({ face: f, rect: e.currentTarget.getBoundingClientRect() }); }}>
           <span className="face-label" aria-hidden="true">{faceTitle(f, t)}</span>
         </button>
       ))}
