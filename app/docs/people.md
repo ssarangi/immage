@@ -15,7 +15,7 @@ Until it is on, the People view is one card with three steps.
 1. **Model.** The Faces model (YuNet and SFace, about 39 MB). The step shows its state and
    the same Download button as Preferences > General > AI models. A model that is already
    installed there is already done here.
-2. **What to scan.** The whole Catalog, or only the open folder.
+2. **What to scan.** The whole Catalog, or only the open folder (then nothing else is scanned).
 3. **Start.** Tick *I understand this stores face data on this computer*, then **Turn on
    People**. The box is your consent and is recorded on this computer. The button says why
    it waits (no model, box not ticked) in the line above it.
@@ -27,7 +27,10 @@ not available yet.
 
 A strip at the top shows the scan: *Finding faces: 1,204 of 48,210 photos - about 2 h left*,
 with **Pause** (and **Resume**). The same line is in the activity area under the photo, where
-**Stop** pauses it. What has been found is kept. A problem shows in the strip with **Try again**.
+**Stop** pauses it. What has been found is kept. A problem shows in the strip with **Try again**. Quiet notes sit beside it: *N photos could
+not be read - Show* (a list of the photos, with **Try again**), *N folders offline* (their
+faces are kept and scanning resumes when the drive is back) and *N network folders not
+scanned*, because network folders are left out of the scan.
 The strip, the toolbar, the selection bar and the Undo line at the bottom always have their
 place, so nothing jumps when they fill.
 
@@ -36,9 +39,9 @@ On the left, four sections with counts:
 | Section | What it holds |
 |---|---|
 | **People** | the people you named, most photos first |
-| **To review** | groups of faces that look alike ("Looks like one person"), and the faces suggested for a person you named ("Maybe Maya", with a dashed outline until you confirm) |
+| **To review** | groups of faces that look alike ("Looks like one person", shown as a 2 x 2 collage of up to four of its faces), and the faces suggested for a person you named ("Maybe Maya", with a dashed outline until you confirm) |
 | **Unassigned** | single faces with no group |
-| **Ignored** | people you ignored, dimmed, to restore |
+| **Ignored** | people you ignored and faces you marked "not a face", dimmed; **Restore** brings them back |
 
 The first time faces appear, the view opens on To review when there is something there. The
 tab shows a dot while faces need review. New items are added at the end of a grid while you
@@ -88,5 +91,4 @@ cannot be undone.
 ## Not yet
 
 A person's own page, finding photos by person, closed-eye detection and Preferences > Faces
-are planned. The faces' pictures show a placeholder until the app can read the crops the
-engine makes.
+are planned.

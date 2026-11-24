@@ -17,12 +17,12 @@ import { PeopleConsent } from "./PeopleConsent";
 import { Crop, PeopleGrid, tileLabel, type GridOverlay } from "./PeopleGrid";
 import { NamePopover } from "./PeopleName";
 import {
-  NO_SEL, SECTIONS, TILE_DEFAULT, TILE_MAX, TILE_MIN, keepSelected, sectionCounts, sectionTiles, select, stableOrder, viewKind,
+  NO_SEL, SECTIONS, TILE_DEFAULT, TILE_MAX, TILE_MIN, keepSelected, scanNotes, sectionCounts, sectionTiles, select, stableOrder, viewKind,
   type Intent, type Section, type Sel, type SelAction, type Tile, type UndoEntry,
 } from "./peopleModel";
 import {
-  clearUndo, confirmTiles, deleteAllFaceData, groupFaces, ignoreTiles, loadMoreUnknown, maybeFaces, mergePeople, nameTiles, notPerson, personFaces,
-  refreshAll, renamePerson, restorePeople, retryFailed, setCover, togglePause, turnOff, turnOn, undoLast, usePeople, type NameTarget, type Scope,
+  clearUndo, confirmTiles, deleteAllFaceData, groupFaces, ignoreTiles, failedPhotos, loadMoreIgnored, loadMoreUnknown, maybeFaces, mergePeople, nameTiles, notPerson, personFaces,
+  refreshAll, renamePerson, restorePeople, retryFailed, unignoreFaces, setCover, togglePause, turnOff, turnOn, undoLast, usePeople, type NameTarget, type Scope,
 } from "./peopleStore";
 import { settings } from "./settings";
 
@@ -33,6 +33,7 @@ export type Dialog =
   | { kind: "merge"; ids: number[]; into: number }
   | { kind: "cover"; id: number; faces: FaceRow[] }
   | { kind: "delete" }
+  | { kind: "failed"; paths: string[] }
   | { kind: "off" };
 
 function Modal({ title, onClose, children, foot }: { title: string; onClose: () => void; children: React.ReactNode; foot: React.ReactNode }) {
@@ -82,13 +83,13 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
   const [dialog, setDialog] = useState<Dialog | null>(null);
 
   const data = s.data;
-  const counts = useMemo(() => sectionCounts(data), [data]);
+  const counts = useMemo(() => sectionCounts(data, s.status?.totals ?? null), [data, s.status?.totals]);
   const names = useMemo(() => new Map(data.people.filter((p) => p.state === "active").map((p) => [p.id, p.name])), [data.people]);
 
   // the first time the lists arrive: land on To review when there is something to review
   useEffect(() => {
-    if (s.loaded && !picked) { setPicked(true); if (counts.review.n > 0) setSection("review"); }
-  }, [s.loaded, picked, counts.review.n]);
+    if (s.loaded && !picked) { setPicked(true); if (counts.review > 0) setSection("review"); }
+  }, [s.loaded, picked, counts.review]);
 
   // tiles keep the order the user is looking at; only a section change or a sort starts it afresh
   const order = useRef<{ id: string; keys: string[] }>({ id: "", keys: [] });
@@ -160,7 +161,12 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
     setDialog({ kind: "cover", id: p.id, faces: await personFaces(p.id) });
   };
   const ignore = () => {
-    if (section === "ignored") { void restorePeople(people.map((x) => (x.kind === "person" ? x.id : 0))); return; }
+    if (section === "ignored") {
+      void restorePeople(people.map((x) => (x.kind === "person" ? x.id : 0)));
+      void unignoreFaces(target.filter((x) => x.kind === "face").map((x) => x.key));
+      setSel(NO_SEL);
+      return;
+    }
     const k = target.filter((x) => x.kind !== "maybe").map((x) => x.key);
     if (k.length) void ignoreTiles(k);
     setSel(NO_SEL);
@@ -203,6 +209,7 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
     : scan.kind === "waiting" ? t("people.scan.counting")
     : scan.kind === "retrying" ? t("people.scan.retrying", { reason: scan.reason ?? "" })
     : scan.kind === "blocked" ? t("people.scan.blocked", { reason: scan.reason ?? "" }) : "";
+  const notes = scanNotes(s.status);
   const stripTone = scan.kind === "blocked" ? "bad" : scan.kind === "retrying" ? "warn" : undefined;
   const stripAction = scan.kind === "scanning" ? { label: t("aimodels.pause"), run: togglePause }
     : scan.kind === "paused" ? { label: t("aimodels.resume"), run: togglePause }
@@ -226,6 +233,9 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
     <div className="people-view" role="region" aria-label={t("people.label")} data-kind={kind}>
       <div className="people-strip" role="status" aria-live="polite" data-tone={stripTone}>
         <span className="people-strip-text" title={stripText}>{stripText}</span>
+        {notes.network > 0 && <span className="people-strip-note" title={t("people.scan.network", { n: notes.network, count: formatNumber(notes.network) })}>{t("people.scan.network", { n: notes.network, count: formatNumber(notes.network) })}</span>}
+        {notes.offline > 0 && <span className="people-strip-note" data-tone="warn" title={t("people.scan.offline")}>{t("people.scan.offlineCount", { n: notes.offline, count: formatNumber(notes.offline) })}</span>}
+        {notes.failed > 0 && <button type="button" className="people-link" onClick={() => void failedPhotos().then((paths) => setDialog({ kind: "failed", paths }), () => setDialog({ kind: "failed", paths: [] }))}>{t("people.scan.failed", { n: notes.failed, count: formatNumber(notes.failed) })}</button>}
         {stripAction && <button type="button" className="people-btn" onClick={() => void stripAction.run()}>{stripAction.label}</button>}
       </div>
 
@@ -273,8 +283,8 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
                           (e.currentTarget.parentElement?.querySelectorAll<HTMLElement>("[role=tab]")[SECTIONS.indexOf(to)])?.focus();
                         }}>
                   <span className="people-rail-label">{sectionLabel(x)}</span>
-                  <span className="people-rail-dot" data-on={x === "review" && c.n > 0 ? "" : undefined} aria-hidden="true" />
-                  <span className="people-rail-count">{formatNumber(c.n)}{c.more ? "+" : ""}</span>
+                  <span className="people-rail-dot" data-on={x === "review" && c > 0 ? "" : undefined} aria-hidden="true" />
+                  <span className="people-rail-count">{formatNumber(c)}</span>
                 </button>
               );
             })}
@@ -290,7 +300,7 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
             </div>
             <PeopleGrid tiles={tiles} section={section} open={!!sheet} size={size} sel={sel} byId={names} renameKey={renameKey} label={gridLabel} dir={dir}
                         onSel={apply} onIntent={act} onRename={(k, n) => void rename(k, n)}
-                        onNearEnd={section === "unassigned" && !sheet ? () => void loadMoreUnknown() : undefined}
+                        onNearEnd={sheet ? undefined : section === "unassigned" ? () => void loadMoreUnknown() : section === "ignored" ? () => void loadMoreIgnored() : undefined}
                         empty={<>
                           {(state === "loading" || state === "scanning") && <div className="people-skel" aria-hidden="true">{Array.from({ length: 12 }, (_, i) => <i key={i} />)}</div>}
                           {(state === "scanning" || state === "none" || state === "error" || state === "loading" || emptyText) && (
@@ -357,6 +367,14 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
               </button>
             ))}
           </div>
+        </Modal>
+      )}
+      {dialog?.kind === "failed" && (
+        <Modal title={t("people.failed.title")} onClose={() => setDialog(null)}
+               foot={<><button type="button" className="btn" data-first onClick={() => setDialog(null)}>{t("people.failed.close")}</button>
+                 <button type="button" className="btn primary" onClick={() => { setDialog(null); void retryFailed(); }}>{t("people.scan.tryAgain")}</button></>}>
+          <p className="pack-lead">{t("people.failed.body")}</p>
+          <ul className="people-failed">{dialog.paths.map((x) => <li key={x} title={x}>{x}</li>)}</ul>
         </Modal>
       )}
       {dialog?.kind === "off" && (

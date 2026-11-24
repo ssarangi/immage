@@ -52,9 +52,13 @@ function TileView({ tile, label, g, index, selected, active, size, rename, onRen
   return (
     <div role="gridcell" id={`ptile-${tile.key}`} className="ptile" data-tile={index} data-kind={tile.kind} aria-selected={selected} aria-label={aria}
          data-active={active || undefined} data-maybe={(tile.kind === "maybe" || (tile.kind === "face" && tile.maybe != null)) || undefined}
-         data-dim={(tile.kind === "person" && tile.ignored) || undefined}
+         data-dim={((tile.kind === "person" || tile.kind === "face") && tile.ignored) || undefined}
          style={{ left: p.x, top: p.y, width: size, height: size + CAPTION }} title={label.name}>
-      <Crop face={cover} tile={size} style={{ height: size }} />
+      {tile.kind === "group" && tile.members.length > 1 ? (
+        <div className="pcrop pcollage" style={{ height: size }} aria-hidden="true">
+          {tile.members.slice(0, 4).map((m) => <Crop key={m} face={m} tile={Math.round(size / 2)} className="pcell" />)}
+        </div>
+      ) : <Crop face={cover} tile={size} style={{ height: size }} />}
       <span className="ptile-badge ptile-check" aria-hidden="true"><Check size={11} /></span>
       {count !== null && <span className="ptile-badge ptile-count" aria-hidden="true">{formatNumber(count)}</span>}
       {tile.kind === "person" && tile.review > 0 && <span className="ptile-badge ptile-flag" aria-hidden="true">!</span>}

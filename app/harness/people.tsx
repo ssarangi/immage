@@ -9,6 +9,8 @@
 //
 //   state   off (consent, model missing) | download | installed (consent, model ready) | empty | scanning | partial
 //           (faces, scan running) | review (default) | naming (review, the name box open) | error
+//   offline, net, failed  numbers for the strip notes (folders offline, network sources left out, photos not read)
+//   offline, net, failed  counts for the strip notes (folders offline, network sources left out, photos not read)
 //   many    the number of faces (default 1400; 5000 for the scale run)
 //   theme   a built-in theme id        dir  ltr | rtl        w  width of the view in px (default 1440)
 //   break=1 adds styles that move things (the shift test must catch it)
@@ -62,6 +64,7 @@ function seed(): Db {
     left -= size; cluster++;
     if (cluster % 3 === 0) { for (let k = 0; k < 2 && left > 0; k++) { add({}); left--; } }   // singles with no group
   }
+  for (const f of faces) if (f.person === null && f.maybe === null && f.id % 53 === 0) f.state = "rejected";   // some "not a face"
   for (const p of people) p.cover = faces.find((f) => f.person === p.id)?.id ?? null;
   return { faces, people, nextPerson: people.length + 1 };
 }
@@ -70,14 +73,21 @@ let db: Db = seed();
 const undoStack: Db[] = [];
 const calls: string[] = [];
 const snap = (): Db => ({ faces: db.faces.map((f) => ({ ...f })), people: db.people.map((p) => ({ ...p })), nextPerson: db.nextPerson });
-const mutate = (label: string, fn: () => void) => { calls.push(label); undoStack.push(snap()); fn(); };
+const mutate = (label: string, fn: () => void) => { calls.push(label); undoStack.push(snap()); fn(); sizes = null; };
 
-const scan = { enabled: mode !== "off" && mode !== "download" && mode !== "installed", installed: mode !== "off" && mode !== "download", scanned: 0, pending: null as number | null, health: "ok", failure: null as string | null, paused: false, fail: mode === "error" };
+const scan = { offline: Number(q.get("offline") ?? 0), net: Number(q.get("net") ?? 0), failed: Number(q.get("failed") ?? 0), enabled: mode !== "off" && mode !== "download" && mode !== "installed", installed: mode !== "off" && mode !== "download", scanned: 0, pending: null as number | null, health: "ok", failure: null as string | null, paused: false, fail: mode === "error" };
 if (mode === "scanning" || mode === "partial") { scan.scanned = 340; scan.pending = 1240; }
 if (mode === "empty") { db = { faces: [], people: [], nextPerson: 1 }; scan.scanned = 0; scan.pending = 0; }
 if (mode === "scanning") db = { faces: [], people: [], nextPerson: 1 };
 else if (mode === "review" || mode === "naming" || mode === "off") scan.scanned = total, scan.pending = 0;
 
+// one pass per call site: the size of every group, so "loose" is a lookup (the 5,000-face run asks thousands of times)
+let sizes: Map<number, number> | null = null, sizesFor: F[] | null = null, sizesLen = -1;
+const groupSize = (c: number) => {
+  if (!sizes || sizesFor !== db.faces || sizesLen !== db.faces.length) { sizes = new Map(); for (const g of db.faces) if (g.cluster !== null && g.state === "unreviewed" && g.person === null) sizes.set(g.cluster, (sizes.get(g.cluster) ?? 0) + 1); sizesFor = db.faces; sizesLen = db.faces.length; }
+  return sizes.get(c) ?? 0;
+};
+const isUnknown = (f: F) => f.state === "unreviewed" && f.person === null && f.maybe === null && (f.cluster === null || groupSize(f.cluster) < 2);
 const rows = (): PersonRow[] => db.people.map((p) => {
   const mine = db.faces.filter((f) => f.person === p.id && f.state !== "rejected");
   return { id: p.id, name: p.name, state: p.state, faces: mine.length, photos: mine.length, cover_face_id: p.cover, cover_manual: p.manual,
@@ -88,8 +98,10 @@ const status = (): FacesStatus => {
   const unrev = db.faces.filter((f) => f.state === "unreviewed" && f.person === null);
   const groups = new Set(unrev.filter((f) => f.cluster !== null).map((f) => f.cluster)).size;
   return { enabled: scan.enabled, installed: scan.installed, eyes_available: false, scanned: scan.scanned, faces_found: db.faces.length, pending: scan.pending, folders_waiting: 0,
-    infer_ms: scan.pending ? 300 : null, health: scan.health, failure: scan.failure, undo: undoStack.length ? "change" : null,
-    totals: { photos: db.faces.length, faces: db.faces.filter((f) => f.state !== "rejected").length, people: db.people.filter((p) => p.state === "active").length,
+    infer_ms: scan.pending ? 300 : null, health: scan.health, failure: scan.failure, undo: undoStack.length ? "change" : null, offline_folders: scan.offline,
+    skipped_network_sources: scan.net,
+    totals: { failed_photos: scan.failed, ignored_faces: db.faces.filter((f) => f.state === "rejected").length, ignored_people: db.people.filter((p) => p.state === "ignored").length,
+              unknown: db.faces.filter((f) => isUnknown(f)).length, photos: db.faces.length, faces: db.faces.filter((f) => f.state !== "rejected").length, people: db.people.filter((p) => p.state === "active").length,
               unreviewed: unrev.length, groups, suggestions: unrev.filter((f) => f.maybe !== null).length } };
 };
 const svg = (face: number) => {
@@ -106,13 +118,14 @@ const fake: PeopleApi = {
   groups: () => {
     const by = new Map<number, number[]>();
     for (const f of db.faces) if (f.state === "unreviewed" && f.person === null && f.cluster !== null) by.set(f.cluster, [...(by.get(f.cluster) ?? []), f.id]);
-    return wait([...by].filter(([, ids]) => ids.length >= 2).map(([id, ids]): ClusterRow => ({ id, rep_face_id: ids[0], size: ids.length })));
+    return wait([...by].filter(([, ids]) => ids.length >= 2).map(([id, ids]): ClusterRow => ({ id, rep_face_id: ids[0], size: ids.length, members: ids.slice(0, 4) })));
   },
   list: (filter: FaceFilter, offset, limit) => {
     const pick = (f: F) => filter.kind === "person" ? f.person === filter.id && f.state !== "rejected"
       : filter.kind === "cluster" ? f.cluster === filter.id && f.state === "unreviewed" && f.person === null
       : filter.kind === "suggested" ? f.maybe === filter.id && f.person === null && f.state === "unreviewed"
-      : filter.kind === "unknown" ? f.state === "unreviewed" && f.person === null && f.maybe === null && (f.cluster === null || db.faces.filter((g) => g.cluster === f.cluster && g.state === "unreviewed" && g.person === null).length < 2)
+      : filter.kind === "unknown" ? isUnknown(f)
+      : filter.kind === "ignored" ? f.state === "rejected"
       : f.path === filter.path;
     return wait(db.faces.filter(pick).slice(offset, offset + limit).map(faceRow));
   },
@@ -133,7 +146,9 @@ const fake: PeopleApi = {
   assign: (person, faces) => { mutate(`assign:${person}:${faces.length}`, () => { for (const f of db.faces) if (faces.includes(f.id)) Object.assign(f, { person, state: "confirmed", cluster: null, maybe: null }); }); return wait(undefined); },
   notPerson: (person, faces) => { mutate(`notPerson:${person}:${faces.length}`, () => { for (const f of db.faces) if (faces.includes(f.id) && f.maybe === person) f.maybe = null; }); return wait(undefined); },
   notFace: (faces) => { mutate(`notFace:${faces.length}`, () => { for (const f of db.faces) if (faces.includes(f.id)) f.state = "rejected"; }); return wait(undefined); },
-  undo: () => { const prev = undoStack.pop(); calls.push("undo"); if (!prev) return wait(null); db = prev; return wait("undone"); },
+  unignore: (faces) => { mutate(`unignore:${faces.length}`, () => { for (const f of db.faces) if (faces.includes(f.id) && f.state === "rejected") f.state = "unreviewed"; }); return wait(undefined); },
+  failedPhotos: (limit) => wait(Array.from({ length: Math.min(limit, scan.failed) }, (_, i) => `/synthetic/broken_${i}.jpg`)),
+  undo: () => { const prev = undoStack.pop(); calls.push("undo"); if (!prev) return wait(null); db = prev; sizes = null; return wait("undone"); },
   deleteAll: () => { db = { faces: [], people: [], nextPerson: 1 }; scan.enabled = false; undoStack.length = 0; calls.push("deleteAll"); return wait(undefined); },
   retry: () => { scan.health = "ok"; scan.failure = null; return wait(undefined); },
   scanFolder: (path) => { calls.push(`scanFolder:${path}`); return wait(undefined); },

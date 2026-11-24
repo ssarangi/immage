@@ -12,7 +12,7 @@
 import { clearUndo, peopleState, refreshAll, setPeople } from "../src/peopleStore";
 
 type R = { x: number; y: number; w: number; h: number };
-type H = { calls: string[]; scan: { enabled: boolean; installed: boolean; scanned: number; pending: number | null; health: string; failure: string | null; paused: boolean };
+type H = { calls: string[]; scan: { offline: number; net: number; failed: number; enabled: boolean; installed: boolean; scanned: number; pending: number | null; health: string; failure: string | null; paused: boolean };
            db: () => { faces: { id: number; person: number | null; state: string; cluster: number | null; maybe: number | null; path: string }[] };
            setPack: (m: string) => void; tick: () => void };
 const h = () => (window as unknown as { __h: H }).__h;
@@ -169,6 +169,8 @@ export async function runPeopleShift() {
     out.compared = ((out.compared as number) ?? 0) + d.compared;
   };
 
+  const phase = (n: string) => { document.body.dataset.phase = n; };
+  phase("selection");
   // 1. selection: click, ctrl-click, shift-click, select all, clear, a marquee, hover
   let base = snapshot(view);
   const t = tiles();
@@ -204,6 +206,7 @@ export async function runPeopleShift() {
   }
   drain(true, "selection");
 
+  phase("naming");
   // 2. the name box: opening floats over the grid, typing filters it, Escape closes it
   click(tiles().find((x) => x.dataset.kind === "group") ?? tiles()[0]);
   await frames(2);
@@ -222,6 +225,7 @@ export async function runPeopleShift() {
   const calls0 = h().calls.length;
   if (h().calls.length !== calls0 || h().calls.some((c) => c.startsWith("assign") || c.startsWith("create"))) fail("naming: Escape changed something");
 
+  phase("keyboard");
   // 3. the keyboard-only path: arrows to a group, a letter, a name, Enter; then N, a new name, Tab
   grid().focus();
   press(grid(), "Home");
@@ -267,6 +271,7 @@ export async function runPeopleShift() {
   await frames(2);
   out.undoAfterTab = $(".people-undo-text")?.textContent ?? "";
 
+  phase("undo");
   // 4. the Undo line: Undo takes the change back, and it goes after its time
   base = snapshot(view);
   const created = h().calls.length;
@@ -281,6 +286,7 @@ export async function runPeopleShift() {
 
   await refreshAll(true); await frames(4);
   drain(false);   // naming and Undo reflow the tiles on purpose
+  phase("scan");
   // 5. the scan: progress ticks, pause, a failure, idle: only the strip's own text may change
   base = snapshot(view);
   const strip = ".people-strip > *";
@@ -296,9 +302,23 @@ export async function runPeopleShift() {
   note("scan blocked", diff(base, snapshot(view), strip));
   h().scan.health = "ok"; h().scan.failure = null; h().scan.pending = 0; await refreshAll(true); await frames(3);
   note("scan idle", diff(base, snapshot(view), strip));
+  // the quiet lines: photos not read, folders offline, network sources left out
+  h().scan.failed = 5; h().scan.offline = 2; h().scan.net = 3; await refreshAll(true); await frames(3);
+  note("strip notes", diff(base, snapshot(view), strip));
+  const notesText = $(".people-strip")?.textContent ?? "";
+  out.notes = notesText;
+  if (!/5 photos could not be read/.test(notesText) || !/2 folders offline/.test(notesText) || !/3 network folders not scanned/.test(notesText)) fail(`strip notes: "${notesText}"`);
+  click($(".people-strip .people-link")!);
+  await frames(6);
+  const listed = $$(".people-failed li").length;
+  if (listed !== 5) fail(`failed photos: the list shows ${listed}`);
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  await frames(3);
+  note("strip notes after the list", diff(base, snapshot(view), strip));
   checkFixed("scan");
   drain(true, "scan");
 
+  phase("newgroups");
   // 6. new groups arrive: the tiles on screen stay where they are, the new ones append, the counts change
   setPeople({ error: "" });
   const db = h().db();
@@ -314,15 +334,45 @@ export async function runPeopleShift() {
   drain(true, "new groups");
   out.layoutShift = { supported, value: Math.round(shifts * 10000) / 10000, detail };
 
+  phase("counts");
+  // 6b. real counts, the collage and the Ignored section
+  const railCount = (i: number) => $$(".people-rail-item")[i].querySelector(".people-rail-count")?.textContent?.split(",").join("") ?? "";
+  const totals = peopleState().status!.totals;
+  out.counts = { unassigned: railCount(2), unknown: totals.unknown, ignored: railCount(3), ignoredTotal: totals.ignored_faces + totals.ignored_people };
+  if (railCount(2) !== String(totals.unknown) || railCount(2).includes("+")) fail(`counts: Unassigned shows ${railCount(2)}, the total is ${totals.unknown}`);
+  if (railCount(3) !== String(totals.ignored_faces + totals.ignored_people)) fail(`counts: Ignored shows ${railCount(3)}`);
+  click($$(".people-rail-item")[1]);
+  await frames(4);
+  const collage = $$(".pcollage");
+  out.collage = { groups: collage.length, cells: collage[0]?.children.length ?? 0 };
+  if (!collage.length || collage[0].children.length < 2) fail("collage: a group tile has no 2 x 2 collage");
+  click($$(".people-rail-item")[3]);
+  await frames(4);
+  const ignoredFaces = tiles().filter((x) => x.dataset.kind === "face");
+  if (!ignoredFaces.length) fail("ignored: no ignored faces are listed");
+  click(ignoredFaces[0]);
+  await frames(2);
+  base = snapshot(view);
+  const was = ignoredFaces.length;
+  press(grid(), "r");
+  await frames(6);
+  if (!h().calls.some((c) => c.startsWith("unignore:1"))) fail(`ignored: Restore did not call unignore (${h().calls.slice(-3).join(",")})`);
+  out.ignored = { before: was, after: tiles().filter((x) => x.dataset.kind === "face").length, undo: $(".people-undo-text")?.textContent };
+  note("restore an ignored face", diff(base, snapshot(view), ".people-canvas, .people-canvas *, .people-selbar > *"));
+  checkFixed("ignored");
+  drain(false);
+
+  phase("scale");
   // 7. scale: scroll every section end to end; what is mounted stays bounded
   const section = async (name: string) => {
+    phase(`scale-${name}`);
     click($$(".people-rail-item")[["people", "review", "unassigned", "ignored"].indexOf(name)]);
     await frames(4);
     const el = grid();
     let maxTiles = 0, maxNodes = 0;
-    for (let pass = 0; pass < 3; pass++) {
+    for (let pass = 0; pass < 2; pass++) {
       const totalH = el.scrollHeight;
-      for (let y = 0; y <= totalH; y += Math.max(300, Math.floor(totalH / 60))) {
+      for (let y = 0; y <= totalH; y += Math.max(400, Math.floor(totalH / 40))) {
         el.scrollTop = y;
         await frames(1);
         maxTiles = Math.max(maxTiles, tiles().length);

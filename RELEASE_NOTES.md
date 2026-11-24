@@ -23,7 +23,10 @@ Improvements
   start typing to name a group, merge, rename, ignore and choose a cover, and
   confirm or reject a suggestion (shown dashed until you confirm it). Every change
   can be undone for five seconds. The scan appears under the photo and in the view,
-  and the People tab shows a dot when faces need review.
+  and the People tab shows a dot when faces need review. Groups show a 2 x 2
+  collage of their faces, the sections' counts are exact, faces marked "not a
+  face" can be restored in Ignored, and the scan strip notes photos that could
+  not be read, folders that are offline and network folders that are left out.
 - **Library panel:** the Metadata, Keywording, Folders, Catalog and History cards
   now always open independently, so Folders and Catalog can be open together;
   Focus mode applies only to the Edit view's tool panels, Presets and Advanced

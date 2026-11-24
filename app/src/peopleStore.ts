@@ -29,6 +29,8 @@ export type PeopleApi = {
   assign(person: number, faces: number[]): Promise<void>;
   notPerson(person: number, faces: number[]): Promise<void>;
   notFace(faces: number[]): Promise<void>;
+  unignore(faces: number[]): Promise<void>;
+  failedPhotos(limit: number): Promise<string[]>;
   undo(): Promise<string | null>;
   deleteAll(): Promise<void>;
   retry(): Promise<void>;
@@ -55,19 +57,15 @@ const real: PeopleApi = {
   assign: async (person, faces) => { await commands.facesAssign(person, faces); },
   notPerson: async (person, faces) => { await commands.facesNotPerson(person, faces); },
   notFace: async (faces) => { await commands.facesNotFace(faces); },
+  unignore: async (faces) => { await commands.facesUnignore(faces); },
+  failedPhotos: (limit) => commands.facesFailedPhotos(limit),
   undo: () => commands.facesUndo(),
   deleteAll: async () => { await commands.facesDeleteAll(); },
   retry: async () => { await commands.facesRetry(); },
-  scanFolder: async (path) => { await commands.facesScanFolder(path); },
+  scanFolder: async (path) => { await commands.facesScanFolderWith(path, true, false); },   // network shares stay off: no control turns them on
   setEnabled: async (on) => { await commands.analysisSet({ id: "faces", enabled: on }); },
   pause: async (paused) => { await commands.analysisPause(paused); },
-  // faces_crop writes a JPEG into the cache and returns its path, which the page cannot read (the CSP has no
-  // file scheme and no fs plugin): see notes/faces-ui-needs.md. Until a bytes command exists the tiles draw
-  // a placeholder, and this adapter uses it as soon as bindings.ts has it.
-  crop: async (face, size) => {
-    const bytes = (commands as unknown as Record<string, ((f: number, s: number) => Promise<ArrayBuffer>) | undefined>).facesCropBytes;
-    return bytes ? new Blob([await bytes(face, size)], { type: "image/jpeg" }) : null;
-  },
+  crop: async (face, size) => new Blob([await commands.facesCropBytes(face, size)], { type: "image/jpeg" }),
   subscribe: (onChanged, onProgress) => {
     const stops: (() => void)[] = [];
     let dead = false;
@@ -99,7 +97,7 @@ export type PeopleState = {
   busy: boolean;
 };
 
-const EMPTY_DATA: PeopleData = { people: [], groups: [], unknown: [], unknownMore: false };
+const EMPTY_DATA: PeopleData = { people: [], groups: [], unknown: [], unknownMore: false, ignoredFaces: [], ignoredMore: false };
 const NO_STATUS_SCAN: ScanView = { kind: "off", done: 0, total: null, left: null, reason: null };
 const EMPTY: PeopleState = { on: false, status: null, failed: false, paused: false, scan: NO_STATUS_SCAN, loaded: false, data: EMPTY_DATA, undo: null, error: "", busy: false };
 
@@ -151,14 +149,15 @@ export async function refreshAll(force = false) {
   if (wait > 0 && !force) { schedule(wait); return; }
   reading = true; dirty = false; lastRead = Date.now();
   try {
-    const [s, paused, people, groups, unknown] = await Promise.all([
+    const [s, paused, people, groups, unknown, ignored] = await Promise.all([
       api.status(), api.paused().catch(() => state.paused), api.people(), api.groups(), api.list({ kind: "unknown" }, 0, UNKNOWN_PAGE),
+      api.list({ kind: "ignored" }, 0, UNKNOWN_PAGE),
     ]);
     const prev = state.data.unknown;
     // more than the first page was loaded before: keep that much, so the grid does not shrink under the user
     const keep = prev.length > unknown.length && unknown.length === UNKNOWN_PAGE ? await api.list({ kind: "unknown" }, 0, prev.length) : unknown;
     applyStatus(s, paused);
-    setPeople({ data: { people, groups, unknown: keep, unknownMore: keep.length >= UNKNOWN_PAGE && keep.length % UNKNOWN_PAGE === 0 }, loaded: true });
+    setPeople({ data: { people, groups, unknown: keep, unknownMore: keep.length >= UNKNOWN_PAGE && keep.length % UNKNOWN_PAGE === 0, ignoredFaces: ignored, ignoredMore: ignored.length >= UNKNOWN_PAGE }, loaded: true });
   } catch (e) {
     if (!state.status) setPeople({ failed: true }); else setPeople({ error: String(e) });
   } finally { reading = false; }
@@ -178,6 +177,16 @@ export async function loadMoreUnknown() {
     const seen = new Set(state.data.unknown.map((f) => f.id));
     const add = more.filter((f) => !seen.has(f.id));
     setPeople({ data: { ...state.data, unknown: [...state.data.unknown, ...add], unknownMore: more.length >= UNKNOWN_PAGE } });
+  } catch (e) { setPeople({ error: String(e) }); }
+}
+
+export async function loadMoreIgnored() {
+  const d = state.data;
+  if (!d.ignoredMore) return;
+  try {
+    const more = await api.list({ kind: "ignored" }, d.ignoredFaces.length, UNKNOWN_PAGE);
+    const seen = new Set(state.data.ignoredFaces.map((f) => f.id));
+    setPeople({ data: { ...state.data, ignoredFaces: [...state.data.ignoredFaces, ...more.filter((f) => !seen.has(f.id))], ignoredMore: more.length >= UNKNOWN_PAGE } });
   } catch (e) { setPeople({ error: String(e) }); }
 }
 
@@ -252,7 +261,7 @@ export async function facesOf(keys: readonly string[]): Promise<number[]> {
 
 const without = (d: PeopleData, keys: readonly string[]): PeopleData => {
   const k = new Set(keys);
-  return { ...d, groups: d.groups.filter((g) => !k.has(groupKey(g.id))), unknown: d.unknown.filter((f) => !k.has(faceKey(f.id))),
+  return { ...d, ignoredFaces: d.ignoredFaces.filter((f) => !k.has(faceKey(f.id))), groups: d.groups.filter((g) => !k.has(groupKey(g.id))), unknown: d.unknown.filter((f) => !k.has(faceKey(f.id))),
            people: d.people.map((p) => (k.has(maybeKey(p.id)) ? { ...p, suggestions: 0 } : p)) };
 };
 
@@ -296,6 +305,11 @@ export async function ignoreTiles(keys: readonly string[]) {
     await change((d) => ({ ...d, people: d.people.map((x) => (x.id === id ? { ...x, state: "ignored" } : x)) }), () => api.remove(id, true), entry("ignored", p?.faces ?? 1));
   }
 }
+// faces taken back from "not a face"
+export async function unignoreFaces(keys: readonly string[]) {
+  const faces = keys.filter((k) => k.startsWith("f:")).map(keyId);
+  if (faces.length) await change((d) => without(d, keys), () => api.unignore(faces), entry("unignored", faces.length));
+}
 export async function restorePeople(ids: readonly number[]) {
   for (const id of ids) {
     const p = state.data.people.find((x) => x.id === id);
@@ -323,6 +337,7 @@ export async function setCover(id: number, face: number) {
   await change((d) => ({ ...d, people: d.people.map((p) => (p.id === id ? { ...p, cover_face_id: face, cover_manual: true } : p)) }), () => api.cover(id, face), entry("cover", 1, name));
 }
 
+export const failedPhotos = (limit = 200) => api.failedPhotos(limit);
 export const personFaces = (id: number, limit = 24) => api.list({ kind: "person", id }, 0, limit);
 export const groupFaces = (id: number, limit = 200) => api.list({ kind: "cluster", id }, 0, limit);
 export const maybeFaces = (id: number, limit = 200) => api.list({ kind: "suggested", id }, 0, limit);

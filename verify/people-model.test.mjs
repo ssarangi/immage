@@ -4,23 +4,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NO_SEL, GAP, PAD, CAPTION, geometry, gridKey, keepSelected, mergeUndo, nameOptions, needsReview, scanView, sectionCounts,
-  sectionTiles, select, stableOrder, tilePos, tilesInRect, totalHeight, viewKind, visibleRange } from '../app/src/peopleModel.ts';
+  scanNotes, sectionTiles, select, stableOrder, tilePos, tilesInRect, totalHeight, viewKind, visibleRange } from '../app/src/peopleModel.ts';
 
 const person = (id, name, o = {}) => ({ id, name, state: 'active', faces: 5, photos: 10, cover_face_id: null, cover_manual: false, suggestions: 0, ...o });
-const data = (o = {}) => ({ people: [], groups: [], unknown: [], unknownMore: false, ...o });
+const data = (o = {}) => ({ people: [], groups: [], unknown: [], unknownMore: false, ignoredFaces: [], ignoredMore: false, ...o });
 const face = (id, o = {}) => ({ id, path: `/p/${id}.jpg`, x: 0, y: 0, w: 1, h: 1, score: 1, frontal: 1, person_id: null, state: 'unreviewed',
   suggested_person: null, suggested_sim: null, cluster_id: null, ...o });
 const status = (o = {}) => ({ enabled: true, installed: true, eyes_available: false, scanned: 0, faces_found: 0, pending: null, folders_waiting: 0,
-  infer_ms: null, health: 'ok', failure: null, undo: null, totals: { photos: 0, faces: 0, people: 0, unreviewed: 0, groups: 0, suggestions: 0 }, ...o });
+  infer_ms: null, health: 'ok', failure: null, undo: null, offline_folders: 0, totals: { photos: 0, faces: 0, people: 0, unreviewed: 0, groups: 0, suggestions: 0, unknown: 0, ignored_faces: 0, ignored_people: 0, failed_photos: 0 }, ...o });
 
 test('sections: people by photos, ignored apart, review lists "maybe" tiles then groups by size', () => {
   const d = data({ people: [person(1, 'Zed', { photos: 3 }), person(2, 'Amy', { photos: 30, suggestions: 4 }), person(3, 'Old', { state: 'ignored' })],
-    groups: [{ id: 7, rep_face_id: 70, size: 3 }, { id: 8, rep_face_id: 80, size: 9 }], unknown: [face(1), face(2)], unknownMore: true });
+    groups: [{ id: 7, rep_face_id: 70, size: 3, members: [70, 71, 72] }, { id: 8, rep_face_id: 80, size: 9, members: [80] }], unknown: [face(1), face(2)], unknownMore: true, ignoredFaces: [face(9)] });
   assert.deepEqual(sectionTiles('people', d).map((t) => t.key), ['p:2', 'p:1']);
-  assert.deepEqual(sectionTiles('ignored', d).map((t) => t.key), ['p:3']);
+  assert.deepEqual(sectionTiles('ignored', d).map((t) => t.key), ['p:3', 'f:9']);
+  assert.deepEqual(sectionTiles('review', d).find((t) => t.key === 'g:7').members, [70, 71, 72]);
+  assert.equal(sectionTiles('ignored', d)[1].ignored, true);
   assert.deepEqual(sectionTiles('review', d).map((t) => t.key), ['s:2', 'g:8', 'g:7']);
   assert.deepEqual(sectionTiles('unassigned', d).map((t) => t.key), ['f:1', 'f:2']);
-  assert.deepEqual(sectionCounts(d), { people: { n: 2, more: false }, review: { n: 3, more: false }, unassigned: { n: 2, more: true }, ignored: { n: 1, more: false } });
+  assert.deepEqual(sectionCounts(d), { people: 2, review: 3, unassigned: 2, ignored: 2 });
+  const totals = { photos: 9, faces: 9, people: 2, unreviewed: 5, groups: 2, suggestions: 4, unknown: 1820, ignored_faces: 40, ignored_people: 3, failed_photos: 0 };
+  assert.deepEqual(sectionCounts(d, totals), { people: 2, review: 3, unassigned: 1820, ignored: 43 });
 });
 
 test('stable order: kept tiles stay, gone ones drop, new ones append', () => {
@@ -147,4 +151,12 @@ test('scan view and the centre state', () => {
   assert.equal(needsReview(faces), true);
   assert.equal(needsReview(status({ ...faces, enabled: false })), false);
   assert.equal(needsReview(null), false);
+});
+
+test('scan notes: unreadable photos, offline folders, network sources left out', () => {
+  assert.deepEqual(scanNotes(null), { failed: 0, offline: 0, network: 0 });
+  const s = status({ offline_folders: 2, skipped_network_sources: 4 });
+  s.totals.failed_photos = 34;
+  assert.deepEqual(scanNotes(s), { failed: 34, offline: 2, network: 4 });
+  assert.deepEqual(scanNotes(status()), { failed: 0, offline: 0, network: 0 });
 });

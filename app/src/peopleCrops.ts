@@ -8,7 +8,7 @@
 import { peopleApi } from "./peopleStore";
 
 const MAX_INFLIGHT = 6;
-const KEEP = 1500;
+const KEEP = 3000;
 
 type Want = { face: number; size: number; cbs: Set<(url: string | null) => void> };
 const urls = new Map<string, string | null>();           // "id@size" -> object URL, or null for no picture

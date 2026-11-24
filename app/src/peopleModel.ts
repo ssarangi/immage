@@ -5,7 +5,7 @@
 // order that never moves a tile under the pointer, the selection reducer, the grid geometry and the
 // marquee, the keyboard map, the name combobox's ranking, the Undo line's merging and the plain-language
 // state of the scan. No React and no commands: a Node test and the harness check all of it.
-import type { ClusterRow, FaceRow, FacesStatus, PersonRow } from "./bindings";
+import type { ClusterRow, FaceRow, FaceTotals, FacesStatus, PersonRow } from "./bindings";
 
 export type Section = "people" | "review" | "unassigned" | "ignored";
 export const SECTIONS: Section[] = ["people", "review", "unassigned", "ignored"];
@@ -14,15 +14,17 @@ export const SECTIONS: Section[] = ["people", "review", "unassigned", "ignored"]
 
 export type Tile =
   | { key: string; kind: "person"; id: number; name: string; faces: number; photos: number; cover: number | null; review: number; ignored: boolean }
-  | { key: string; kind: "group"; id: number; size: number; rep: number }
+  | { key: string; kind: "group"; id: number; size: number; rep: number; members: number[] }
   | { key: string; kind: "maybe"; person: number; name: string; size: number; rep: number | null }
-  | { key: string; kind: "face"; id: number; path: string; maybe: number | null };
+  | { key: string; kind: "face"; id: number; path: string; maybe: number | null; ignored?: boolean };
 
 export type PeopleData = {
   people: PersonRow[];            // active and ignored
   groups: ClusterRow[];
   unknown: FaceRow[];             // faces with no person and no group (loaded so far)
   unknownMore: boolean;           // more of them than are loaded
+  ignoredFaces: FaceRow[];        // faces marked "not a face" (loaded so far)
+  ignoredMore: boolean;
   covers?: ReadonlyMap<number, number>;
 };
 
@@ -43,12 +45,13 @@ export function sectionTiles(section: Section, d: PeopleData): Tile[] {
     case "people":
       return d.people.filter((p) => p.state === "active").sort((a, b) => b.photos - a.photos || a.name.localeCompare(b.name)).map(personTile);
     case "ignored":
-      return d.people.filter((p) => p.state !== "active").sort((a, b) => a.name.localeCompare(b.name)).map(personTile);
+      return [...d.people.filter((p) => p.state !== "active").sort((a, b) => a.name.localeCompare(b.name)).map(personTile),
+              ...d.ignoredFaces.map((f): Tile => ({ key: faceKey(f.id), kind: "face", id: f.id, path: f.path, maybe: null, ignored: true }))];
     case "review": {
       const maybes: Tile[] = d.people.filter((p) => p.state === "active" && p.suggestions > 0).sort((a, b) => b.suggestions - a.suggestions)
         .map((p) => ({ key: maybeKey(p.id), kind: "maybe" as const, person: p.id, name: p.name, size: p.suggestions, rep: p.cover_face_id }));
       const groups: Tile[] = [...d.groups].sort((a, b) => b.size - a.size || a.id - b.id)
-        .map((g) => ({ key: groupKey(g.id), kind: "group" as const, id: g.id, size: g.size, rep: g.rep_face_id }));
+        .map((g) => ({ key: groupKey(g.id), kind: "group" as const, id: g.id, size: g.size, rep: g.rep_face_id, members: g.members?.length ? g.members : [g.rep_face_id] }));
       return [...maybes, ...groups];
     }
     case "unassigned":
@@ -56,13 +59,13 @@ export function sectionTiles(section: Section, d: PeopleData): Tile[] {
   }
 }
 
-// What the rail counts. `unassigned` is how many are loaded; more says the real count is higher.
-export function sectionCounts(d: PeopleData): Record<Section, { n: number; more: boolean }> {
+// What the rail counts: the backend's totals when it has them (the grid may hold only the pages loaded so far)
+export function sectionCounts(d: PeopleData, totals: FaceTotals | null = null): Record<Section, number> {
   return {
-    people: { n: d.people.filter((p) => p.state === "active").length, more: false },
-    review: { n: sectionTiles("review", d).length, more: false },
-    unassigned: { n: d.unknown.length, more: d.unknownMore },
-    ignored: { n: d.people.filter((p) => p.state !== "active").length, more: false },
+    people: d.people.filter((p) => p.state === "active").length,
+    review: sectionTiles("review", d).length,
+    unassigned: totals ? totals.unknown : d.unknown.length,
+    ignored: totals ? totals.ignored_people + totals.ignored_faces : d.people.filter((p) => p.state !== "active").length + d.ignoredFaces.length,
   };
 }
 
@@ -255,7 +258,7 @@ export function nameOptions(query: string, people: readonly PersonRow[], limit =
 
 // ---- the Undo line ----
 
-export type UndoKind = "assigned" | "confirmed" | "ignored" | "removed" | "merged" | "renamed" | "cover" | "restored" | "notPerson" | "notFace";
+export type UndoKind = "unignored" | "assigned" | "confirmed" | "ignored" | "removed" | "merged" | "renamed" | "cover" | "restored" | "notPerson" | "notFace";
 export type UndoEntry = { kind: UndoKind; n: number; name: string; other: string; steps: number };
 
 // a second action of the same kind and name while the line is up joins it ("Ignored 3 faces"); each
@@ -300,4 +303,11 @@ export function viewKind(s: FacesStatus | null, failed: boolean, scan: ScanView,
 // the dot on the People tab: faces that need a look
 export function needsReview(s: FacesStatus | null): boolean {
   return !!s && s.enabled && s.installed && (s.totals.groups > 0 || s.totals.suggestions > 0);
+}
+
+// the quiet lines beside the scan: photos that could not be read, folders that do not answer, network sources left out
+export type ScanNotes = { failed: number; offline: number; network: number };
+export function scanNotes(s: FacesStatus | null): ScanNotes {
+  if (!s) return { failed: 0, offline: 0, network: 0 };
+  return { failed: s.totals.failed_photos ?? 0, offline: s.offline_folders ?? 0, network: s.skipped_network_sources ?? 0 };
 }

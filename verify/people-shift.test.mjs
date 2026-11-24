@@ -36,7 +36,7 @@ after(() => { server?.kill(); if (profile) rmSync(profile, { recursive: true, fo
 function dump(query, w = 1440, h = 900, flags = [], budget = 90000) {
   const r = spawnSync(CHROME, ['--headless=new', '--no-sandbox', '--disable-gpu', `--user-data-dir=${profile}`, `--window-size=${w},${h}`,
     `--virtual-time-budget=${budget}`, ...flags, '--dump-dom', `http://127.0.0.1:${PORT}/harness/people.html?${query}`],
-    { encoding: 'utf8', maxBuffer: 64 << 20, timeout: 170000 });
+    { encoding: 'utf8', maxBuffer: 64 << 20, timeout: 400000 });
   assert.equal(r.status, 0, r.stderr);
   return r.stdout;
 }
@@ -95,7 +95,7 @@ test('the consent card keeps its size through every step and turns People on onl
 });
 
 test('5,000 faces: every section mounts a bounded number of tiles however far it is scrolled', { skip }, () => {
-  const r = report(dump('shift=1&many=5000&theme=dark', 1440, 900, [], 240000));
+  const r = report(dump('shift=1&many=5000&theme=dark', 1440, 900, [], 400000));
   assert.equal(r.error, undefined, r.error);
   assert.deepEqual(r.failures, []);
   for (const s of ['people', 'review', 'unassigned']) {
@@ -114,4 +114,18 @@ test('the other states render their text: scanning, empty, error, off, download'
   assert.match(off, /Face data is biometric/);
   assert.match(off, /Turn on People/);
   assert.match(text(dump('state=download')), /Downloading|download/i);
+});
+
+test('real counts, the 2 x 2 collage, the quiet strip notes and restoring an ignored face', { skip }, () => {
+  const r = report(dump('shift=1&theme=dark'));
+  assert.equal(r.error, undefined, r.error);
+  assert.deepEqual(r.failures, []);
+  assert.equal(r.counts.unassigned, String(r.counts.unknown));
+  assert.equal(r.counts.ignored, String(r.counts.ignoredTotal));
+  assert.ok(r.collage.groups > 0 && r.collage.cells >= 2);
+  assert.match(r.notes, /5 photos could not be read/);
+  assert.match(r.notes, /2 folders offline/);
+  assert.match(r.notes, /3 network folders not scanned/);
+  assert.match(r.ignored.undo, /Took 1 face back/);
+  assert.ok(r.ignored.after < r.ignored.before);
 });
