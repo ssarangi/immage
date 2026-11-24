@@ -84,7 +84,7 @@ export type Group = "photo" | "camera" | "when" | "immich";
 export const GROUPS: Group[] = ["photo", "camera", "when", "immich"];
 
 export type CategoryKey = "rating" | "edits" | "kinds" | "keywords" | "cameras" | "bodies" | "lenses" | "exposure"
-  | "taken" | "place" | "people" | "albums" | "favorites" | "faces";
+  | "taken" | "place" | "people" | "albums" | "favorites" | "faces" | "closedEyes";
 
 // `local`: needs this computer's photos (hidden for Immich-only searches);
 // `immich`: a server field (shown, tagged IMMICH, once Immich is in the
@@ -99,6 +99,7 @@ export const CATEGORIES: Category[] = [
   { key: "kinds", group: "photo", only: null },
   { key: "keywords", group: "photo", only: null },
   { key: "faces", group: "photo", only: "local" },
+  { key: "closedEyes", group: "photo", only: "local" },
   { key: "cameras", group: "camera", only: null },
   { key: "bodies", group: "camera", only: "local" },
   { key: "lenses", group: "camera", only: null },
@@ -112,9 +113,9 @@ export const CATEGORIES: Category[] = [
 
 // the categories a search shows, in order
 // `faces`: People is on (its row is hidden entirely while it is off)
-export function visibleCategories(s: ImmichSearch, immichAvailable: boolean, faces = false): Category[] {
+export function visibleCategories(s: ImmichSearch, immichAvailable: boolean, faces = false, eyes = false): Category[] {
   const r = reach(s, immichAvailable);
-  return CATEGORIES.filter((c) => (c.key === "faces" && !faces) ? false : c.only === "local" ? r.local : c.only === "immich" ? r.immich : true);
+  return CATEGORIES.filter((c) => (c.key === "faces" && !faces) || (c.key === "closedEyes" && !(faces && eyes)) ? false : c.only === "local" ? r.local : c.only === "immich" ? r.immich : true);
 }
 
 // whether a shared row (camera, lens, keywords) edits the server's fields
@@ -151,6 +152,7 @@ export type Setting = {
   make?: string; model?: string; lens?: string; country?: string; city?: string;
   flags?: ("favorites" | "raw")[];
   faces?: FaceFilter;
+  closedEyes?: boolean;
 };
 
 // what a category is set to in this state, or null when it is not on.
@@ -198,6 +200,8 @@ export function settingOf(key: CategoryKey, st: FindState, server: boolean): Set
       return s.favorites ? { flags: ["favorites"] } : null;
     case "faces":
       return facesOnFilter(f.faces) ? { faces: normalizeFaces(f.faces) } : null;
+    case "closedEyes":
+      return f.closedEyes ? { closedEyes: true } : null;
   }
 }
 
@@ -220,6 +224,7 @@ export function clearCategory(st: FindState, key: CategoryKey): FindState {
     case "albums": return { search: { ...s, albumIds: [] }, filter: f };
     case "favorites": return { search: { ...s, favorites: false }, filter: f };
     case "faces": return { search: s, filter: { ...f, faces: NO_FACES } };
+    case "closedEyes": return { search: s, filter: { ...f, closedEyes: false } };
   }
 }
 
@@ -277,14 +282,14 @@ export type Chip = { key: CategoryKey; setting: Setting; excludes: "local" | "im
 const dropsImmich = (key: CategoryKey, st: FindState) => {
   const f = st.filter;
   if (key === "rating") return f.rejected !== "all" || f.labels !== 0 || f.unlabeled;
-  return key === "edits" || key === "bodies" || key === "keywords" || key === "faces";
+  return key === "edits" || key === "bodies" || key === "keywords" || key === "faces" || key === "closedEyes";
 };
 
-export function chips(st: FindState, immichAvailable: boolean, faces = false): Chip[] {
+export function chips(st: FindState, immichAvailable: boolean, faces = false, eyes = false): Chip[] {
   const r = reach(st.search, immichAvailable);
   const server = r.immich && !r.local;
   const both = r.immich && r.local;
-  return visibleCategories(st.search, immichAvailable, faces).flatMap((c) => {
+  return visibleCategories(st.search, immichAvailable, faces, eyes).flatMap((c) => {
     const setting = settingOf(c.key, st, server);
     if (!setting) return [];
     const excludes = !both ? null : c.only === "immich" ? "local" : dropsImmich(c.key, st) ? "immich" : null;
@@ -293,7 +298,7 @@ export function chips(st: FindState, immichAvailable: boolean, faces = false): C
 }
 
 // how many filters are on, for the toolbar's Find button
-export const findCount = (st: FindState, immichAvailable: boolean, faces = false) => chips(st, immichAvailable, faces).length;
+export const findCount = (st: FindState, immichAvailable: boolean, faces = false, eyes = false) => chips(st, immichAvailable, faces, eyes).length;
 
 // ---- saved filters ---------------------------------------------------
 

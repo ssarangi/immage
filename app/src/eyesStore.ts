@@ -6,12 +6,13 @@
 // watched photos a few at a time after scrolling pauses, and the answers are kept per photo. Nothing is asked while Faces is
 // off or there is no eye model; the verdict is the "preview" of notes/faces-p4-backend-notes.md until the model is validated.
 import { useEffect, useSyncExternalStore } from "react";
-import { EyeQueue, type EyeLabel } from "./eyesQueue";
+import { EyeQueue, scanPaths, type EyeLabel } from "./eyesQueue";
+import { eyeVerdict, setEyeVerdicts, forgetEyes } from "./eyesKnown";
+import { eyesVersion, subscribeEyes } from "./eyesKnown";
 import { peopleApi, peopleState, subscribePeople } from "./peopleStore";
 
 export type { EyeLabel };
 
-const known = new Map<string, EyeLabel | null>();
 const watchers = new Map<string, number>();
 const listeners = new Map<string, Set<() => void>>();
 let lastTick = -1;
@@ -19,11 +20,7 @@ let lastTick = -1;
 const queue = new EyeQueue(
   (paths) => peopleApi().eyesFor(paths, null).then((r) => r.map((x) => ({ path: x.path, state: x.state }))),
   (results) => {
-    for (const r of results) {
-      if (known.get(r.path) === r.state) continue;
-      known.set(r.path, r.state);
-      listeners.get(r.path)?.forEach((l) => l());
-    }
+    for (const path of setEyeVerdicts(results)) listeners.get(path)?.forEach((l) => l());
   },
 );
 
@@ -33,7 +30,7 @@ export const eyesActive = () => { const s = peopleState().status; return !!s && 
 const want = () => {
   const s = peopleState();
   // the faces changed (naming, a scan): the verdicts are asked for again
-  if (s.tick !== lastTick) { lastTick = s.tick; queue.forget(); }
+  if (s.tick !== lastTick) { lastTick = s.tick; queue.forget(); forgetEyes(); }
   queue.want(eyesActive() ? [...watchers.keys()] : []);
 };
 
@@ -55,8 +52,31 @@ export function useEye(path: string): EyeLabel | null {
   // the status arrives (or the eye model appears) after the first cells are mounted: ask again then
   const active = useSyncExternalStore(subscribePeople, eyesActive);
   useEffect(() => { want(); }, [active]);
-  return useSyncExternalStore((l) => subscribe(path, l), () => (active ? known.get(path) ?? null : null));
+  return useSyncExternalStore((l) => subscribe(path, l), () => (active ? eyeVerdict(path) ?? null : null));
 }
 
 /** the cached verdict, for code that is not a component */
-export const eyeOf = (path: string): EyeLabel | null => (eyesActive() ? known.get(path) ?? null : null);
+export const eyeOf = (path: string): EyeLabel | null => (eyesActive() ? eyeVerdict(path) ?? null : null);
+
+// ---- Find's Closed eyes: the open folder's photos, in chunks, with a progress line ----
+export type EyesScan = { running: boolean; done: number; total: number };
+let scan: EyesScan = { running: false, done: 0, total: 0 };
+let scanToken = 0;
+const scanListeners = new Set<() => void>();
+const setScan = (s: EyesScan) => { scan = s; scanListeners.forEach((l) => l()); };
+export const useEyesScan = () => useSyncExternalStore((l) => { scanListeners.add(l); return () => { scanListeners.delete(l); }; }, () => scan);
+/** the eye verdicts changed: a number for the memo that filters the photos */
+export const useEyesVersion = () => useSyncExternalStore(subscribeEyes, eyesVersion);
+/** whether the Closed eyes row can exist */
+export const useEyesOn = () => useSyncExternalStore(subscribePeople, eyesActive);
+
+/** asks for every photo's verdict, chunk by chunk; a newer call (another folder) or `stopEyesScan` ends this one */
+export function startEyesScan(paths: readonly string[]) {
+  if (!eyesActive()) return;
+  const token = ++scanToken;
+  void scanPaths(paths, (p) => peopleApi().eyesFor(p, null).then((r) => r.map((x) => ({ path: x.path, state: x.state }))), {
+    have: (p) => eyeVerdict(p) !== undefined, onChunk: (r) => { setEyeVerdicts(r); },
+    progress: (done, total) => { if (token === scanToken) setScan({ running: done < total, done, total }); }, stopped: () => token !== scanToken,
+  }).then(() => { if (token === scanToken) setScan({ ...scan, running: false }); });
+}
+export const stopEyesScan = () => { scanToken++; setScan({ running: false, done: 0, total: 0 }); };

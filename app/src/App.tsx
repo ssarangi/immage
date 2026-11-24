@@ -1,4 +1,5 @@
 
+import { startEyesScan, stopEyesScan, useEyesVersion } from "./eyesStore";
 import { AgxPresetLoader } from "./AgxPresetDialog";
 import { gridEntries } from "./statsGrid";
 import { settings } from "./settings";
@@ -6418,10 +6419,11 @@ export default function App() {
   partnersRef.current = partners;
   // results show through the filter their search used: an Immich-only search hides the folder lists
   const faceSetsVersion = useFaceSetsVersion();
+  const eyesVersion = useEyesVersion();
   const passing = useMemo(
     () => images.filter((i) => immich ? passesSearch(i, effectiveFilter(find, !!immichBase)) : passes(i, filter)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [images, !!immich, immichForm, filter, immichBase, faceSetsVersion]);
+    [images, !!immich, immichForm, filter, immichBase, faceSetsVersion, eyesVersion]);
   const behind = useMemo(() => new Set(passing.flatMap((i) => (partners.get(i.imgid) ?? []).map((p) => p.imgid))), [passing, partners]);
   // the photos the folder's last read found that this one has not reached:
   // shown as they were, through the filters, until they are read. once the
@@ -6457,6 +6459,8 @@ export default function App() {
   const viewNow: ViewMode = peopleOn ? "people" : scenesOn ? "scenes" : grid ? "grid" : "edit";
   useEffect(() => startPeople(), []);
   useEffect(() => { wantFaceSets(filter.faces); }, [filter.faces]);
+  // Closed eyes over the folder: every photo's verdict is asked for in chunks while the filter is on (its row shows the progress)
+  useEffect(() => { if (filter.closedEyes) startEyesScan(images.filter((i) => !isRemote(i)).map((i) => i.path)); else stopEyesScan(); }, [filter.closedEyes, images]);   // eslint-disable-line react-hooks/exhaustive-deps
   // the folder scan has no photo total of its own: the open folder's photo count is the strip's "of M"
   const localCount = images.filter((i) => !isRemote(i)).length;
   useEffect(() => { setScanFolderTotal(folder, reading ? 0 : localCount); }, [folder, localCount, reading]);

@@ -85,8 +85,8 @@ test('visibleCategories', () => {
   const im = keys(visibleCategories({ ...NO_SEARCH, source: 'immich' }, true));
   assert.ok(!im.includes('bodies') && !im.includes('exposure'));
   for (const k of hidden) assert.ok(im.includes(k));
-  const both = visibleCategories({ ...NO_SEARCH, source: 'both' }, true, true);
-  assert.equal(both.length, 14);
+  const both = visibleCategories({ ...NO_SEARCH, source: 'both' }, true, true, true);
+  assert.equal(both.length, 15);
   assert.deepEqual(both, CATEGORIES);
   // People is hidden entirely while it is off, and shown (before Camera) when it is on
   assert.ok(!keys(visibleCategories({ ...NO_SEARCH, source: 'both' }, true)).includes('faces'));
@@ -311,4 +311,47 @@ test('the People row: hidden while faces are off, one chip when set, cleared by 
   assert.deepEqual(back.filter.faces, on.filter.faces);
   assert.ok(sameFind(on, back));
   assert.ok(!sameFind(on, st({ source: 'local' }, { faces: f({ include: [1, 2] }) })));
+});
+
+const E = await import('../app/src/eyesKnown.ts');
+const { scanPaths, EyeQueue } = await import('../app/src/eyesQueue.ts');
+
+test('the Closed eyes row: needs Faces and the eye model, one chip, cleared by clearAll and its own x, kept by saved filters', () => {
+  const on = st({ source: 'local' }, { closedEyes: true });
+  assert.deepEqual(keys(chips(on, false, true, false)), []);              // no eye model: hidden
+  assert.deepEqual(keys(chips(on, false, false, true)), []);              // Faces off: hidden
+  assert.deepEqual(keys(chips(on, false, true, true)), ['closedEyes']);
+  assert.equal(findCount(on, false, true, true), 1);
+  assert.deepEqual(settingOf('closedEyes', on, false), { closedEyes: true });
+  assert.equal(settingOf('closedEyes', st(), false), null);
+  assert.equal(findCount(clearAll(on), false, true, true), 0);
+  assert.equal(clearCategory(on, 'closedEyes').filter.closedEyes, false);
+  assert.equal(normalizeFind({ filter: { minRating: 1 } }).filter.closedEyes, false);
+  assert.equal(normalizeFind(JSON.parse(JSON.stringify(on))).filter.closedEyes, true);
+  assert.ok(!sameFind(on, st({ source: 'local' })));
+});
+
+test('the Closed eyes filter keeps the photos whose verdict is closed or half closed, and none that are unchecked', async () => {
+  const { passes } = await import('../app/src/filter.ts');
+  const photo = (path) => ({ path, filename: path, rating: 0, rejected: false, labels: 0, edited: false, exif: { maker: '', model: '', lens: '', iso: 0, aperture: 0, exposure: 0, focal_length: 0, datetime: '' }, keywords: [] });
+  E.setEyeVerdicts([{ path: '/a', state: 'closed' }, { path: '/b', state: 'semi' }, { path: '/c', state: 'open' }, { path: '/d', state: null }]);
+  const f = { ...NO_FILTER, closedEyes: true };
+  assert.deepEqual(['/a', '/b', '/c', '/d', '/e'].filter((p) => passes(photo(p), f)), ['/a', '/b']);
+  assert.deepEqual(['/a', '/c', '/e'].filter((p) => passes(photo(p), NO_FILTER)), ['/a', '/c', '/e']);
+});
+
+test('the folder scan asks in chunks of 24, skips what is known, reports progress and can be stopped', async () => {
+  const calls = [], prog = [];
+  const paths = Array.from({ length: 60 }, (_, i) => `/p${i}`);
+  const out = await scanPaths(paths, (p) => { calls.push(p.length); return Promise.resolve(p.map((path) => ({ path, state: 'open' }))); },
+    { have: (p) => p === '/p0', onChunk: () => {}, progress: (d, t) => prog.push([d, t]) });
+  assert.deepEqual(calls, [24, 24, 11]);
+  assert.deepEqual(prog.at(0), [0, 59]); assert.deepEqual(prog.at(-1), [59, 59]);
+  assert.deepEqual(out, { done: 59, total: 59 });
+  let n = 0;
+  const stopped = await scanPaths(paths, (p) => Promise.resolve(p.map((path) => ({ path, state: null }))), { onChunk: () => {}, stopped: () => n++ >= 1, size: 10 });
+  assert.equal(stopped.done, 10);
+  const failing = await scanPaths(['/x', '/y'], () => Promise.reject(new Error('no')), { onChunk: () => { throw new Error('unreachable'); }, size: 1 });
+  assert.equal(failing.done, 2);   // a failed chunk is skipped, not fatal
+  assert.ok(new EyeQueue(() => Promise.resolve([]), () => {}).concurrency >= 1);
 });

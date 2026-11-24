@@ -6,6 +6,7 @@
 // pickers, ...). Each writes through findModel.ts's functions, as the Filters
 // popup's bodies did; the facets they list are computed when one is open.
 // FindFilters.tsx draws the rows, FindPanel.tsx the panel
+import { ClosedEyesEditor } from "./FindEyes";
 import { FacesEditor } from "./FindFaces";
 import { useEffect, useState } from "react";
 import { commands, type Named } from "./commands";
@@ -399,6 +400,8 @@ export function FilterEditor({ cat, state, send, images, local, server, people, 
       return ids(albums, s.albumIds, (albumIds) => patchSearch({ albumIds }), t("library.filters.noAlbums"));
     case "faces":
       return <FacesEditor state={state} send={send} />;
+    case "closedEyes":
+      return <ClosedEyesEditor state={state} send={send} images={images} />;
     case "favorites":
       return (
         <div className="meta-grid filter-immich">

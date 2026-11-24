@@ -54,3 +54,23 @@ export class EyeQueue {
     }
   }
 }
+
+/**
+ * Asks for the verdicts of a whole list in chunks, one call at a time (Find's Closed eyes over the open folder):
+ * `onChunk` hears each answer, `progress` how far it is, and `stopped()` ends it between chunks. Photos in `have` are skipped.
+ */
+export async function scanPaths(paths: readonly string[], fetch: (paths: string[]) => Promise<EyeResult[]>, o: {
+  size?: number; have?: (path: string) => boolean; onChunk: (r: EyeResult[]) => void; progress?: (done: number, total: number) => void; stopped?: () => boolean;
+}): Promise<{ done: number; total: number }> {
+  const size = Math.min(200, o.size ?? 24);
+  const todo = paths.filter((p) => !o.have?.(p));
+  let done = 0;
+  o.progress?.(0, todo.length);
+  for (let i = 0; i < todo.length && !o.stopped?.(); i += size) {
+    const chunk = todo.slice(i, i + size);
+    try { o.onChunk(await fetch(chunk)); } catch { /* the chunk is skipped: its photos stay unknown */ }
+    done += chunk.length;
+    o.progress?.(done, todo.length);
+  }
+  return { done, total: todo.length };
+}
