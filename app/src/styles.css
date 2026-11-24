@@ -779,7 +779,7 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .left .kw-body > .kw-auto > .kw-auto-body { flex: 0 1 auto; overflow-y: auto; max-height: 116px; }
 /* the card never shrinks below its fixed parts (a chip row, the input, the Auto-keywords header and its 52px area), so the
    Auto-keywords area is what scrolls, not the whole card; the trees below give up the height */
-.left .panel.keywording:has(> .kw-body) { min-height: 200px; }
+.left .panel.keywording:has(> .kw-body) { min-height: 224px; }
 /* the suggestion list hangs under the input: let it out of the body while it is open */
 .left .panel > .kw-body:has(.kw-suggest) { overflow: visible; }
 /* too short for every open card's floor: the Navigator keeps its header and zoom buttons only */
