@@ -92,6 +92,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::faces_cmds::faces_merge_suggestions,
         crate::faces_cmds::faces_merge_groups,
         crate::faces_cmds::faces_person_photos,
+        crate::faces_cmds::faces_stats,
         crate::faces_cmds::faces_photo_faces,
         crate::faces_cmds::faces_filter_paths,
         crate::faces_cmds::faces_not_same,

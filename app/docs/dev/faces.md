@@ -38,6 +38,8 @@ Joining two groups (`faces_merge_groups`) and "Not the same" (`faces_not_same`) 
 (`face_links`, `groups_not_same`, `people_not_same`, schema v2) by faces, not by group id, because groups are recomputed.
 
 ## Person page, overlay, Find
+Counts of photos are of shots (`shot_key`: folder without a trailing Processed, plus lower-case stem), see the design note. `faces_stats` feeds Preferences > Faces.
+
 `faces_person_photos` and `faces_photo_faces` read faces.sqlite only. Find's `GridFilter.people` is resolved by
 `local_search_cmds` into allowed and denied paths (`faces_store::filter_paths`) and checked per photo in
 `local_search::retrieve_with_provider`; it does nothing while Faces is off.

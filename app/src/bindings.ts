@@ -172,6 +172,7 @@ export const commands = {
 	facesMergeGroups: (fromGroup: number, intoGroup: number) => __TAURI_INVOKE<null>("faces_merge_groups", { fromGroup, intoGroup }),
 	/**  The photos of a person, one page: confirmed first, then those with a suggested face of theirs. */
 	facesPersonPhotos: (person: number, offset: number, limit: number) => __TAURI_INVOKE<PersonPhotos>("faces_person_photos", { person, offset, limit }),
+	facesStats: () => __TAURI_INVOKE<FacesStats>("faces_stats"),
 	/**  The faces of one photo for the editor's overlay (read only, one indexed query). */
 	facesPhotoFaces: (path: string) => __TAURI_INVOKE<PhotoFace[]>("faces_photo_faces", { path }),
 	facesFilterPaths: (people: PeopleFilter) => __TAURI_INVOKE<FilterPaths>("faces_filter_paths", { people }),
@@ -837,6 +838,8 @@ export type ClusterRow = {
 	id: number,
 	rep_face_id: number,
 	size: number,
+	/**  The photos (shots) the group's faces are in. */
+	photos: number,
 	/**  Up to four faces of the group for a collage, the representative first. */
 	members: number[],
 };
@@ -1269,6 +1272,20 @@ export type FaceTotals = {
 	ignored_people: number,
 	/**  Photos the scan gave up on (could not be read). */
 	failed_photos: number,
+};
+
+/**  What Preferences > Faces shows: counts, sizes on disk and the model in use. Read only. */
+export type FacesStats = {
+	store: StoreStats,
+	/**  Bytes in the face picture cache. */
+	crops_bytes: number,
+	crops_files: number,
+	/**  "sface" or "arcface", and the model version new scans store. */
+	recognizer: string,
+	model_version: string,
+	pack_installed: boolean,
+	eyes_available: boolean,
+	arcface_available: boolean,
 };
 
 export type FacesStatus = {
@@ -1918,6 +1935,11 @@ export type MetaText = {
 	publisher: string,
 	rights: string,
 	notes: string,
+};
+
+export type ModelCount = {
+	model: string,
+	faces: number,
 };
 
 export type ModelStatus = {
@@ -2969,6 +2991,22 @@ export type Status = {
 	paused: boolean,
 	finished: number,
 	failed: number,
+};
+
+export type StoreStats = {
+	/**  Files scanned, and the photos (shots) they make up. */
+	files: number,
+	photos: number,
+	faces: number,
+	people: number,
+	ignored_people: number,
+	groups: number,
+	unassigned: number,
+	rejected: number,
+	failed: number,
+	db_bytes: number,
+	/**  Faces per model version stored (more than one while a recognizer change is being re-scanned). */
+	models: ModelCount[],
 };
 
 export type SubFolder = {

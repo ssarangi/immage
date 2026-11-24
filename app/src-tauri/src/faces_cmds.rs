@@ -354,6 +354,43 @@ pub async fn faces_filter_paths(ai: State<'_, AiState>, people: crate::search_fi
     .map_err(|e| e.to_string())?
 }
 
+/// What Preferences > Faces shows: counts, sizes on disk and the model in use. Read only.
+#[derive(serde::Serialize, specta::Type)]
+pub struct FacesStats {
+    pub store: crate::faces_store::StoreStats,
+    /// Bytes in the face picture cache.
+    pub crops_bytes: u64,
+    pub crops_files: u32,
+    /// "sface" or "arcface", and the model version new scans store.
+    pub recognizer: String,
+    pub model_version: String,
+    pub pack_installed: bool,
+    pub eyes_available: bool,
+    pub arcface_available: bool,
+}
+
+fn dir_stats(dir: &Path) -> (u64, u32) {
+    let Ok(read) = std::fs::read_dir(dir) else { return (0, 0) };
+    read.flatten().filter_map(|e| e.metadata().ok()).filter(|m| m.is_file()).fold((0, 0), |(b, n), m| (b + m.len(), n + 1))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn faces_stats(ai: State<'_, AiState>) -> Result<FacesStats, String> {
+    let r = ai.faces.recognizer(&ai.faces_runtime);
+    let (crops_bytes, crops_files) = dir_stats(&ai.faces_crops);
+    Ok(FacesStats {
+        store: ai.faces_store.stats()?,
+        crops_bytes,
+        crops_files,
+        recognizer: if r == fm::Recognizer::Arcface { "arcface" } else { "sface" }.to_string(),
+        model_version: fm::model_version(r).to_string(),
+        pack_installed: ai.faces.installed(),
+        eyes_available: ai.faces.eyes().is_some(),
+        arcface_available: ai.faces.arcface().is_some(),
+    })
+}
+
 /// Reverses the latest change; returns what it was.
 #[tauri::command]
 #[specta::specta]
@@ -374,9 +411,17 @@ pub async fn faces_delete_all(app: AppHandle, ai: State<'_, AiState>, state: Sta
     state.analysis_queue.cancel();
     ai.faces_store.delete_all()?;
     let dir = ai.faces_crops.clone();
-    let _ = tauri::async_runtime::spawn_blocking(move || std::fs::remove_dir_all(dir)).await;
+    let _ = tauri::async_runtime::spawn_blocking(move || clear_crops(&dir)).await;
     let _ = app.emit("faces-changed", ());
     Ok(())
+}
+
+/// Empties the face picture cache (the folder is made again by the next crop).
+fn clear_crops(dir: &Path) -> std::io::Result<()> {
+    match std::fs::remove_dir_all(dir) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
 }
 
 // ---- crops -------------------------------------------------------------------
@@ -578,6 +623,20 @@ mod tests {
         assert_eq!((out.width(), out.height()), (64, 64));
         assert!(out.get_pixel(32, 32)[0] > 200, "the face is in the middle");
         assert!(!file.with_extension("tmp").exists());
+    }
+
+    #[test]
+    fn delete_all_empties_the_crop_cache_and_stats_count_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let crops = dir.path().join("faces-crops");
+        assert_eq!(dir_stats(&crops), (0, 0));
+        std::fs::create_dir_all(&crops).unwrap();
+        std::fs::write(crops.join("1-64.jpg"), b"12345").unwrap();
+        std::fs::write(crops.join("2-64.jpg"), b"123").unwrap();
+        assert_eq!(dir_stats(&crops), (8, 2));
+        clear_crops(&crops).unwrap();
+        assert!(!crops.exists());
+        clear_crops(&crops).unwrap();
     }
 
     #[test]

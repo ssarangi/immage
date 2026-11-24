@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 pub const MAX_NAME: usize = 80;
 const UNDO_DEPTH: usize = 20;
 
@@ -91,11 +91,29 @@ CREATE TABLE people_not_same (
     person_b INTEGER NOT NULL,
     PRIMARY KEY (person_a, person_b)
 ) WITHOUT ROWID;
+", "
+-- the shot a file belongs to (shot_key), so counts are of photos and not of files
+ALTER TABLE photos ADD COLUMN shot TEXT;
+CREATE INDEX photos_shot ON photos(shot);
 "];
+
+/// The shot a file belongs to: its folder (a trailing `Processed` folder is the folder it was made from) and its
+/// file name without extension, lower case. A RAW, its JPG and the same-named copy in `Processed/` are one shot;
+/// a derivative with another name (`IMG_1-edit.jpg`) is not matched, since nothing says it is the same shot.
+pub fn shot_key(path: &str) -> String {
+    let p = Path::new(path);
+    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+    let mut dir = p.parent().unwrap_or(Path::new(""));
+    if dir.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.eq_ignore_ascii_case("processed")) {
+        dir = dir.parent().unwrap_or(dir);
+    }
+    format!("{}/{}", dir.to_string_lossy(), stem)
+}
 
 pub struct FaceStore {
     db: Mutex<Connection>,
     undo: Mutex<Vec<Undo>>,
+    path: Option<std::path::PathBuf>,
 }
 
 /// A face as the scan produces it.
@@ -148,6 +166,8 @@ pub struct ClusterRow {
     pub id: i64,
     pub rep_face_id: i64,
     pub size: u32,
+    /// The photos (shots) the group's faces are in.
+    pub photos: u32,
     /// Up to four faces of the group for a collage, the representative first.
     pub members: Vec<i64>,
 }
@@ -168,6 +188,28 @@ pub struct FaceTotals {
     pub ignored_people: u32,
     /// Photos the scan gave up on (could not be read).
     pub failed_photos: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct ModelCount {
+    pub model: String,
+    pub faces: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct StoreStats {
+    /// Files scanned, and the photos (shots) they make up.
+    pub files: u32,
+    pub photos: u32,
+    pub faces: u32,
+    pub people: u32,
+    pub ignored_people: u32,
+    pub groups: u32,
+    pub unassigned: u32,
+    pub rejected: u32,
+    pub failed: u32,
+    pub db_bytes: u64,
+    /// Faces per model version stored (more than one while a recognizer change is being re-scanned).
+    pub models: Vec<ModelCount>,
 }
 
 /// The photos of a person (confirmed first), one page of them and the total.
@@ -347,7 +389,7 @@ impl FaceStore {
             let _ = std::fs::create_dir_all(parent);
         }
         let db = Connection::open(path).map_err(|e| e.to_string())?;
-        Self::from_connection(db)
+        Self::from_connection(db).map(|s| FaceStore { path: Some(path.to_path_buf()), ..s })
     }
     pub fn from_connection(db: Connection) -> Result<Self, String> {
         db.busy_timeout(std::time::Duration::from_secs(5)).map_err(|e| e.to_string())?;
@@ -362,7 +404,16 @@ impl FaceStore {
                 .map_err(|e| e.to_string())?;
             version += 1;
         }
-        Ok(Self { db: Mutex::new(db), undo: Mutex::new(Vec::new()) })
+        // files scanned before shots were recorded get theirs now
+        {
+            let mut q = db.prepare("SELECT path FROM photos WHERE shot IS NULL").map_err(|e| e.to_string())?;
+            let paths: Vec<String> = q.query_map([], |r| r.get(0)).map_err(|e| e.to_string())?.collect::<Result<_, _>>().map_err(|e| e.to_string())?;
+            drop(q);
+            for p in paths {
+                db.execute("UPDATE photos SET shot=?2 WHERE path=?1", params![p, shot_key(&p)]).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(Self { db: Mutex::new(db), undo: Mutex::new(Vec::new()), path: None })
     }
     fn db(&self) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
         self.db.lock().map_err(|_| "face store lock poisoned".to_string())
@@ -436,9 +487,9 @@ impl FaceStore {
         }
         tx.execute("DELETE FROM faces WHERE path=?1", [path]).map_err(|e| e.to_string())?;
         tx.execute(
-            "INSERT INTO photos(path,fingerprint,model,scanned_at,width,height,status,error,companion_of) VALUES(?1,?2,?3,?4,?5,?6,'done',NULL,?7)
-             ON CONFLICT(path) DO UPDATE SET fingerprint=?2,model=?3,scanned_at=?4,width=?5,height=?6,status='done',error=NULL,companion_of=?7",
-            params![path, fingerprint, model, now(), width, height, companion_of],
+            "INSERT INTO photos(path,fingerprint,model,scanned_at,width,height,status,error,companion_of,shot) VALUES(?1,?2,?3,?4,?5,?6,'done',NULL,?7,?8)
+             ON CONFLICT(path) DO UPDATE SET fingerprint=?2,model=?3,scanned_at=?4,width=?5,height=?6,status='done',error=NULL,companion_of=?7,shot=?8",
+            params![path, fingerprint, model, now(), width, height, companion_of, shot_key(path)],
         )
         .map_err(|e| e.to_string())?;
         let mut ids = Vec::new();
@@ -509,9 +560,9 @@ impl FaceStore {
         let db = self.db()?;
         db.execute("DELETE FROM faces WHERE path=?1", [path]).map_err(|e| e.to_string())?;
         db.execute(
-            "INSERT INTO photos(path,fingerprint,model,scanned_at,width,height,status,error,companion_of) VALUES(?1,?2,?3,?4,0,0,?5,?6,NULL)
-             ON CONFLICT(path) DO UPDATE SET fingerprint=?2,model=?3,scanned_at=?4,width=0,height=0,status=?5,error=?6,companion_of=NULL",
-            params![path, fingerprint, model, now(), status, error],
+            "INSERT INTO photos(path,fingerprint,model,scanned_at,width,height,status,error,companion_of,shot) VALUES(?1,?2,?3,?4,0,0,?5,?6,NULL,?7)
+             ON CONFLICT(path) DO UPDATE SET fingerprint=?2,model=?3,scanned_at=?4,width=0,height=0,status=?5,error=?6,companion_of=NULL,shot=?7",
+            params![path, fingerprint, model, now(), status, error, shot_key(path)],
         )
         .map_err(|e| e.to_string())?;
         Ok(())
@@ -573,7 +624,7 @@ impl FaceStore {
             .prepare(
                 "SELECT p.id,p.name,p.state,
                    (SELECT COUNT(*) FROM faces f WHERE f.person_id=p.id AND f.state='confirmed'),
-                   (SELECT COUNT(DISTINCT f.path) FROM faces f WHERE f.person_id=p.id AND f.state='confirmed'),
+                   (SELECT COUNT(DISTINCT ph.shot) FROM faces f JOIN photos ph ON ph.path=f.path WHERE f.person_id=p.id AND f.state='confirmed'),
                    p.cover_face_id,p.cover_manual,
                    (SELECT COUNT(*) FROM faces f WHERE f.suggested_person=p.id AND f.state='unreviewed' AND f.person_id IS NULL)
                  FROM people p WHERE p.state='active' OR (?1 AND p.state='ignored')
@@ -614,6 +665,16 @@ impl FaceStore {
                 members.entry(c).or_default().push(f);
             }
         }
+        let mut shots: HashMap<i64, u32> = HashMap::new();
+        {
+            let mut q = db
+                .prepare("SELECT f.cluster_id,COUNT(DISTINCT p.shot) FROM faces f JOIN photos p ON p.path=f.path WHERE f.cluster_id IS NOT NULL AND f.state='unreviewed' AND f.person_id IS NULL GROUP BY f.cluster_id")
+                .map_err(|e| e.to_string())?;
+            for row in q.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, u32>(1)?))).map_err(|e| e.to_string())? {
+                let (c, n) = row.map_err(|e| e.to_string())?;
+                shots.insert(c, n);
+            }
+        }
         let mut q = db.prepare("SELECT id,rep_face_id,size FROM clusters ORDER BY size DESC, id").map_err(|e| e.to_string())?;
         let rows = q
             .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, u32>(2)?)))
@@ -621,7 +682,8 @@ impl FaceStore {
         let mut out = Vec::new();
         for row in rows {
             let (id, rep, size) = row.map_err(|e| e.to_string())?;
-            out.push(ClusterRow { id, rep_face_id: rep, size, members: members.remove(&id).unwrap_or_default() });
+            let photos = shots.get(&id).copied().unwrap_or(0);
+            out.push(ClusterRow { id, rep_face_id: rep, size, photos, members: members.remove(&id).unwrap_or_default() });
         }
         Ok(out)
     }
@@ -662,7 +724,7 @@ impl FaceStore {
         let db = self.db()?;
         let one = |sql: &str| -> Result<u32, String> { db.query_row(sql, [], |r| r.get(0)).map_err(|e| e.to_string()) };
         Ok(FaceTotals {
-            photos: one("SELECT COUNT(*) FROM photos WHERE status='done'")?,
+            photos: one("SELECT COUNT(DISTINCT shot) FROM photos WHERE status='done'")?,
             faces: one("SELECT COUNT(*) FROM faces WHERE state<>'rejected'")?,
             people: one("SELECT COUNT(*) FROM people WHERE state='active'")?,
             unreviewed: one("SELECT COUNT(*) FROM faces WHERE state='unreviewed' AND person_id IS NULL")?,
@@ -675,14 +737,19 @@ impl FaceStore {
         })
     }
 
-    /// Photos with a confirmed face of the person, then photos where only a suggested face is theirs; path order within each.
+    /// The files of a person's photos, confirmed first, then those with only a suggested face of theirs. All files are
+    /// returned (a RAW, its JPG and a same-named `Processed/` copy each appear), but files of one shot sit together, and
+    /// `total` counts shots, not files. Within a group of equal rank, path order. `offset` and `limit` count files.
     pub fn person_photos(&self, person: i64, offset: u32, limit: u32) -> Result<PersonPhotos, String> {
         let db = self.db()?;
-        let from = "(SELECT path, MAX(person_id=?1 AND state='confirmed') AS c FROM faces
-                      WHERE (person_id=?1 AND state='confirmed') OR (suggested_person=?1 AND state='unreviewed' AND person_id IS NULL)
-                      GROUP BY path)";
-        let total: u32 = db.query_row(&format!("SELECT COUNT(*) FROM {from}"), [person], |r| r.get(0)).map_err(|e| e.to_string())?;
-        let mut q = db.prepare(&format!("SELECT path FROM {from} ORDER BY c DESC, path LIMIT ?2 OFFSET ?3")).map_err(|e| e.to_string())?;
+        let inner = "SELECT f.path AS path, ph.shot AS shot, MAX(f.person_id=?1 AND f.state='confirmed') AS c
+                     FROM faces f JOIN photos ph ON ph.path=f.path
+                     WHERE (f.person_id=?1 AND f.state='confirmed') OR (f.suggested_person=?1 AND f.state='unreviewed' AND f.person_id IS NULL)
+                     GROUP BY f.path";
+        let total: u32 = db.query_row(&format!("SELECT COUNT(DISTINCT shot) FROM ({inner})"), [person], |r| r.get(0)).map_err(|e| e.to_string())?;
+        let mut q = db
+            .prepare(&format!("SELECT path FROM (SELECT path, shot, MAX(c) OVER (PARTITION BY shot) AS sc FROM ({inner})) ORDER BY sc DESC, shot, path LIMIT ?2 OFFSET ?3"))
+            .map_err(|e| e.to_string())?;
         let rows = q.query_map(params![person, limit.min(10_000), offset], |r| r.get(0)).map_err(|e| e.to_string())?;
         Ok(PersonPhotos { paths: rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?, total })
     }
@@ -779,6 +846,20 @@ impl FaceStore {
             narrow(&mut sets, paths("SELECT path FROM photos p WHERE status='done' AND NOT EXISTS (SELECT 1 FROM faces f WHERE f.path=p.path AND f.state<>'rejected')", vec![])?);
         }
         Ok(sets)
+    }
+
+    /// Read-only aggregates for the Faces card in Preferences.
+    pub fn stats(&self) -> Result<StoreStats, String> {
+        let t = self.totals()?;
+        let db = self.db()?;
+        let one = |sql: &str| -> Result<u32, String> { db.query_row(sql, [], |r| r.get(0)).map_err(|e| e.to_string()) };
+        let files = one("SELECT COUNT(*) FROM photos WHERE status='done'")?;
+        let mut q = db.prepare("SELECT model,COUNT(*) FROM faces GROUP BY model ORDER BY COUNT(*) DESC").map_err(|e| e.to_string())?;
+        let models: Vec<(String, u32)> = q.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).map_err(|e| e.to_string())?.collect::<Result<_, _>>().map_err(|e| e.to_string())?;
+        let db_bytes = self.path.as_ref().map_or(0, |p| {
+            ["", "-wal", "-shm"].iter().map(|x| std::fs::metadata(format!("{}{x}", p.display())).map_or(0, |m| m.len())).sum()
+        });
+        Ok(StoreStats { files, photos: t.photos, faces: t.faces, people: t.people, ignored_people: t.ignored_people, groups: t.groups, unassigned: t.unreviewed, rejected: t.ignored_faces, failed: t.failed_photos, db_bytes, models: models.into_iter().map(|(model, faces)| ModelCount { model, faces }).collect() })
     }
 
     /// Every confirmed face of an active person made by this model: what new faces are compared with.
@@ -1387,13 +1468,13 @@ mod tests {
     #[test]
     fn the_schema_is_created_once_and_a_newer_one_is_refused() {
         let s = store();
-        assert_eq!(s.schema_version().unwrap(), 2);
+        assert_eq!(s.schema_version().unwrap(), 3);
         // a database of the first version gains the pair tables and keeps its data
         let old = Connection::open_in_memory().unwrap();
         old.execute_batch(&format!("BEGIN; {} PRAGMA user_version = 1; COMMIT;", LADDER[0])).unwrap();
         old.execute("INSERT INTO people(name,created_at) VALUES('Ann',1)", []).unwrap();
         let migrated = FaceStore::from_connection(old).unwrap();
-        assert_eq!(migrated.schema_version().unwrap(), 2);
+        assert_eq!(migrated.schema_version().unwrap(), 3);
         assert_eq!(migrated.list_people(false).unwrap().len(), 1);
         assert!(migrated.face_links().unwrap().is_empty());
         let db = Connection::open_in_memory().unwrap();
@@ -1818,6 +1899,57 @@ mod tests {
         assert_eq!(ok(PeopleFilter { include: vec![ann], ..Default::default() }).len(), 5, "a removed person no longer filters");
         let too_many = PeopleFilter { include: (0..501).collect(), ..Default::default() };
         assert!(s.filter_paths(&too_many).is_err());
+    }
+
+    #[test]
+    fn a_shot_is_one_photo_whatever_files_it_has() {
+        assert_eq!(shot_key("/d/IMG_1.CR3"), shot_key("/d/img_1.jpg"));
+        assert_eq!(shot_key("/d/IMG_1.jpg"), shot_key("/d/Processed/IMG_1.jpg"));
+        assert_eq!(shot_key("/d/IMG_1.jpg"), shot_key("/d/processed/IMG_1.tif"));
+        assert_ne!(shot_key("/d/IMG_1.jpg"), shot_key("/d/IMG_10.jpg"));
+        assert_ne!(shot_key("/d/IMG_1.jpg"), shot_key("/e/IMG_1.jpg"), "another folder is another shot");
+        assert_ne!(shot_key("/d/IMG_1.jpg"), shot_key("/d/IMG_1-edit.jpg"), "a differently named derivative is not matched");
+        assert_ne!(shot_key("/d/IMG_1.jpg"), shot_key("/d/sub/Processed/IMG_1.jpg"));
+    }
+
+    #[test]
+    fn counts_are_of_shots_not_files() {
+        let s = store();
+        // two shots: a RAW + JPG + Processed triple, and a single JPG
+        let raw = scan(&s, "/d/A.arw", &[nf(0.1, 1.0)]);
+        let jpg = scan(&s, "/d/A.jpg", &[nf(0.1, 1.0)]);
+        let pro = scan(&s, "/d/Processed/A.jpg", &[nf(0.1, 1.0)]);
+        let other = scan(&s, "/d/B.jpg", &[nf(0.1, 0.9)]);
+        let p = s.create_person("Ann", &[raw[0], jpg[0], pro[0], other[0]]).unwrap();
+        let row = s.list_people(false).unwrap().into_iter().find(|r| r.id == p).unwrap();
+        assert_eq!((row.faces, row.photos), (4, 2), "four faces in two photos");
+        assert_eq!(s.totals().unwrap().photos, 2);
+        let pp = s.person_photos(p, 0, 10).unwrap();
+        assert_eq!(pp.total, 2);
+        assert_eq!(pp.paths.len(), 4, "every file is still returned");
+        // the files of a shot sit together
+        let at = |name: &str| pp.paths.iter().position(|x| x == name).unwrap();
+        let triple = [at("/d/A.arw"), at("/d/A.jpg"), at("/d/Processed/A.jpg")];
+        assert_eq!(triple.iter().max().unwrap() - triple.iter().min().unwrap(), 2, "{:?}", pp.paths);
+        // a group's photos too
+        let (x, y) = (scan(&s, "/e/C.arw", &[nf(0.1, 0.3)]), scan(&s, "/e/C.jpg", &[nf(0.1, 0.3)]));
+        s.set_analysis(&[], &[(x[0], vec![x[0], y[0]])]).unwrap();
+        let g = &s.list_clusters().unwrap()[0];
+        assert_eq!((g.size, g.photos), (2, 1));
+        let st = s.stats().unwrap();
+        assert_eq!((st.files, st.photos, st.faces, st.people, st.groups, st.unassigned, st.rejected, st.failed), (6, 3, 6, 1, 1, 2, 0, 0));
+        assert_eq!(st.models.len(), 1);
+    }
+
+    #[test]
+    fn a_version_two_store_gets_its_shots_filled_in() {
+        let old = Connection::open_in_memory().unwrap();
+        old.execute_batch(&format!("BEGIN; {} {} PRAGMA user_version = 2; COMMIT;", LADDER[0], LADDER[1])).unwrap();
+        old.execute("INSERT INTO photos(path,fingerprint,model,scanned_at,width,height) VALUES('/d/Processed/X.jpg','f','m',1,10,10)", []).unwrap();
+        let s = FaceStore::from_connection(old).unwrap();
+        assert_eq!(s.schema_version().unwrap(), 3);
+        assert_eq!(s.totals().unwrap().photos, 1);
+        assert!(s.stats().unwrap().db_bytes == 0, "an in-memory store has no file");
     }
 
     #[test]
