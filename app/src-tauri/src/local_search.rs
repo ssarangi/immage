@@ -174,6 +174,8 @@ fn in_scope(path: &Path, args: &LocalSearchArgs, roots: &[PathBuf], hidden: &[Pa
 /// query. Local cache IDs and embeddings still belong to the local index.
 #[derive(Default)]
 pub struct ProviderMetadata {
+    /// Find's People filter, resolved against faces.sqlite for this search (None when Faces is off or unused).
+    pub people: Option<crate::faces_store::PathSets>,
     scopes: Vec<(PathBuf, bool)>,
     images: BTreeMap<(String, u32), LibraryImage>,
 }
@@ -197,6 +199,11 @@ impl ProviderMetadata {
 
     fn hash(&self, hash: &mut Sha256, cancelled: &impl Fn() -> bool) -> Result<(), String> {
         hash.update(serde_json::to_vec(&self.scopes).map_err(|e| e.to_string())?);
+        // a page cursor is valid only while the faces it was made from have not changed
+        if let Some(p) = &self.people {
+            hash.update(p.allow.as_ref().map_or(u64::MAX, |a| a.len() as u64).to_le_bytes());
+            hash.update((p.deny.len() as u64).to_le_bytes());
+        }
         for image in self.images.values() {
             if cancelled() {
                 return Err("Search cancelled".into());
@@ -283,6 +290,7 @@ pub fn retrieve_with_provider(
     let filename_query = (args.mode == "filename").then(|| args.text.to_lowercase());
     let matches = |image: &LibraryImage, capture: Option<&str>| {
         search_filters::passes(image, capture, &args.filters, &args.remote)
+            && provider.people.as_ref().is_none_or(|p| p.passes(&image.path))
             && filename_query
                 .as_ref()
                 .is_none_or(|needle| image.filename.to_lowercase().contains(needle))

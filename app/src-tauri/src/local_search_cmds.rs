@@ -12,7 +12,7 @@ use std::{
         Arc, Mutex,
     },
 };
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, State, Manager};
 #[derive(Default)]
 pub struct Requests(Mutex<HashMap<u64, Arc<AtomicBool>>>);
 struct Ticket {
@@ -196,6 +196,12 @@ pub async fn local_search(
                     return Err("Search cancelled".into());
                 }
                 let mut provider = ProviderMetadata::default();
+                // Find's People row, only while Faces is on
+                if let (Some(people), Some(ai)) = (args.filters.people.as_ref(), app.try_state::<crate::pack_cmds::AiState>()) {
+                    if ai.faces.enabled() {
+                        provider.people = Some(ai.faces_store.filter_paths(people)?);
+                    }
+                }
                 if let Some(mapped) = config.mapped_root() {
                     for (scope, recursive) in provider_scopes(&args, &roots, &hidden, &mapped) {
                         if !config.covers(&scope) {

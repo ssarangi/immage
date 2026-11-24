@@ -317,6 +317,43 @@ pub async fn faces_merge_suggestions(ai: State<'_, AiState>) -> Result<Vec<crate
     .map_err(|e| e.to_string())?
 }
 
+/// The photos of a person, one page: confirmed first, then those with a suggested face of theirs.
+#[tauri::command]
+#[specta::specta]
+pub fn faces_person_photos(ai: State<'_, AiState>, person: i64, offset: u32, limit: u32) -> Result<crate::faces_store::PersonPhotos, String> {
+    ai.faces_store.person_photos(person, offset, limit.clamp(1, 5000))
+}
+
+/// The faces of one photo for the editor's overlay (read only, one indexed query).
+#[tauri::command]
+#[specta::specta]
+pub fn faces_photo_faces(ai: State<'_, AiState>, path: String) -> Result<Vec<crate::faces_store::PhotoFace>, String> {
+    ai.faces_store.photo_faces(&path)
+}
+
+/// What a Find People filter allows and denies, as paths, for a grid filtered on the page. Empty while Faces is off.
+#[derive(serde::Serialize, specta::Type)]
+pub struct FilterPaths {
+    /// Only these photos pass; None when the filter has no positive condition.
+    pub allow: Option<Vec<String>>,
+    /// These photos never pass.
+    pub deny: Vec<String>,
+}
+#[tauri::command]
+#[specta::specta]
+pub async fn faces_filter_paths(ai: State<'_, AiState>, people: crate::search_filters::PeopleFilter) -> Result<FilterPaths, String> {
+    if !ai.faces.enabled() {
+        return Ok(FilterPaths { allow: None, deny: Vec::new() });
+    }
+    let store = ai.faces_store.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let s = store.filter_paths(&people)?;
+        Ok(FilterPaths { allow: s.allow.map(|a| a.into_iter().collect()), deny: s.deny.into_iter().collect() })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Reverses the latest change; returns what it was.
 #[tauri::command]
 #[specta::specta]

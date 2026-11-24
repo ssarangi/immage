@@ -37,6 +37,11 @@ thresholds per recognizer are in `faces_models::thresholds`. `cargo test opt_in_
 Joining two groups (`faces_merge_groups`) and "Not the same" (`faces_not_same`) are remembered in `faces.sqlite`
 (`face_links`, `groups_not_same`, `people_not_same`, schema v2) by faces, not by group id, because groups are recomputed.
 
+## Person page, overlay, Find
+`faces_person_photos` and `faces_photo_faces` read faces.sqlite only. Find's `GridFilter.people` is resolved by
+`local_search_cmds` into allowed and denied paths (`faces_store::filter_paths`) and checked per photo in
+`local_search::retrieve_with_provider`; it does nothing while Faces is off.
+
 ## Network shares
 Faces never reads, stats or lists a path on a network share (judged from the mount table, `volumes::MountSnapshot`)
 unless the user allowed that source (`faces.network_sources`, `faces_network_source`) or asked for that folder with

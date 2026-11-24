@@ -170,6 +170,49 @@ pub struct FaceTotals {
     pub failed_photos: u32,
 }
 
+/// The photos of a person (confirmed first), one page of them and the total.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct PersonPhotos {
+    pub paths: Vec<String>,
+    pub total: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct EyePair {
+    pub left_open: f32,
+    pub right_open: f32,
+}
+
+/// A face of one photo for the editor's overlay. The box is in the picture's displayed orientation
+/// (faces are found on the oriented picture) and does not follow crops or rotations made in the editor.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+pub struct PhotoFace {
+    pub face: i64,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub person: Option<i64>,
+    pub name: Option<String>,
+    /// "confirmed", "suggested", "unassigned" or "rejected"
+    pub state: String,
+    pub detector_confidence: f32,
+    /// Only with the optional eye model, which this read never runs (`faces_eye_state` does).
+    pub eyes: Option<EyePair>,
+}
+
+/// Which photos a People filter allows: `allow` (when the filter names a positive condition) and `deny`.
+#[derive(Debug, Clone, Default)]
+pub struct PathSets {
+    pub allow: Option<std::collections::HashSet<String>>,
+    pub deny: std::collections::HashSet<String>,
+}
+impl PathSets {
+    pub fn passes(&self, path: &str) -> bool {
+        self.allow.as_ref().is_none_or(|a| a.contains(path)) && !self.deny.contains(path)
+    }
+}
+
 /// One side of a suggested pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -630,6 +673,112 @@ impl FaceStore {
             ignored_people: one("SELECT COUNT(*) FROM people WHERE state='ignored'")?,
             failed_photos: one("SELECT COUNT(*) FROM photos WHERE status='failed'")?,
         })
+    }
+
+    /// Photos with a confirmed face of the person, then photos where only a suggested face is theirs; path order within each.
+    pub fn person_photos(&self, person: i64, offset: u32, limit: u32) -> Result<PersonPhotos, String> {
+        let db = self.db()?;
+        let from = "(SELECT path, MAX(person_id=?1 AND state='confirmed') AS c FROM faces
+                      WHERE (person_id=?1 AND state='confirmed') OR (suggested_person=?1 AND state='unreviewed' AND person_id IS NULL)
+                      GROUP BY path)";
+        let total: u32 = db.query_row(&format!("SELECT COUNT(*) FROM {from}"), [person], |r| r.get(0)).map_err(|e| e.to_string())?;
+        let mut q = db.prepare(&format!("SELECT path FROM {from} ORDER BY c DESC, path LIMIT ?2 OFFSET ?3")).map_err(|e| e.to_string())?;
+        let rows = q.query_map(params![person, limit.min(10_000), offset], |r| r.get(0)).map_err(|e| e.to_string())?;
+        Ok(PersonPhotos { paths: rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?, total })
+    }
+
+    /// The faces of one photo, left to right: one indexed read, no model and no file access.
+    pub fn photo_faces(&self, path: &str) -> Result<Vec<PhotoFace>, String> {
+        let db = self.db()?;
+        let mut q = db
+            .prepare(
+                "SELECT f.id,f.x,f.y,f.w,f.h,f.person_id,f.suggested_person,f.state,f.score,pc.name,ps.name
+                 FROM faces f LEFT JOIN people pc ON pc.id=f.person_id LEFT JOIN people ps ON ps.id=f.suggested_person
+                 WHERE f.path=?1 ORDER BY f.x, f.id",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = q
+            .query_map([path], |r| {
+                let (person, suggested, state): (Option<i64>, Option<i64>, String) = (r.get(5)?, r.get(6)?, r.get(7)?);
+                let (name, sname): (Option<String>, Option<String>) = (r.get(9)?, r.get(10)?);
+                let (state, person, name) = if state == "rejected" {
+                    ("rejected", None, None)
+                } else if person.is_some() {
+                    ("confirmed", person, name)
+                } else if suggested.is_some() {
+                    ("suggested", suggested, sname)
+                } else {
+                    ("unassigned", None, None)
+                };
+                Ok(PhotoFace { face: r.get(0)?, x: r.get(1)?, y: r.get(2)?, w: r.get(3)?, h: r.get(4)?, person, name, state: state.to_string(), detector_confidence: r.get(8)?, eyes: None })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
+    /// An id as it stands now: a merged person is the one they were merged into, a removed or unknown one nobody.
+    fn live_person(db: &Connection, mut id: i64) -> Result<Option<i64>, String> {
+        for _ in 0..16 {
+            let row: Option<(String, Option<i64>)> =
+                db.query_row("SELECT state,merged_into FROM people WHERE id=?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(|e| e.to_string())?;
+            match row {
+                Some((s, _)) if s == "active" => return Ok(Some(id)),
+                Some((s, Some(next))) if s == "merged" => id = next,
+                _ => return Ok(None),
+            }
+        }
+        Ok(None)
+    }
+
+    /// The photos a People filter allows or denies (see `PeopleFilter`). Merged people count as who they became;
+    /// removed or unknown people are ignored, so a saved filter with one still works.
+    pub fn filter_paths(&self, f: &crate::search_filters::PeopleFilter) -> Result<PathSets, String> {
+        use std::collections::HashSet;
+        let max = crate::search_filters::MAX_FILTER_PEOPLE;
+        if f.include.len() > max || f.exclude.len() > max {
+            return Err("Too many people in the filter".into());
+        }
+        let db = self.db()?;
+        let live = |ids: &[i64]| -> Result<Vec<i64>, String> {
+            let mut v = Vec::new();
+            for id in ids {
+                if let Some(p) = Self::live_person(&db, *id)? {
+                    if !v.contains(&p) {
+                        v.push(p);
+                    }
+                }
+            }
+            Ok(v)
+        };
+        let (include, exclude) = (live(&f.include)?, live(&f.exclude)?);
+        let paths = |sql: &str, args: Vec<rusqlite::types::Value>| -> Result<HashSet<String>, String> {
+            let mut q = db.prepare(sql).map_err(|e| e.to_string())?;
+            let rows = q.query_map(rusqlite::params_from_iter(args), |r| r.get::<_, String>(0)).map_err(|e| e.to_string())?;
+            rows.collect::<Result<HashSet<_>, _>>().map_err(|e| e.to_string())
+        };
+        let marks = |n: usize| vec!["?"; n].join(",");
+        let ids = |v: &[i64]| -> Vec<rusqlite::types::Value> { v.iter().map(|i| (*i).into()).collect() };
+        let mut sets = PathSets::default();
+        let mut narrow = |sets: &mut PathSets, s: HashSet<String>| {
+            sets.allow = Some(match sets.allow.take() {
+                Some(a) => a.intersection(&s).cloned().collect(),
+                None => s,
+            });
+        };
+        if !include.is_empty() {
+            let having = if f.together { format!(" GROUP BY path HAVING COUNT(DISTINCT person_id)={}", include.len()) } else { " GROUP BY path".into() };
+            narrow(&mut sets, paths(&format!("SELECT path FROM faces WHERE state='confirmed' AND person_id IN ({}){having}", marks(include.len())), ids(&include))?);
+        }
+        if !exclude.is_empty() {
+            sets.deny = paths(&format!("SELECT DISTINCT path FROM faces WHERE state='confirmed' AND person_id IN ({})", marks(exclude.len())), ids(&exclude))?;
+        }
+        if f.unnamed {
+            narrow(&mut sets, paths("SELECT DISTINCT path FROM faces WHERE state='unreviewed' AND person_id IS NULL", vec![])?);
+        }
+        if f.none {
+            narrow(&mut sets, paths("SELECT path FROM photos p WHERE status='done' AND NOT EXISTS (SELECT 1 FROM faces f WHERE f.path=p.path AND f.state<>'rejected')", vec![])?);
+        }
+        Ok(sets)
     }
 
     /// Every confirmed face of an active person made by this model: what new faces are compared with.
@@ -1590,6 +1739,85 @@ mod tests {
         assert!(!s.groups_not_same().unwrap().is_empty() && !s.face_links().unwrap().is_empty());
         scan(&s, "/a.jpg", &[nf(0.4, 0.5)]);
         assert!(s.groups_not_same().unwrap().is_empty() && s.face_links().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_persons_photos_list_confirmed_first_with_a_total_and_pages() {
+        let s = store();
+        let a = scan(&s, "/a.jpg", &[nf(0.1, 1.0), nf(0.5, 0.2)]);
+        let b = scan(&s, "/b.jpg", &[nf(0.1, 0.9)]);
+        let c = scan(&s, "/c.jpg", &[nf(0.1, 0.8)]);
+        scan(&s, "/d.jpg", &[nf(0.1, 0.1)]);
+        let p = s.create_person("Ann", &[c[0]]).unwrap();
+        s.set_analysis(&[(a[0], p, 0.6), (b[0], p, 0.5)], &[]).unwrap();
+        let all = s.person_photos(p, 0, 10).unwrap();
+        assert_eq!((all.total, all.paths.clone()), (3, vec!["/c.jpg".to_string(), "/a.jpg".into(), "/b.jpg".into()]), "confirmed first, then suggested, by path");
+        let page = s.person_photos(p, 1, 1).unwrap();
+        assert_eq!((page.total, page.paths), (3, vec!["/a.jpg".to_string()]));
+        s.reject_for_person(p, &[a[0]]).unwrap();
+        assert_eq!(s.person_photos(p, 0, 10).unwrap().total, 2);
+        assert_eq!(s.person_photos(999, 0, 10).unwrap(), PersonPhotos { paths: vec![], total: 0 });
+    }
+
+    #[test]
+    fn a_photos_faces_carry_name_state_and_confidence_and_read_fast() {
+        let s = store();
+        let ids = scan(&s, "/a.jpg", &[nf(0.6, 1.0), nf(0.1, 0.9), nf(0.35, 0.5), nf(0.8, 0.3)]);
+        let p = s.create_person("Ann", &[ids[1]]).unwrap();
+        let q = s.create_person("Bob", &[]).unwrap();
+        s.set_analysis(&[(ids[2], q, 0.5)], &[]).unwrap();
+        s.reject_faces(&[ids[3]]).unwrap();
+        let faces = s.photo_faces("/a.jpg").unwrap();
+        let by: Vec<(String, Option<String>)> = faces.iter().map(|f| (f.state.clone(), f.name.clone())).collect();
+        assert_eq!(faces.iter().map(|f| f.face).collect::<Vec<_>>(), [ids[1], ids[2], ids[0], ids[3]], "left to right");
+        assert_eq!(by, [("confirmed".into(), Some("Ann".into())), ("suggested".into(), Some("Bob".into())), ("unassigned".into(), None), ("rejected".into(), None)]);
+        assert_eq!((faces[0].person, faces[1].person), (Some(p), Some(q)));
+        assert!((faces[0].detector_confidence - 0.9).abs() < 1e-6 && faces[0].eyes.is_none());
+        assert!(s.photo_faces("/none.jpg").unwrap().is_empty());
+        // a library of 2000 photos: one photo's faces come back in well under 5 ms
+        for i in 0..2000 {
+            scan(&s, &format!("/lib/{i}.jpg"), &[nf(0.1, 1.0), nf(0.5, 0.2), nf(0.8, 0.1)]);
+        }
+        let started = std::time::Instant::now();
+        for i in 0..200 {
+            assert_eq!(s.photo_faces(&format!("/lib/{}.jpg", i * 9)).unwrap().len(), 3);
+        }
+        let each = started.elapsed().as_secs_f64() * 1000.0 / 200.0;
+        assert!(each < 5.0, "{each} ms per photo");
+    }
+
+    #[test]
+    fn the_people_filter_includes_excludes_and_finds_photos_without_or_with_unnamed_faces() {
+        use crate::search_filters::PeopleFilter;
+        let s = store();
+        let a = scan(&s, "/a.jpg", &[nf(0.1, 1.0), nf(0.5, 0.2)]); // Ann and Bob
+        let b = scan(&s, "/b.jpg", &[nf(0.1, 0.9)]); // Ann
+        let c = scan(&s, "/c.jpg", &[nf(0.1, 0.8), nf(0.5, 0.4)]); // Bob and an unnamed face
+        scan(&s, "/d.jpg", &[]); // no faces
+        scan(&s, "/e.jpg", &[nf(0.1, 0.7)]); // an unnamed face only
+        let ann = s.create_person("Ann", &[a[0], b[0]]).unwrap();
+        let bob = s.create_person("Bob", &[a[1], c[0]]).unwrap();
+        let ok = |f: PeopleFilter| -> Vec<&'static str> {
+            let sets = s.filter_paths(&f).unwrap();
+            ["/a.jpg", "/b.jpg", "/c.jpg", "/d.jpg", "/e.jpg"].into_iter().filter(|p| sets.passes(p)).collect()
+        };
+        assert_eq!(ok(PeopleFilter::default()), ["/a.jpg", "/b.jpg", "/c.jpg", "/d.jpg", "/e.jpg"], "an empty filter allows everything");
+        assert_eq!(ok(PeopleFilter { include: vec![ann], ..Default::default() }), ["/a.jpg", "/b.jpg"]);
+        assert_eq!(ok(PeopleFilter { include: vec![ann, bob], ..Default::default() }), ["/a.jpg", "/b.jpg", "/c.jpg"], "any of them");
+        assert_eq!(ok(PeopleFilter { include: vec![ann, bob], together: true, ..Default::default() }), ["/a.jpg"], "all together");
+        assert_eq!(ok(PeopleFilter { exclude: vec![ann], ..Default::default() }), ["/c.jpg", "/d.jpg", "/e.jpg"]);
+        assert_eq!(ok(PeopleFilter { include: vec![bob], exclude: vec![ann], ..Default::default() }), ["/c.jpg"]);
+        assert_eq!(ok(PeopleFilter { none: true, ..Default::default() }), ["/d.jpg"]);
+        assert_eq!(ok(PeopleFilter { unnamed: true, ..Default::default() }), ["/c.jpg", "/e.jpg"]);
+        assert_eq!(ok(PeopleFilter { none: true, unnamed: true, ..Default::default() }), Vec::<&str>::new());
+        // a merged person is who they became; a removed or unknown one is ignored
+        s.merge(bob, ann).unwrap();
+        assert_eq!(ok(PeopleFilter { include: vec![bob], ..Default::default() }), ["/a.jpg", "/b.jpg", "/c.jpg"]);
+        assert_eq!(ok(PeopleFilter { include: vec![999], ..Default::default() }), ["/a.jpg", "/b.jpg", "/c.jpg", "/d.jpg", "/e.jpg"]);
+        s.set_ignored(ann, true).unwrap();
+        assert_eq!(ok(PeopleFilter { include: vec![ann], ..Default::default() }).len(), 5, "a removed person no longer filters");
+        let too_many = PeopleFilter { include: (0..501).collect(), ..Default::default() };
+        assert!(s.filter_paths(&too_many).is_err());
     }
 
     #[test]

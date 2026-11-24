@@ -2,9 +2,26 @@
 // Copyright (C) 2026 the Immage authors
 use crate::{immich_search::SearchArgs, typed_library::LibraryImage};
 use chrono::NaiveDate;
+/// Photos by the people in them. `include` matches photos with any of those people (all of them when
+/// `together`), `exclude` photos with none of them, `none` photos with no faces, `unnamed` photos with a face
+/// nobody is named for. Only confirmed faces count as a person being in a photo.
+#[derive(Default, Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(default, deny_unknown_fields, rename_all = "camelCase")]
+pub struct PeopleFilter {
+    pub include: Vec<i64>,
+    pub exclude: Vec<i64>,
+    pub together: bool,
+    pub none: bool,
+    pub unnamed: bool,
+}
+/// The most people one filter may name (they travel as SQL parameters).
+pub const MAX_FILTER_PEOPLE: usize = 500;
+
 #[derive(Default, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct GridFilter {
+    /// Find's People row (faces_store.rs `filter_paths`); ignored while Faces is off.
+    pub people: Option<PeopleFilter>,
     pub min_rating: u8,
     pub rejected: String,
     pub edited: String,
@@ -48,6 +65,7 @@ pub fn validate(f: &GridFilter, r: &SearchArgs) -> Result<(), String> {
         || !matches!(f.rejected.as_str(), "" | "all" | "hide" | "only")
         || !matches!(f.edited.as_str(), "" | "all" | "edited" | "unedited")
         || f.labels > 31
+        || f.people.as_ref().is_some_and(|p| p.include.len() > MAX_FILTER_PEOPLE || p.exclude.len() > MAX_FILTER_PEOPLE)
     {
         return Err("Invalid local search filter".into());
     }
@@ -240,5 +258,17 @@ mod tests {
         assert_eq!(decimal(2.25, 1).as_deref(), Some("2.3"));
         assert_eq!(decimal(35.0, 0).as_deref(), Some("35"));
         assert!(decimal(f64::NAN, 1).is_none());
+    }
+
+    #[test]
+    fn the_people_filter_parses_with_defaults_and_is_capped() {
+        let f: GridFilter = serde_json::from_str(r#"{"people":{"include":[1,2],"together":true}}"#).unwrap();
+        let p = f.people.clone().unwrap();
+        assert_eq!((p.include, p.exclude, p.together, p.none, p.unnamed), (vec![1, 2], vec![], true, false, false));
+        assert!(serde_json::from_str::<GridFilter>(r#"{"people":{"nobody":1}}"#).is_err(), "unknown fields are refused");
+        assert!(serde_json::from_str::<GridFilter>("{}").unwrap().people.is_none());
+        assert!(validate(&f, &SearchArgs::default()).is_ok());
+        let big = GridFilter { people: Some(PeopleFilter { include: (0..501).collect(), ..Default::default() }), ..Default::default() };
+        assert!(validate(&big, &SearchArgs::default()).is_err());
     }
 }

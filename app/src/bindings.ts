@@ -170,6 +170,11 @@ export const commands = {
 	facesMergeSuggestions: () => __TAURI_INVOKE<MergeSuggestion[]>("faces_merge_suggestions"),
 	/**  Joins two unnamed groups without naming them (undoable). The analysis keeps them together afterwards. */
 	facesMergeGroups: (fromGroup: number, intoGroup: number) => __TAURI_INVOKE<null>("faces_merge_groups", { fromGroup, intoGroup }),
+	/**  The photos of a person, one page: confirmed first, then those with a suggested face of theirs. */
+	facesPersonPhotos: (person: number, offset: number, limit: number) => __TAURI_INVOKE<PersonPhotos>("faces_person_photos", { person, offset, limit }),
+	/**  The faces of one photo for the editor's overlay (read only, one indexed query). */
+	facesPhotoFaces: (path: string) => __TAURI_INVOKE<PhotoFace[]>("faces_photo_faces", { path }),
+	facesFilterPaths: (people: PeopleFilter) => __TAURI_INVOKE<FilterPaths>("faces_filter_paths", { people }),
 	/**
 	 *  "Not the same" for two groups, two people, or a group and a person; remembered, so the suggestions and the
 	 *  automatic merge leave the pair alone (undoable).
@@ -1207,6 +1212,11 @@ export type ExposureMedian = {
 	iso: number | null,
 };
 
+export type EyePair = {
+	left_open: number | null,
+	right_open: number | null,
+};
+
 export type EyeState = {
 	/**  False when the user has not supplied the eye model: nothing was computed. */
 	available: boolean,
@@ -1330,6 +1340,14 @@ export type FilmStock = {
 export type FilmStocks = {
 	pack: FilmPack | null,
 	stocks: FilmStock[],
+};
+
+/**  What a Find People filter allows and denies, as paths, for a grid filtered on the page. Empty while Faces is off. */
+export type FilterPaths = {
+	/**  Only these photos pass; None when the filter has no positive condition. */
+	allow: string[] | null,
+	/**  These photos never pass. */
+	deny: string[],
 };
 
 export type FocalBucketId = "uw" | "wide" | "normal" | "portrait" | "tele" | "super";
@@ -1496,6 +1514,8 @@ export type GpuEditState = {
 };
 
 export type GridFilter = {
+	/**  Find's People row (faces_store.rs `filter_paths`); ignored while Faces is off. */
+	people?: PeopleFilter | null,
 	minRating?: number,
 	rejected?: string,
 	edited?: string,
@@ -2203,6 +2223,25 @@ export type PendingRoot = {
 	pending: number,
 };
 
+/**
+ *  Photos by the people in them. `include` matches photos with any of those people (all of them when
+ *  `together`), `exclude` photos with none of them, `none` photos with no faces, `unnamed` photos with a face
+ *  nobody is named for. Only confirmed faces count as a person being in a photo.
+ */
+export type PeopleFilter = {
+	include?: number[],
+	exclude?: number[],
+	together?: boolean,
+	none?: boolean,
+	unnamed?: boolean,
+};
+
+/**  The photos of a person (confirmed first), one page of them and the total. */
+export type PersonPhotos = {
+	paths: string[],
+	total: number,
+};
+
 export type PersonRow = {
 	id: number,
 	name: string,
@@ -2213,6 +2252,25 @@ export type PersonRow = {
 	cover_manual: boolean,
 	/**  Unreviewed faces the analysis suggests for this person. */
 	suggestions: number,
+};
+
+/**
+ *  A face of one photo for the editor's overlay. The box is in the picture's displayed orientation
+ *  (faces are found on the oriented picture) and does not follow crops or rotations made in the editor.
+ */
+export type PhotoFace = {
+	face: number,
+	x: number | null,
+	y: number | null,
+	w: number | null,
+	h: number | null,
+	person: number | null,
+	name: string | null,
+	/**  "confirmed", "suggested", "unassigned" or "rejected" */
+	state: string,
+	detector_confidence: number | null,
+	/**  Only with the optional eye model, which this read never runs (`faces_eye_state` does). */
+	eyes: EyePair | null,
 };
 
 /**  What the analysis knows about one photo, for the Keywording card's Auto-keywords group. */
