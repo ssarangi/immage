@@ -5826,6 +5826,8 @@
   "cull.badge.reject": "Reject",
   "cull.badge.best": "Best",
   "cull.badge.set": "Set {n}",
+  "cull.eyes.closed": "Eyes closed",
+  "cull.eyes.semi": "Eyes half closed",
   "cull.inspector.title": "Photo inspector",
   "cull.inspector.decision": "Decision",
   "cull.verdict.keep": "Keep",

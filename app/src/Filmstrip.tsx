@@ -17,6 +17,7 @@ import { t } from "./i18n";
 import { badgeOf } from "./cullModel";
 import { SmoothWheel } from "./smoothWheel";
 import { useDecision } from "./cullStore";
+import { EyeBadge } from "./EyeBadge";
 
 // the gaps between cells (styles.css, .filmstrip and .filmstrip.grid)
 const STRIP_GAP = 3, GRID_GAP = 6;
@@ -330,6 +331,7 @@ export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, typ
       <div className="thumb-image"><ThumbCanvas loader={loader} imgid={i.imgid} dogEar={!!i.copy} />
         {cull && <span className={`cull-badge ${badgeOf(cull)}`}>{{ best: "★", keep: "✓", reject: "✕" }[badgeOf(cull)]} {t(`cull.badge.${badgeOf(cull)}`)}
           {cull.group !== null && <span className="cull-badge-set"> · {t("cull.badge.set", { n: cull.group })}</span>}</span>}
+        {!isRemote(i) && <EyeBadge path={i.path} />}
       </div>
       {/* rated without opening the photo, as Lightroom's filmstrip does;
           an Immich result shows Immich's rating, set only once opened */}

@@ -5826,6 +5826,8 @@
   "cull.badge.reject": "Rejeter",
   "cull.badge.best": "Meilleure",
   "cull.badge.set": "Groupe {n}",
+  "cull.eyes.closed": "Yeux fermés",
+  "cull.eyes.semi": "Yeux mi-clos",
   "cull.inspector.title": "Inspecteur de photo",
   "cull.inspector.decision": "Décision",
   "cull.verdict.keep": "Garder",

@@ -8,7 +8,7 @@
 // backend only through `PeopleApi`, so the harness runs the real view on fixtures.
 import { useSyncExternalStore } from "react";
 import { commands } from "./commands";
-import type { ClusterRow, FaceFilter, FaceRow, FacesSettings, FacesStats, FacesStatus, MergeSuggestion, PersonRow, Side } from "./bindings";
+import type { ClusterRow, FaceFilter, FaceRow, EyeMode, FacesSettings, FacesStats, FacesStatus, PhotoEyes, MergeSuggestion, PersonRow, Side } from "./bindings";
 import { settings } from "./settings";
 import { fromBackend } from "./faceOverlayModel";
 import { dropFaceSets, setFaceSource, type FaceFilter as PeopleQuery } from "./facesFilter";
@@ -51,6 +51,7 @@ export type PeopleApi = {
   setStrictness(level: string): Promise<FacesSettings>;
   setDetectSize(size: number): Promise<FacesSettings>;
   reprocess(): Promise<number>;
+  eyesFor(paths: string[], mode: EyeMode | null): Promise<PhotoEyes[]>;
   setRecognizer(kind: string): Promise<FacesSettings>;
   mergeGroups(from: number, into: number): Promise<void>;
   notSame(a: Side, b: Side): Promise<void>;
@@ -91,6 +92,7 @@ const real: PeopleApi = {
   setStrictness: (level) => commands.facesSetStrictness(level),
   setDetectSize: (size) => commands.facesSetDetectSize(size),
   reprocess: () => commands.facesReprocess(),
+  eyesFor: (paths, mode) => commands.facesEyesFor(paths, mode),
   setRecognizer: (kind) => commands.facesSetRecognizer(kind),
   mergeGroups: async (from, into) => { await commands.facesMergeGroups(from, into); },
   notSame: async (a, b) => { await commands.facesNotSame(a, b); },
@@ -148,6 +150,7 @@ export function setPeople(patch: Partial<PeopleState>) {
   listeners.forEach((l) => l());
 }
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
+export const subscribePeople = subscribe;
 export const usePeople = () => useSyncExternalStore(subscribe, peopleState);
 export const usePeopleOn = () => useSyncExternalStore(subscribe, () => state.on);
 export const usePeopleBadge = () => useSyncExternalStore(subscribe, () => needsReview(state.status));

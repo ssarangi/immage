@@ -181,3 +181,11 @@ test('the scope chip names the folder, also when only faces.scope was set (no fo
     assert.equal(r.strip[0], 'Finding faces: 36 of 333 photos');
   }
 });
+
+test('closed-eye glyphs on thumbnails: asked for after a pause, one window at a time, no cell moves, nothing without an eye model', { skip }, () => {
+  const r = report(dump('shift=1&view=eyes&theme=dark', 1440, 900, [], 60000));
+  assert.equal(r.error, undefined, r.error);
+  assert.deepEqual(r.failures, []);
+  assert.deepEqual(r.firstCalls, [20]);
+  assert.ok(r.badges > 3);
+});

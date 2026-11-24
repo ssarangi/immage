@@ -27,8 +27,10 @@ import { PeopleView } from "../src/PeopleView";
 import { FaceOverlay } from "../src/FaceOverlay";
 import { PeopleCard } from "../src/PeopleCard";
 import { runOverlayTest } from "./facesOverlayTest";
+import { EyeBadge } from "../src/EyeBadge";
+import { runEyesTest } from "./facesEyesTest";
 import { settings } from "../src/settings";
-import { peopleState, refreshAll, resetPeople, setPeopleApi, setPeopleOn, setScanFolderTotal, startPeople, type PeopleApi } from "../src/peopleStore";
+import { peopleState, refreshAll, resetPeople, setPeople, setPeopleApi, setPeopleOn, setScanFolderTotal, startPeople, type PeopleApi } from "../src/peopleStore";
 import { runPeopleShift } from "./peopleShift";
 
 const q = new URLSearchParams(location.search);
@@ -109,7 +111,7 @@ const faceRow = (f: F): FaceRow => ({ id: f.id, path: f.path, x: 0.2, y: 0.2, w:
 const status = (): FacesStatus => {
   const unrev = db.faces.filter((f) => f.state === "unreviewed" && f.person === null);
   const groups = new Set(unrev.filter((f) => f.cluster !== null).map((f) => f.cluster)).size;
-  return { enabled: scan.enabled, installed: scan.installed, eyes_available: false, scanned: scan.scanned, faces_found: db.faces.length, pending: scan.pending, folders_waiting: scan.fw,
+  return { enabled: scan.enabled, installed: scan.installed, eyes_available: eyesAvail, scanned: scan.scanned, faces_found: db.faces.length, pending: scan.pending, folders_waiting: scan.fw,
     infer_ms: scan.pending && !scan.fw ? 300 : null, health: scan.health, failure: scan.failure, undo: undoStack.length ? "change" : null, offline_folders: scan.offline, recognizer: "sface",
     skipped_network_sources: scan.net,
     totals: { photos: scan.photos ?? db.faces.length, failed_photos: scan.failed, ignored_faces: db.faces.filter((f) => f.state === "rejected").length, ignored_people: db.people.filter((p) => p.state === "ignored").length,
@@ -129,6 +131,8 @@ const liveGroups = (): ClusterRow[] => {
   return [...by].filter(([, ids]) => ids.length >= 2).map(([id, ids]): ClusterRow => ({ id, rep_face_id: ids[0], size: ids.length, photos: ids.length, members: ids.slice(0, 4) }));
 };
 let ghosts: ClusterRow[] = [];
+const eyeCalls: number[] = [];
+let eyesAvail = q.get("view") === "eyes" && q.get("eyes") !== "0";
 let suggestGroup = -1;   // the group the test wants to look like someone: one that is on screen
 const notSamePairs = new Set<string>();   // pairs the user said are not the same
 const pairKey = (kind: string, a: number, b: number) => `${kind}:${Math.min(a, b)}:${Math.max(a, b)}`;
@@ -218,6 +222,8 @@ const fake: PeopleApi = {
   },
   settings: () => wait({ enabled: scan.enabled, scope: folderScope ? "folder" : "catalog", strictness: "balanced", recognizer: "sface", detect_size: 1024, arcface_available: false }),
   setRecognizer: () => fake.settings(), setStrictness: () => fake.settings(), setDetectSize: () => fake.settings(), reprocess: () => { calls.push("reprocess"); return wait(db.faces.length); },
+  // the eye verdicts: every 3rd photo closed, every 7th half closed, every 11th unknown (the rest open); each call is logged
+  eyesFor: (paths) => { eyeCalls.push(paths.length); return wait(paths.map((path) => { const n = Number(path.match(/(\d+)\.jpg$/)?.[1] ?? 0); return { path, state: n % 11 === 0 ? null : n % 3 === 0 ? "closed" as const : n % 7 === 0 ? "semi" as const : "open" as const, primaryFace: n, faces: 1 }; })); },
   mergeGroups: (from, into) => { mutate(`mergeGroups:${from}:${into}`, () => { for (const f of db.faces) if (f.cluster === from) f.cluster = into; }); return wait(undefined); },
   notSame: (a: Side, b: Side) => { mutate(`notSame:${a.kind}:${a.id}:${b.id}`, () => { notSamePairs.add(pairKey(a.kind, a.id, b.id)); }); return wait(undefined); },
   undo: () => { const prev = undoStack.pop(); calls.push("undo"); if (!prev) return wait(null); db = prev; sizes = null; ghosts = []; return wait("undone"); },
@@ -323,4 +329,30 @@ function OverlayStage() {
     </div>
   );
 }
-createRoot(document.getElementById("root")!).render(q.get("view") === "overlay" ? <OverlayStage /> : <Harness />);
+// ?view=eyes: 400 thumbnails of which 20 are mounted at a time, like a grid; the eye glyphs arrive without moving a cell
+function EyesStage() {
+  const [from, setFrom] = useState(0);
+  useEffect(() => {
+    const h = { eyeCalls, setFrom, scan, fake, calls, setStatus: (eyes: boolean) => { eyesAvail = eyes; setPeople({ status: status() }); } };
+    (window as unknown as { __h: unknown }).__h = h;
+    scan.enabled = true; scan.installed = true;
+    const stop = startPeople();
+    resetPeople({ on: false });
+    void refreshAll(true).then(() => {
+      setPeople({ status: status() });
+      document.body.dataset.ready = "1";
+      if (q.get("shift") === "1") void runEyesTest().then((r) => r, (e) => ({ ok: false, error: String(e?.stack ?? e) }))
+        .then((r) => { const el = document.getElementById("shift-report")!; el.textContent = JSON.stringify(r); el.dataset.done = "1"; });
+    });
+    return stop;
+  }, []);
+  return (
+    <div className="ov-stage" style={{ width: 800, display: "grid", gridTemplateColumns: "repeat(5, 150px)", gap: 8, padding: 12 }}>
+      {Array.from({ length: 20 }, (_, k) => from + k).map((n) => {
+        const path = `/synthetic/IMG_${String(n).padStart(4, "0")}.jpg`;
+        return <div key={n} className="thumb" data-n={n} style={{ position: "relative", height: 100, background: "#345" }}><div className="thumb-image" style={{ position: "absolute", inset: 0 }}><EyeBadge path={path} /></div></div>;
+      })}
+    </div>
+  );
+}
+createRoot(document.getElementById("root")!).render(q.get("view") === "eyes" ? <EyesStage /> : q.get("view") === "overlay" ? <OverlayStage /> : <Harness />);
