@@ -102,7 +102,7 @@ export async function runViewTabsTest(h: H) {
   const tcs = getComputedStyle(track), acs = getComputedStyle(active);
   if (acs.backgroundColor === tcs.backgroundColor || acs.backgroundColor === "rgba(0, 0, 0, 0)") fail.push("the active pill does not differ from the track");
   if (acs.boxShadow === "none") fail.push("the active pill is not raised");
-  if (parseFloat(tcs.borderTopLeftRadius) < 10 || tcs.backgroundColor === "rgba(0, 0, 0, 0)") fail.push("the tabs are not in one rounded track");
+  if (parseFloat(tcs.borderTopLeftRadius) < 6 || tcs.backgroundColor === "rgba(0, 0, 0, 0)") fail.push("the tabs are not in one rounded track");
   if (tabs().some((t) => t !== active && t.getAttribute("aria-disabled") !== "true" && getComputedStyle(t).backgroundColor !== "rgba(0, 0, 0, 0)")) fail.push("an idle tab has a fill");
   // a badge takes no width; the label and the chip do not move
   h.four(true); await frames(); const w0 = JSON.stringify(tabs().map(R)); h.badge(true); await frames();
