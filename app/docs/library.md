@@ -631,11 +631,13 @@ The window asks:
   that is marked as highlights.
 - **Blur threshold**: a single photo softer than this is rejected as blurry.
 - **Advanced > Similarity**: how alike two photos must be to count as one set.
-- **Advanced > Closed eyes** (with People on): **Main subject** (default) lets only the largest, most frontal face
+- **Count closed eyes in the score (experimental)** (with People on, off by default): the detector cannot tell shut
+  eyes from a downward gaze (about a third of its "closed" verdicts are truly shut), so it is opt-in. It lowers a
+  frame's score a little and never rejects one. **Advanced > Closed eyes**: **Main subject** (default) lets only the largest, most frontal face
   decide; **Any face** also counts a closed face of at least 80 pixels that looks at the camera, at a smaller weight.
   Faces looking away and tiny faces never give a verdict. A closed-eye frame only scores lower, so a sibling wins; if
   nothing in its set is better it stays Keep, with the note "no better frame in this set". The decision list shows
-  **Face pose** and **Eyes closed / Eyes half closed / Eyes open** with their effect. Closed-eye detection needs an eye
+  **Face pose** and **Eyes closed or looking down / Eyes half closed or looking down / Eyes open** with their effect. Closed-eye detection needs an eye
   model file you provide (it is not downloaded); without it only the pose counts.
 - A note says whether a Gemini key is saved and, when it is not, links to
   **Preferences > Culling**. A cull never needs Gemini.
@@ -703,19 +705,20 @@ Preferences forgets the measurements only.
 
 ### Faces in Auto cull
 
-With People on, the Auto Cull dialog has **Use faces in the score** (on by default) and **Eyes: Main subject / Any face**. The
-face's pose and closed eyes then adjust a frame's quality score: **closed eyes only lower the score, so a better frame in the same
+With People on, the Auto Cull dialog has **Use faces in the score** (on by default), **Count closed eyes in the score
+(experimental)** (off by default) and **Eyes: Main subject / Any face**. The detector cannot tell shut eyes from a downward gaze, which
+is why counting the eyes is opt-in. The face's pose, and the eyes when you turn them on, adjust a frame's quality score: **closed eyes only lower the score, so a better frame in the same
 set wins, and they never reject a photo on their own** (a frame with no better sibling stays a Keep, and the decision says so). The
 decision panel lists the two new factors in plain words, such as "Closed eyes: -0.15, strong signal, not a hard rule"; a closed-eye
 factor has a warning mark, not a tick. Closed-eye detection needs the optional eye model file; without it only the face pose counts,
-and the dialog says so. Photos whose main face is closed or half closed carry a small eye glyph (an eye with a slash, or a half lid)
+and the dialog says so. Photos whose main face is closed, half closed or looking down carry a small eye glyph (an eye with a slash, or a half lid)
 in the corner of their thumbnail in the Grid and on a scene's card; it is asked for only for the photos on screen, a few at a time.
 These glyphs and verdicts are a **preview** until the eye model is validated.
 
-Find has a **Closed eyes** row (in the Photo group, only with People on and the eye model present): it keeps photos whose main face is
-closed or half closed. Switching it on makes the app check the open folder's photos in chunks, with a progress line; only photos
+Find has a **Closed eyes or looking down** row (in the Photo group, only with People on and the eye model present): it keeps photos
+whose main face is closed, half closed or looks down. Switching it on makes the app check the open folder's photos in chunks, with a progress line; only photos
 already checked can match. In the Grid's photo preview and the Scene view, with the face boxes on (Shift+F), the main face of a frame
-with closed eyes carries an "Eyes closed" tag.
+with closed eyes carries an "Eyes closed or looking down" tag.
 
 ## Scenes
 
@@ -828,10 +831,10 @@ is written until you press **Apply**:
   kept. They, and the frames you accepted in Scenes, count toward the Keep best
   number.
 - **Single frames**: a scene of one frame is kept, or skipped (left as it is).
-- **Prefer frames with open eyes**: with People on, a frame whose main face has closed eyes ranks lower
+- **Rank frames with closed eyes lower (experimental)**: off by default, because the detector cannot tell shut eyes from a downward gaze. With People on, a frame whose main face has closed eyes ranks lower
   (by 0.15 of the quality, a small step; half closed eyes only show a glyph), so an open-eyed sibling wins the slot. It changes the order only:
   Minimum quality still judges the measured quality, so a frame is never rejected for its eyes alone, and a scene's
-  best frame stays. The preview counts the frames this rule demoted. On by default; it does nothing without face
+  best frame stays. The preview counts the frames this rule demoted. It does nothing without face
   data or the eye model.
 
 Frames already rejected stay as they are. A scene with a frame that has not been
@@ -874,8 +877,8 @@ frames can be looked at in either. Scenes' scores also keep each frame's
 sharpest region; scores measured by an earlier version of Immage are measured
 again once, the first time they are needed.
 
-With People on, the rules panel also has **Prefer frames with open eyes** (on by default): ranking, Keep best and the minimum quality use
-the quality plus what faces add, and the preview says how many frames "are ranked lower for closed eyes".
+With People on, the rules panel also has **Rank frames with closed eyes lower (experimental)** (off by default): ranking, Keep best and the minimum quality use
+the quality plus what faces add, and the preview says how many frames "are ranked lower for closed eyes or a downward gaze".
 
 ## AI critique and natural-language search
 

@@ -28,7 +28,7 @@ export async function runEyesTest() {
   if (byN(1) || byN(11) || byN(0)) fail("an open or unknown photo shows a glyph");
   const shapes = new Set([byN(3)?.innerHTML, byN(14)?.innerHTML]);
   if (shapes.size !== 2) fail("closed and half closed look the same (colour must not be the only cue)");
-  if (byN(3)?.getAttribute("aria-label") !== "Eyes closed" || byN(14)?.getAttribute("aria-label") !== "Eyes half closed") fail("the glyphs have no names");
+  if (byN(3)?.getAttribute("aria-label") !== "Eyes closed or looking down" || byN(14)?.getAttribute("aria-label") !== "Eyes half closed or looking down") fail("the glyphs have no names");
   if (JSON.stringify(rects()) !== JSON.stringify(before)) fail("the glyphs moved a cell");
   // a quick scroll through three windows: only the last is asked for
   h().eyeCalls.length = 0;

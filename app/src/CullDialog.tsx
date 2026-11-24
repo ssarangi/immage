@@ -33,6 +33,7 @@ export function CullDialog({ count, selected, label, aiReady, onRun, onClose, on
     blurThreshold: v.blurThreshold, similarityThreshold: v.similarityThreshold, groupSimilar: true, filterBlurry: true,
     // faces only count while Faces is on; the backend ignores them otherwise, but the choice is kept as the user made it
     useFaces: v.useFaces, eyeMode: v.eyeMode,
+    eyesRank: v.eyesRank,
   });
   return <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     onKeyDown={(e) => {
@@ -82,12 +83,13 @@ export function CullDialog({ count, selected, label, aiReady, onRun, onClose, on
         </details>
         {facesOn && <div className="cull-field cull-faces">
           <label className="cull-check"><input type="checkbox" checked={v.useFaces} onChange={(e) => set({ useFaces: e.target.checked })} />{t("cull.dialog.useFaces")}</label>
+          <label className="cull-check"><input type="checkbox" checked={v.eyesRank} disabled={!v.useFaces} onChange={(e) => set({ eyesRank: e.target.checked })} />{t("cull.dialog.eyesRank")}</label>
           <span id="cull-eyes-label">{t("cull.dialog.eyes")}</span>
           <div className="segmented small" role="group" aria-labelledby="cull-eyes-label">
-            {(["mainSubject", "anyFace"] as const).map((k) => <button key={k} type="button" className={v.eyeMode === k ? "active" : ""} disabled={!v.useFaces}
+            {(["mainSubject", "anyFace"] as const).map((k) => <button key={k} type="button" className={v.eyeMode === k ? "active" : ""} disabled={!v.useFaces || !v.eyesRank}
               aria-pressed={v.eyeMode === k} onClick={() => set({ eyeMode: k })}>{t(`cull.eyes.mode.${k}`)}</button>)}
           </div>
-          <span className="pref-hint">{t("cull.dialog.eyesHint")}{eyes ? "" : ` ${t("cull.dialog.eyesNone")}`}</span>
+          <span className="pref-hint">{t("cull.dialog.eyesHint")}{eyes || !v.eyesRank ? "" : ` ${t("cull.dialog.eyesNone")}`}</span>
         </div>}
         <p className="note-plain cull-ai-note" role="note">
           {aiReady ? t("cull.dialog.aiReady") : <>{t("cull.dialog.aiOff")} <button type="button" className="link-button" onClick={onOpenPrefs}>{t("cull.dialog.aiSetUp")}</button></>}

@@ -361,14 +361,14 @@ export function canMerge(model: SceneModel, scene: number): boolean {
 export const sceneOfFrame = (model: SceneModel, frame: number) => model.scenes.findIndex((s) => s.frames.includes(frame));
 
 // ---- the keep rules (P2) ----
-export const DEFAULT_RULES: Rules = { keepBest: 2, minQuality: 0, alwaysKeep: true, ratedAtLeast: 3, singlesKeep: false, preferOpenEyes: true };
+export const DEFAULT_RULES: Rules = { keepBest: 2, minQuality: 0, alwaysKeep: true, ratedAtLeast: 3, singlesKeep: false, preferOpenEyes: false };
 export const clampRules = (r: Rules): Rules => ({
   keepBest: Math.max(0, Math.min(9, Math.round(r.keepBest) || 0)),
   minQuality: Math.max(0, Math.min(100, Math.round(r.minQuality) || 0)),
   alwaysKeep: !!r.alwaysKeep,
   ratedAtLeast: Math.max(1, Math.min(5, Math.round(r.ratedAtLeast) || 1)),
   singlesKeep: !!r.singlesKeep,
-  preferOpenEyes: r.preferOpenEyes !== false,
+  preferOpenEyes: r.preferOpenEyes === true,
 });
 
 export type Pile = "keep" | "reject" | "undecided";

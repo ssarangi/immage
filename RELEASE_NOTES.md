@@ -53,20 +53,21 @@ Improvements
 - **Faces in culling:** with People on, Auto Cull and Scenes use the faces found in a photo as a small hint when they
   rank frames of a set or scene: a face looking at the camera counts slightly more, and closed eyes
   lower the score (never enough to reject a photo on their own, and a lone frame stays Keep with a note). The
-  decision list says "Closed eyes" and by how much. Closed-eye detection uses an eye model you supply yourself and
-  is simply skipped without it; "Closed eyes: Main subject | Any face" picks whose eyes count, Scenes gains
-  **Prefer frames with open eyes** (with a count of frames it demoted), and Find can keep photos whose main face
-  has closed eyes.
+  decision list says how much. Closed-eye detection uses an eye model you supply yourself and
+  is simply skipped without it. It cannot tell shut eyes from a downward gaze, so counting eyes is experimental and
+  off by default: Auto Cull has **Count closed eyes in the score (experimental)** with a Main subject | Any face
+  choice, Scenes has **Rank frames with closed eyes lower (experimental)** (with a count of frames it demoted), and
+  Find can keep photos whose main face has closed eyes or looks down.
 - **Statistics > People:** with People on, Statistics has a People section listing the named people
   with the most photos (a bar each); clicking a person opens their page.
 - **Backup of People:** **People & face data** is an optional item in Back Up and Restore. It is never
   ticked for you, says that it holds names and biometric face data, and a restore checks the file and keeps
   a copy of what it replaced.
 - **Closed eyes in culling (preview):** with People on and the optional eye model, a small eye glyph marks
-  frames whose main face has closed or half closed eyes in the Grid and on scene cards; Auto Cull can use
-  faces in the score (closed eyes only lower it, never reject), with a choice of the main subject's or any
-  face's eyes; Scenes can prefer frames with open eyes and says how many it ranked lower; Find has a Closed
-  eyes row; and the face boxes tag the main face when its eyes are closed.
+  frames whose main face has closed or half closed eyes, or looks down, in the Grid and on scene cards; Auto
+  Cull can use faces in the score and, as an opt-in experiment, count closed eyes (they only lower it, never
+  reject); Scenes can rank such frames lower (opt-in) and says how many; Find has a Closed eyes or looking
+  down row; and the face boxes tag the main face.
 - **Person page:** double-click a person in People to open their page: their photos in the
   app's grid (with **Open in Grid**, which sets Find's People filter), and their faces to
   confirm, reject (**Not Maya**, **Not a face**) or choose as cover.

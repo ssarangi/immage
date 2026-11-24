@@ -29,10 +29,12 @@ export type CullDefaults = {
   highlightRating: number; highlightLabel: number;
   // faces in the score (pose, closed eyes) and whose eyes count: the main subject's or any face's
   useFaces: boolean; eyeMode: "mainSubject" | "anyFace";
+  // count closed eyes in the score (experimental: the detector cannot tell shut eyes from a downward gaze), off by default
+  eyesRank: boolean;
 };
 export const DEFAULT_SETTINGS: CullDefaults = {
   shootType: "general", duplicateRatio: "moderate", highlightPercent: 15, blurThreshold: 100, similarityThreshold: 28,
-  highlightRating: 0, highlightLabel: 0, useFaces: true, eyeMode: "mainSubject",
+  highlightRating: 0, highlightLabel: 0, useFaces: true, eyeMode: "mainSubject", eyesRank: false,
 };
 
 // a stored value, kept to what the dialog could have set; anything else is the default
@@ -52,6 +54,7 @@ export function parseDefaults(raw: string | null | undefined): CullDefaults {
     highlightLabel: [0, 1, 2, 4, 8, 16].includes(v.highlightLabel as number) ? v.highlightLabel as number : 0,
     useFaces: typeof v.useFaces === "boolean" ? v.useFaces : d.useFaces,
     eyeMode: v.eyeMode === "anyFace" ? "anyFace" : "mainSubject",
+    eyesRank: v.eyesRank === true,
   };
 }
 

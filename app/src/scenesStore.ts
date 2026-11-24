@@ -118,7 +118,7 @@ export async function buildScenes(entries: readonly SceneSource[], force = false
   try {
     await ensureListener();
     const items = requestItems(local);
-    const [build, accepted] = await Promise.all([commands.scenesBuild(job, { items, params: null }), commands.scenesAccepted().catch(() => [])]);
+    const [build, accepted] = await Promise.all([commands.scenesBuild(job, { items, params: null, eyesRank: state.rules.preferOpenEyes === true }), commands.scenesAccepted().catch(() => [])]);
     if (job !== current) return;
     const quality = build.quality as (number | null)[];
     const model = buildModel(build);
@@ -233,9 +233,12 @@ export async function overrideScene(action: "split" | "merge", frame: number): P
 
 // ---- the keep rules ----
 export function setRules(patch: Partial<Rules>) {
+  const eyesBefore = state.rules.preferOpenEyes === true;
   setScenes({ rules: clampRules({ ...state.rules, ...patch }), previewStale: state.preview !== null, ruleNote: null });
+  // the scores' face adjustment includes the eye penalty only while the rule is on, so the scores are asked for again
+  if (eyesBefore !== (state.rules.preferOpenEyes === true) && lastEntries.length > 0) void buildScenes(lastEntries, true);
 }
-export const resetRules = () => setScenes({ rules: DEFAULT_RULES, previewStale: state.preview !== null, ruleNote: null });
+export const resetRules = () => setRules(DEFAULT_RULES);
 
 // asks Rust what the rules would do; nothing is written. A later answer to an earlier question is dropped
 let previewRun = 0;

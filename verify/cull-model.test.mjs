@@ -101,6 +101,9 @@ test('a Gemini search sets the words, the filter, a matching camera and the labe
 test('the cull defaults carry the faces options: on by default, main subject, anything else falls back', () => {
   assert.equal(DEFAULT_SETTINGS.useFaces, true);
   assert.equal(DEFAULT_SETTINGS.eyeMode, 'mainSubject');
+  assert.equal(DEFAULT_SETTINGS.eyesRank, false);   // counting closed eyes is experimental and off
+  assert.equal(parseDefaults(JSON.stringify({ eyesRank: true })).eyesRank, true);
+  assert.equal(parseDefaults(JSON.stringify({ eyesRank: 'yes' })).eyesRank, false);
   const kept = parseDefaults(JSON.stringify({ useFaces: false, eyeMode: 'anyFace' }));
   assert.deepEqual([kept.useFaces, kept.eyeMode], [false, 'anyFace']);
   const odd = parseDefaults(JSON.stringify({ useFaces: 'yes', eyeMode: 'both' }));

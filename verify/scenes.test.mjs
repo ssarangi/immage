@@ -231,8 +231,8 @@ test('a frame can be split off unless it starts its scene, and a scene merges un
 });
 
 test('the rules are clamped to what the panel allows', () => {
-  assert.deepEqual(clampRules({ keepBest: 14, minQuality: -3, alwaysKeep: true, ratedAtLeast: 9, singlesKeep: false }), { keepBest: 9, minQuality: 0, alwaysKeep: true, ratedAtLeast: 5, singlesKeep: false, preferOpenEyes: true });
-  assert.deepEqual(clampRules({ keepBest: NaN, minQuality: 55.6, alwaysKeep: false, ratedAtLeast: 0, singlesKeep: true }), { keepBest: 0, minQuality: 56, alwaysKeep: false, ratedAtLeast: 1, singlesKeep: true, preferOpenEyes: true });
+  assert.deepEqual(clampRules({ keepBest: 14, minQuality: -3, alwaysKeep: true, ratedAtLeast: 9, singlesKeep: false }), { keepBest: 9, minQuality: 0, alwaysKeep: true, ratedAtLeast: 5, singlesKeep: false, preferOpenEyes: false });
+  assert.deepEqual(clampRules({ keepBest: NaN, minQuality: 55.6, alwaysKeep: false, ratedAtLeast: 0, singlesKeep: true }), { keepBest: 0, minQuality: 56, alwaysKeep: false, ratedAtLeast: 1, singlesKeep: true, preferOpenEyes: false });
   assert.deepEqual(clampRules(DEFAULT_RULES), DEFAULT_RULES);
 });
 
@@ -291,7 +291,7 @@ test('the rules request carries each frame\'s eye verdict and face adjustment, a
   const ctx = { entries: [flags('/a'), flags('/b')], quality: [0.5, 0.6], accepted: new Set(), eyes: ['open', 'closed'], faceAdjust: [0.03, -0.15] };
   const frames = rulesScenes(m, items, ctx, new Map())[0].frames;
   assert.deepEqual(frames.map((f) => [f.eyes, f.faceAdjust]), [['open', 0.03], ['closed', -0.15]]);
-  assert.equal(clampRules({ ...DEFAULT_RULES, preferOpenEyes: false }).preferOpenEyes, false);
-  assert.equal(clampRules({ ...DEFAULT_RULES }).preferOpenEyes, true);
-  assert.equal(DEFAULT_RULES.preferOpenEyes, true);
+  assert.equal(clampRules({ ...DEFAULT_RULES, preferOpenEyes: true }).preferOpenEyes, true);
+  assert.equal(clampRules({ ...DEFAULT_RULES }).preferOpenEyes, false);
+  assert.equal(DEFAULT_RULES.preferOpenEyes, false);   // experimental: the detector cannot tell shut eyes from a downward gaze
 });

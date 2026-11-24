@@ -111,7 +111,7 @@ export function SceneRules({ entries, onChanges }: { entries: ImageEntry[]; onCh
           </select>
         </div>
         {facesOn && <div className="cull-session-row">
-          <label className="scene-check"><input type="checkbox" checked={r.preferOpenEyes !== false} onChange={(e) => setRules({ preferOpenEyes: e.target.checked })} />
+          <label className="scene-check"><input type="checkbox" checked={r.preferOpenEyes === true} onChange={(e) => setRules({ preferOpenEyes: e.target.checked })} />
             <span>{t("cull.scenes.rules.preferEyes")}</span></label>
         </div>}
         <div className="cull-session-row" role="radiogroup" aria-label={t("cull.scenes.rules.singles")}>
