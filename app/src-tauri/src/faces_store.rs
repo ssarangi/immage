@@ -131,6 +131,8 @@ pub struct ClusterRow {
     pub id: i64,
     pub rep_face_id: i64,
     pub size: u32,
+    /// Up to four faces of the group for a collage, the representative first.
+    pub members: Vec<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -141,6 +143,14 @@ pub struct FaceTotals {
     pub unreviewed: u32,
     pub groups: u32,
     pub suggestions: u32,
+    /// Unreviewed faces nobody is suggested for and no group holds (the loose ones).
+    pub unknown: u32,
+    /// Faces marked "not a face" (the Ignored section).
+    pub ignored_faces: u32,
+    /// People who were removed and can be restored.
+    pub ignored_people: u32,
+    /// Photos the scan gave up on (could not be read).
+    pub failed_photos: u32,
 }
 
 /// Where a list of faces comes from.
@@ -154,6 +164,8 @@ pub enum FaceFilter {
     /// Unreviewed faces with no suggestion and no group.
     Unknown,
     Photo { path: String },
+    /// Faces marked "not a face".
+    Ignored,
 }
 
 #[derive(Debug, Clone)]
@@ -447,6 +459,7 @@ impl FaceStore {
             FaceFilter::Suggested { id } => ("suggested_person=?1 AND state='unreviewed' AND person_id IS NULL", (*id).into()),
             FaceFilter::Unknown => ("state='unreviewed' AND person_id IS NULL AND suggested_person IS NULL AND cluster_id IS NULL AND ?1=0", 0i64.into()),
             FaceFilter::Photo { path } => ("path=?1 AND state<>'rejected'", path.clone().into()),
+            FaceFilter::Ignored => ("state='rejected' AND ?1=0", 0i64.into()),
         };
         let order = match filter {
             FaceFilter::Suggested { .. } => "suggested_sim DESC, id",
@@ -492,9 +505,63 @@ impl FaceStore {
 
     pub fn list_clusters(&self) -> Result<Vec<ClusterRow>, String> {
         let db = self.db()?;
+        let mut members: HashMap<i64, Vec<i64>> = HashMap::new();
+        {
+            let mut q = db
+                .prepare(
+                    "SELECT cluster_id,id FROM (
+                         SELECT f.cluster_id,f.id,ROW_NUMBER() OVER (PARTITION BY f.cluster_id ORDER BY (f.id=c.rep_face_id) DESC, f.score DESC, f.id) AS rn
+                         FROM faces f JOIN clusters c ON c.id=f.cluster_id WHERE f.state='unreviewed' AND f.person_id IS NULL)
+                     WHERE rn<=4 ORDER BY cluster_id, rn",
+                )
+                .map_err(|e| e.to_string())?;
+            for row in q.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))).map_err(|e| e.to_string())? {
+                let (c, f) = row.map_err(|e| e.to_string())?;
+                members.entry(c).or_default().push(f);
+            }
+        }
         let mut q = db.prepare("SELECT id,rep_face_id,size FROM clusters ORDER BY size DESC, id").map_err(|e| e.to_string())?;
-        let rows = q.query_map([], |r| Ok(ClusterRow { id: r.get(0)?, rep_face_id: r.get(1)?, size: r.get(2)? })).map_err(|e| e.to_string())?;
+        let rows = q
+            .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, u32>(2)?)))
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (id, rep, size) = row.map_err(|e| e.to_string())?;
+            out.push(ClusterRow { id, rep_face_id: rep, size, members: members.remove(&id).unwrap_or_default() });
+        }
+        Ok(out)
+    }
+
+    /// Photos the scan gave up on, for the strip's "could not be read".
+    pub fn failed_photos(&self, limit: u32) -> Result<Vec<String>, String> {
+        let db = self.db()?;
+        let mut q = db.prepare("SELECT path FROM photos WHERE status='failed' ORDER BY path LIMIT ?1").map_err(|e| e.to_string())?;
+        let rows = q.query_map([limit], |r| r.get(0)).map_err(|e| e.to_string())?;
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
+    /// Takes faces back from "not a face".
+    pub fn unignore_faces(&self, faces: &[i64]) -> Result<(), String> {
+        let db = self.db()?;
+        let ids = Self::with_twins(&db, faces)?;
+        let undo = Undo { label: "Restore".into(), faces: Self::snapshot_faces(&db, &ids)?, ..Undo::default() };
+        for id in &ids {
+            db.execute("UPDATE faces SET state='unreviewed' WHERE id=?1 AND state='rejected'", [id]).map_err(|e| e.to_string())?;
+        }
+        drop(db);
+        self.push_undo(undo);
+        Ok(())
+    }
+
+    /// Small durable values of the service (the folders waiting for a one-off scan).
+    pub fn meta_get(&self, key: &str) -> Result<Option<String>, String> {
+        self.db()?.query_row("SELECT value FROM meta WHERE key=?1", [key], |r| r.get(0)).optional().map_err(|e| e.to_string())
+    }
+    pub fn meta_set(&self, key: &str, value: &str) -> Result<(), String> {
+        self.db()?
+            .execute("INSERT INTO meta(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=?2", params![key, value])
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 
     pub fn totals(&self) -> Result<FaceTotals, String> {
@@ -507,6 +574,10 @@ impl FaceStore {
             unreviewed: one("SELECT COUNT(*) FROM faces WHERE state='unreviewed' AND person_id IS NULL")?,
             groups: one("SELECT COUNT(*) FROM clusters")?,
             suggestions: one("SELECT COUNT(*) FROM faces WHERE state='unreviewed' AND person_id IS NULL AND suggested_person IS NOT NULL")?,
+            unknown: one("SELECT COUNT(*) FROM faces WHERE state='unreviewed' AND person_id IS NULL AND suggested_person IS NULL AND cluster_id IS NULL")?,
+            ignored_faces: one("SELECT COUNT(*) FROM faces WHERE state='rejected'")?,
+            ignored_people: one("SELECT COUNT(*) FROM people WHERE state='ignored'")?,
+            failed_photos: one("SELECT COUNT(*) FROM photos WHERE status='failed'")?,
         })
     }
 
@@ -1159,6 +1230,42 @@ mod tests {
         assert_eq!(s.totals().unwrap().faces, 0);
         s.forget_photo("/a.jpg").unwrap();
         assert!(!s.is_current("/a.jpg", "fp", "m1").unwrap());
+    }
+
+    #[test]
+    fn counts_ignored_faces_collage_members_and_failed_photos() {
+        let s = store();
+        let ids = scan(&s, "/a.jpg", &[nf(0.05, 1.0), nf(0.2, 0.9), nf(0.35, 0.8), nf(0.5, 0.7), nf(0.65, 0.6), nf(0.8, 0.1)]);
+        s.set_analysis(&[], &[(ids[2], ids[..5].to_vec())]).unwrap();
+        let g = s.list_clusters().unwrap();
+        assert_eq!(g[0].members.len(), 4);
+        assert_eq!(g[0].members[0], ids[2], "the representative comes first");
+        assert_eq!(g[0].size, 5);
+        let t = s.totals().unwrap();
+        assert_eq!((t.unknown, t.ignored_faces, t.ignored_people, t.failed_photos), (1, 0, 0, 0));
+        s.reject_faces(&[ids[5]]).unwrap();
+        let p = s.create_person("Ann", &[ids[0]]).unwrap();
+        s.set_ignored(p, true).unwrap();
+        s.put_failure("/bad.jpg", "fp", "m1", "failed", "cannot decode").unwrap();
+        let t = s.totals().unwrap();
+        assert_eq!((t.unknown, t.ignored_faces, t.ignored_people, t.failed_photos), (0, 1, 1, 1));
+        assert_eq!(s.failed_photos(10).unwrap(), ["/bad.jpg"]);
+        assert_eq!(s.list_faces(&FaceFilter::Ignored, 0, 10).unwrap()[0].id, ids[5]);
+        assert_eq!(s.list_faces(&FaceFilter::Person { id: p }, 0, 10).unwrap().len(), 1, "a removed person's faces stay listable");
+        s.unignore_faces(&[ids[5]]).unwrap();
+        assert!(s.list_faces(&FaceFilter::Ignored, 0, 10).unwrap().is_empty());
+        assert_eq!(s.face(ids[5]).unwrap().unwrap().state, "unreviewed");
+        s.undo_last().unwrap();
+        assert_eq!(s.face(ids[5]).unwrap().unwrap().state, "rejected");
+    }
+
+    #[test]
+    fn meta_values_are_kept() {
+        let s = store();
+        assert_eq!(s.meta_get("k").unwrap(), None);
+        s.meta_set("k", "1").unwrap();
+        s.meta_set("k", "2").unwrap();
+        assert_eq!(s.meta_get("k").unwrap().as_deref(), Some("2"));
     }
 
     #[test]

@@ -122,8 +122,25 @@ pub struct Control {
     health: Arc<Health>,
     ledger: Arc<Ledger>,
     dirty: Arc<AtomicBool>,
-    folders: Arc<Mutex<VecDeque<PathBuf>>>,
+    folders: Arc<Mutex<VecDeque<(PathBuf, bool)>>>,
+    store: Arc<FaceStore>,
 }
+const FOLDERS_KEY: &str = "folders";
+
+fn persist_folders(store: &FaceStore, queue: &VecDeque<(PathBuf, bool)>) {
+    let list: Vec<(&str, bool)> = queue.iter().filter_map(|(p, s)| p.to_str().map(|p| (p, *s))).collect();
+    let _ = store.meta_set(FOLDERS_KEY, &serde_json::to_string(&list).unwrap_or_default());
+}
+fn load_folders(store: &FaceStore) -> VecDeque<(PathBuf, bool)> {
+    let list: Vec<(String, bool)> = store.meta_get(FOLDERS_KEY).ok().flatten().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    list.into_iter().map(|(p, s)| (PathBuf::from(p), s)).filter(|(p, _)| p.is_absolute()).collect()
+}
+
+/// Whether People scans only the folders it was given (the setting the page writes: "catalog" or "folder").
+pub fn scope_is_folder(runtime: &Path) -> bool {
+    crate::settings::read_key(runtime, "faces.scope").as_deref() == Some("folder")
+}
+
 impl Control {
     pub fn stop(&self) {
         self.stop.store(true, Ordering::Release);
@@ -171,11 +188,13 @@ impl Control {
     pub fn request_analysis(&self) {
         self.dirty.store(true, Ordering::Release);
     }
-    /// Scans one folder (and its subfolders) once, in addition to the Catalog.
-    pub fn scan_folder(&self, folder: PathBuf) {
+    /// Scans one folder once (with its subfolders when asked), in addition to the Catalog, or instead of
+    /// it when `faces.scope` is "folder". The request survives a restart.
+    pub fn scan_folder(&self, folder: PathBuf, subfolders: bool) {
         let mut q = self.folders.lock().unwrap();
-        if !q.contains(&folder) {
-            q.push_back(folder);
+        if !q.iter().any(|(p, s)| *p == folder && *s == subfolders) {
+            q.push_back((folder, subfolders));
+            persist_folders(&self.store, &q);
         }
     }
 }
@@ -200,7 +219,7 @@ struct Service {
     health: Arc<Health>,
     ledger: Arc<Ledger>,
     dirty: Arc<AtomicBool>,
-    folders: Arc<Mutex<VecDeque<PathBuf>>>,
+    folders: Arc<Mutex<VecDeque<(PathBuf, bool)>>>,
     inflight: Mutex<HashSet<String>>,
     idle_since: Mutex<Option<Instant>>,
     loaded: AtomicBool,
@@ -223,11 +242,11 @@ pub fn start(
     let health = Arc::new(Health::default());
     let ledger = Arc::new(Ledger::default());
     let dirty = Arc::new(AtomicBool::new(true));
-    let folders = Arc::new(Mutex::new(VecDeque::new()));
+    let folders = Arc::new(Mutex::new(load_folders(&store)));
     let service = Arc::new(Service {
         cache,
         models,
-        store,
+        store: store.clone(),
         queue,
         engine,
         output,
@@ -246,7 +265,7 @@ pub fn start(
         emit,
     });
     std::thread::spawn(move || service.run());
-    Control { stop, progress, health, ledger, dirty, folders }
+    Control { stop, progress, health, ledger, dirty, folders, store }
 }
 
 /// Maps the face worker's own words to what the worker does about them.
@@ -290,7 +309,7 @@ fn is_photo(path: &Path) -> bool {
 }
 
 /// Every photo under a folder, in path order, up to a limit.
-pub fn photos_under(folder: &Path, limit: usize) -> Vec<PathBuf> {
+pub fn photos_under(folder: &Path, limit: usize, recursive: bool) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![folder.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -300,7 +319,7 @@ pub fn photos_under(folder: &Path, limit: usize) -> Vec<PathBuf> {
         for e in entries {
             let p = e.path();
             let Ok(t) = e.file_type() else { continue };
-            if t.is_dir() && !e.file_name().to_string_lossy().starts_with('.') {
+            if t.is_dir() && recursive && !e.file_name().to_string_lossy().starts_with('.') {
                 stack.push(p);
             } else if t.is_file() && is_photo(&p) {
                 out.push(p);
@@ -428,7 +447,7 @@ impl Service {
         let selection = library_selection(&self.runtime);
         let now = now_ms();
         let (mut after, mut total) = (0i64, 0u32);
-        if let Some(cache) = &self.cache {
+        if let Some(cache) = self.cache.as_ref().filter(|_| !scope_is_folder(&self.runtime)) {
             loop {
                 if self.stop.load(Ordering::Acquire) {
                     return None;
@@ -484,25 +503,31 @@ impl Service {
         let quiet = self.engine.quiet_for();
         // an explicitly requested folder first
         let folder = self.folders.lock().unwrap().front().cloned();
-        if let Some(folder) = folder {
-            let mut finished = true;
-            for p in photos_under(&folder, FOLDER_LIMIT) {
+        if let Some((folder, recursive)) = folder {
+            let mut offered = false;
+            for p in photos_under(&folder, FOLDER_LIMIT, recursive) {
                 if job.cancelled() || self.stop.load(Ordering::Acquire) {
                     return Ok(());
                 }
                 let Some(path) = p.to_str().map(str::to_string) else { continue };
                 let Some(fp) = self.fingerprint_now(&path) else { continue };
-                if self.store.is_current(&path, &fp, fm::MODEL_VERSION)? {
+                if self.store.is_current(&path, &fp, fm::MODEL_VERSION)? || self.ledger.skipped(&path, &fp, now_ms()) {
                     continue;
                 }
+                offered = true;
                 if !self.offer(path, fp) {
-                    finished = false;
-                    break;
+                    return Ok(());
                 }
             }
-            if finished {
-                self.folders.lock().unwrap().retain(|f| *f != folder);
+            // done once nothing is left to offer and the photos handed to the worker are stored
+            if !offered && self.inflight.lock().unwrap().is_empty() {
+                let mut q = self.folders.lock().unwrap();
+                q.retain(|f| *f != (folder.clone(), recursive));
+                persist_folders(&self.store, &q);
             }
+            return Ok(());
+        }
+        if scope_is_folder(&self.runtime) {
             return Ok(());
         }
         let Some(cache) = &self.cache else { return Ok(()) };
@@ -593,7 +618,7 @@ impl Service {
         if job.cancelled() || self.stop.load(Ordering::Acquire) || !(self.models.enabled() || explicit) {
             return Ok(());
         }
-        if !explicit && (!selected(Path::new(path), &library_selection(&self.runtime)) || self.deferred(path)) {
+        if !explicit && !scope_is_folder(&self.runtime) && (!selected(Path::new(path), &library_selection(&self.runtime)) || self.deferred(path)) {
             return Ok(());
         }
         if self.fingerprint_now(path).as_deref() != Some(fingerprint) || !matches!(self.health.gate(now_ms()), Gate::Go) {
@@ -737,6 +762,25 @@ mod tests {
     }
 
     #[test]
+    fn requested_folders_survive_a_restart_and_the_scope_setting_is_read() {
+        let store = FaceStore::from_connection(rusqlite::Connection::open_in_memory().unwrap()).unwrap();
+        assert!(load_folders(&store).is_empty());
+        let q: VecDeque<(PathBuf, bool)> = [(PathBuf::from("/a"), true), (PathBuf::from("/b c"), false)].into();
+        persist_folders(&store, &q);
+        assert_eq!(load_folders(&store), q);
+        store.meta_set(FOLDERS_KEY, "not json").unwrap();
+        assert!(load_folders(&store).is_empty());
+        store.meta_set(FOLDERS_KEY, r#"[["relative",true]]"#).unwrap();
+        assert!(load_folders(&store).is_empty(), "only absolute paths are scanned");
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!scope_is_folder(dir.path()));
+        crate::settings::Settings::load(dir.path()).set("faces.scope", "folder").unwrap();
+        assert!(scope_is_folder(dir.path()));
+        crate::settings::Settings::load(dir.path()).set("faces.scope", "catalog").unwrap();
+        assert!(!scope_is_folder(dir.path()));
+    }
+
+    #[test]
     fn faces_failures_are_classified_for_the_worker() {
         assert_eq!(classify("face worker is full or stopping"), Kind::Transient);
         assert!(matches!(classify("face model is unavailable; verify the Faces model pack"), Kind::Systemic(Reason::Model)));
@@ -754,9 +798,11 @@ mod tests {
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(p, b"x").unwrap();
         }
-        let names: Vec<String> = photos_under(dir.path(), 100).iter().map(|p| p.strip_prefix(dir.path()).unwrap().to_string_lossy().into_owned()).collect();
+        let names: Vec<String> = photos_under(dir.path(), 100, true).iter().map(|p| p.strip_prefix(dir.path()).unwrap().to_string_lossy().into_owned()).collect();
         assert_eq!(names, ["a.CR3", "b.jpg", "sub/c.png", "sub/deep/e.tif"]);
-        assert_eq!(photos_under(dir.path(), 2).len(), 2);
+        assert_eq!(photos_under(dir.path(), 2, true).len(), 2);
+        let flat: Vec<_> = photos_under(dir.path(), 100, false).iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        assert_eq!(flat, ["a.CR3", "b.jpg"], "without subfolders only the folder itself");
     }
 
     /// Real YuNet and SFace through the real engine over a folder of photos (read only), printing
@@ -781,7 +827,7 @@ mod tests {
         std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
         let engine = crate::engine::Engine::spawn(&wrapper, &runtime, &runtime).expect("start the isolated engine");
         let tagged = engine.tagged();
-        let mut files: Vec<PathBuf> = photos_under(&photos, 20000);
+        let mut files: Vec<PathBuf> = photos_under(&photos, 20000, true);
         // an even spread over the folder, not its first photos
         let step = (files.len() / limit.max(1)).max(1);
         files = files.into_iter().step_by(step).take(limit).collect();

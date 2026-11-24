@@ -135,8 +135,16 @@ export const commands = {
 	/**  The same pause as `search_pause` and the Find icon. */
 	analysisPause: (paused: boolean) => __TAURI_INVOKE<null>("analysis_pause", { paused }),
 	facesStatus: () => __TAURI_INVOKE<FacesStatus>("faces_status"),
-	/**  Scans a folder (and its subfolders) once, whether or not it is in the Catalog. Needs the pack. */
+	/**  Scans a folder and its subfolders once, whether or not it is in the Catalog. Needs the pack. */
 	facesScanFolder: (path: string) => __TAURI_INVOKE<null>("faces_scan_folder", { path }),
+	/**  `faces_scan_folder` with the choice of subfolders: only that folder when `subfolders` is false. */
+	facesScanFolderWith: (path: string, subfolders: boolean) => __TAURI_INVOKE<null>("faces_scan_folder_with", { path, subfolders }),
+	/**  Takes faces back from "not a face". */
+	facesUnignore: (faces: number[]) => __TAURI_INVOKE<null>("faces_unignore", { faces }),
+	/**  The photos the scan could not read, for the strip's "Show". */
+	facesFailedPhotos: (limit: number) => __TAURI_INVOKE<string[]>("faces_failed_photos", { limit }),
+	/**  `faces_crop` as the JPEG bytes (the page cannot read a path: the CSP has no file scheme), like `thumb_cached`. */
+	facesCropBytes: (face: number, size: number) => __TAURI_INVOKE<ArrayBuffer>("faces_crop_bytes", { face, size }),
 	facesRetry: () => __TAURI_INVOKE<void>("faces_retry"),
 	facesPeople: (includeRemoved: boolean) => __TAURI_INVOKE<PersonRow[]>("faces_people", { includeRemoved }),
 	facesGroups: () => __TAURI_INVOKE<ClusterRow[]>("faces_groups"),
@@ -807,6 +815,8 @@ export type ClusterRow = {
 	id: number,
 	rep_face_id: number,
 	size: number,
+	/**  Up to four faces of the group for a collage, the representative first. */
+	members: number[],
 };
 
 export type ColorLabel = "red" | "yellow" | "green" | "blue" | "purple";
@@ -1197,7 +1207,9 @@ export type FaceFilter = { kind: "person"; id: number } | { kind: "cluster"; id:
 /**  Unreviewed faces suggested for this person. */
 { kind: "suggested"; id: number } | 
 /**  Unreviewed faces with no suggestion and no group. */
-{ kind: "unknown" } | { kind: "photo"; path: string };
+{ kind: "unknown" } | { kind: "photo"; path: string } | 
+/**  Faces marked "not a face". */
+{ kind: "ignored" };
 
 export type FaceRow = {
 	id: number,
@@ -1222,6 +1234,14 @@ export type FaceTotals = {
 	unreviewed: number,
 	groups: number,
 	suggestions: number,
+	/**  Unreviewed faces nobody is suggested for and no group holds (the loose ones). */
+	unknown: number,
+	/**  Faces marked "not a face" (the Ignored section). */
+	ignored_faces: number,
+	/**  People who were removed and can be restored. */
+	ignored_people: number,
+	/**  Photos the scan gave up on (could not be read). */
+	failed_photos: number,
 };
 
 export type FacesStatus = {
@@ -1238,6 +1258,8 @@ export type FacesStatus = {
 	/**  Photos still to scan, once counted. */
 	pending: number | null,
 	folders_waiting: number,
+	/**  Library folders that do not answer now (an unplugged drive, a share that is down). */
+	offline_folders: number,
 	/**  Milliseconds of the last photo's detection and embedding, once measured. */
 	infer_ms: number | null,
 	/**  "ok", "retrying" or "blocked", with the reason once not ok. */

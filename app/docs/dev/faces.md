@@ -20,6 +20,12 @@ the app's data folder, and `faces_delete_all` removes them and turns the switch 
 - `faces_service.rs`: the background scan (Catalog or one folder) on the shared analysis queue, then names and groups.
 - `faces_cmds.rs`: the typed `faces_*` commands; events `faces-progress`, `faces-changed`.
 
+## Scope and folders
+`faces.scope` (settings, written by the page) is "catalog" or "folder". With "folder" only folders given to
+`faces_scan_folder` / `faces_scan_folder_with` are scanned (one-off, with or without subfolders, kept across a
+restart in faces.sqlite); with "catalog" the Catalog is scanned too. Crops reach the page as bytes
+(`faces_crop_bytes`), since the page cannot read file paths.
+
 ## Checks
 `cargo test faces_` (pure parts, store, clustering with synthetic embeddings). `python3 verify/faces-engine.py`
 (`IMMAGE_FACES_ROOT`, `IMMAGE_TEST_PHOTOS`, optional `IMMAGE_EYES_ROOT`): engine outputs against onnxruntime.

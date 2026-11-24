@@ -31,6 +31,8 @@ pub struct FacesStatus {
     /// Photos still to scan, once counted.
     pub pending: Option<u32>,
     pub folders_waiting: u32,
+    /// Library folders that do not answer now (an unplugged drive, a share that is down).
+    pub offline_folders: u32,
     /// Milliseconds of the last photo's detection and embedding, once measured.
     pub infer_ms: Option<u32>,
     /// "ok", "retrying" or "blocked", with the reason once not ok.
@@ -50,6 +52,7 @@ pub fn faces_status(ai: State<'_, AiState>) -> Result<FacesStatus, String> {
     let progress = ai.faces_service.progress();
     let (infer_ms, _) = ai.faces_service.speed();
     let health = ai.faces_service.health();
+    let offline_folders = if ai.faces.enabled() { offline_count(&ai.faces_runtime) } else { 0 };
     Ok(FacesStatus {
         enabled: ai.faces.enabled(),
         installed: ai.faces.installed(),
@@ -59,6 +62,7 @@ pub fn faces_status(ai: State<'_, AiState>) -> Result<FacesStatus, String> {
         faces_found: progress.faces_found as u32,
         pending: progress.pending,
         folders_waiting: progress.folder_pending,
+        offline_folders,
         infer_ms,
         health: health.state.to_string(),
         failure: health.reason.map(str::to_string),
@@ -66,10 +70,26 @@ pub fn faces_status(ai: State<'_, AiState>) -> Result<FacesStatus, String> {
     })
 }
 
-/// Scans a folder (and its subfolders) once, whether or not it is in the Catalog. Needs the pack.
+fn offline_count(runtime: &Path) -> u32 {
+    let selection = crate::search_analysis::library_selection(runtime);
+    selection["folders"].as_array().into_iter().flatten().filter_map(|v| v.as_str()).filter(|f| !crate::volumes::answering(Path::new(f))).count() as u32
+}
+
+/// Scans a folder and its subfolders once, whether or not it is in the Catalog. Needs the pack.
 #[tauri::command]
 #[specta::specta]
 pub fn faces_scan_folder(ai: State<'_, AiState>, path: String) -> Result<(), String> {
+    scan_folder(&ai, path, true)
+}
+
+/// `faces_scan_folder` with the choice of subfolders: only that folder when `subfolders` is false.
+#[tauri::command]
+#[specta::specta]
+pub fn faces_scan_folder_with(ai: State<'_, AiState>, path: String, subfolders: bool) -> Result<(), String> {
+    scan_folder(&ai, path, subfolders)
+}
+
+fn scan_folder(ai: &AiState, path: String, subfolders: bool) -> Result<(), String> {
     if !ai.faces.installed() {
         return Err("Install the Faces model first".into());
     }
@@ -77,7 +97,7 @@ pub fn faces_scan_folder(ai: State<'_, AiState>, path: String) -> Result<(), Str
     if !folder.is_absolute() || !folder.is_dir() {
         return Err("Choose a folder".into());
     }
-    ai.faces_service.scan_folder(folder);
+    ai.faces_service.scan_folder(folder, subfolders);
     Ok(())
 }
 
@@ -181,6 +201,22 @@ pub fn faces_not_face(app: AppHandle, ai: State<'_, AiState>, faces: Vec<i64>) -
     Ok(())
 }
 
+/// Takes faces back from "not a face".
+#[tauri::command]
+#[specta::specta]
+pub fn faces_unignore(app: AppHandle, ai: State<'_, AiState>, faces: Vec<i64>) -> Result<(), String> {
+    ai.faces_store.unignore_faces(&faces)?;
+    changed(&app, &ai);
+    Ok(())
+}
+
+/// The photos the scan could not read, for the strip's "Show".
+#[tauri::command]
+#[specta::specta]
+pub fn faces_failed_photos(ai: State<'_, AiState>, limit: u32) -> Result<Vec<String>, String> {
+    ai.faces_store.failed_photos(limit.clamp(1, 1000))
+}
+
 /// Reverses the latest change; returns what it was.
 #[tauri::command]
 #[specta::specta]
@@ -255,20 +291,36 @@ fn write_crop(img: &image::RgbImage, f: &FaceRow, size: u32, file: &Path) -> Res
 #[tauri::command]
 #[specta::specta]
 pub async fn faces_crop(ai: State<'_, AiState>, state: State<'_, AppState>, face: i64, size: u32) -> Result<String, String> {
+    let engine = state.engine("faces_crop").tagged();
+    let file = crop_file(&ai, engine, face, size).await?;
+    Ok(file.to_string_lossy().into_owned())
+}
+
+/// `faces_crop` as the JPEG bytes (the page cannot read a path: the CSP has no file scheme), like `thumb_cached`.
+#[tauri::command]
+#[specta::specta]
+pub async fn faces_crop_bytes(ai: State<'_, AiState>, state: State<'_, AppState>, face: i64, size: u32) -> Result<crate::bindings::Frame, String> {
+    let engine = state.engine("faces_crop").tagged();
+    let file = crop_file(&ai, engine, face, size).await?;
+    let bytes = tauri::async_runtime::spawn_blocking(move || std::fs::read(file)).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+    Ok(crate::bindings::Frame(tauri::ipc::Response::new(bytes)))
+}
+
+async fn crop_file(ai: &AiState, engine: crate::engine::Tagged, face: i64, size: u32) -> Result<PathBuf, String> {
     let size = size.clamp(32, 512);
     let row = ai.faces_store.face(face)?.ok_or("No such face")?;
     let file = ai.faces_crops.join(format!("{face}-{size}.jpg"));
     if file.is_file() {
-        return Ok(file.to_string_lossy().into_owned());
+        return Ok(file);
     }
-    let (engine, output) = (state.engine("faces_crop").tagged(), ai.faces_output.clone());
+    let output = ai.faces_output.clone();
     let dir = ai.faces_crops.clone();
     tauri::async_runtime::spawn_blocking(move || {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let img = load_picture(&engine, &output, &row.path, CROP_EDGE)?;
         write_crop(&img, &row, size, &file)?;
         prune(&dir, 4000);
-        Ok(file.to_string_lossy().into_owned())
+        Ok(file)
     })
     .await
     .map_err(|e| e.to_string())?
