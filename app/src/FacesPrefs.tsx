@@ -112,6 +112,7 @@ export function FacesPrefs({ onOpenPeople }: { onOpenPeople?: () => void }) {
         </PrefRow>
         <p className="faces-line" role="status">{reason}</p>
         {stats?.arcface_available ? (
+          <>
           <PrefRow id="Recognizer" label={t("prefs.faces.matching")}
                    hint={<>{t("prefs.faces.matching.sface")}<br />{t("prefs.faces.matching.arcface")}</>}>
             <div className="segmented small" role="group" aria-label={t("prefs.faces.matching")}>
@@ -121,6 +122,14 @@ export function FacesPrefs({ onOpenPeople }: { onOpenPeople?: () => void }) {
               ))}
             </div>
           </PrefRow>
+          <div className="faces-confirm" role="status" data-for="recognizer">
+            {pendingKind !== null && <>
+              <span>{t("prefs.faces.rescanNoteKind")}</span>
+              <button type="button" className="btn small primary" onClick={applyKind}>{t("prefs.faces.change")}</button>
+              <button type="button" className="btn small" onClick={() => setPendingKind(null)}>{t("aimodels.act.cancel")}</button>
+            </>}
+          </div>
+          </>
         ) : <PrefRow id="Recognizer" label={t("prefs.faces.recognizer")}><span className="faces-val">{recognizer}</span></PrefRow>}
         <PrefRow id="Eye detection" label={t("prefs.faces.eyes")}><span className="faces-val faces-wrap">{eyes}</span></PrefRow>
         <p className="faces-line" role="status">{notes.network > 0 ? t("prefs.faces.network", { n: notes.network, count: formatNumber(notes.network) }) : ""}</p>
@@ -142,11 +151,11 @@ export function FacesPrefs({ onOpenPeople }: { onOpenPeople?: () => void }) {
             ))}
           </div>
         </PrefRow>
-        <div className="faces-confirm" role="status">
-          {(pendingSize !== null || pendingKind !== null) && <>
-            <span>{pendingKind !== null ? t("prefs.faces.rescanNoteKind") : pendingSize === 1600 ? t("prefs.faces.rescanNoteThorough") : t("prefs.faces.rescanNote")}</span>
-            <button type="button" className="btn small primary" onClick={pendingKind !== null ? applyKind : applyDetail}>{t("prefs.faces.change")}</button>
-            <button type="button" className="btn small" onClick={() => { setPendingSize(null); setPendingKind(null); }}>{t("aimodels.act.cancel")}</button>
+        <div className="faces-confirm" role="status" data-for="detail">
+          {pendingSize !== null && <>
+            <span>{pendingSize === 1600 ? t("prefs.faces.rescanNoteThorough") : t("prefs.faces.rescanNote")}</span>
+            <button type="button" className="btn small primary" onClick={applyDetail}>{t("prefs.faces.change")}</button>
+            <button type="button" className="btn small" onClick={() => setPendingSize(null)}>{t("aimodels.act.cancel")}</button>
           </>}
         </div>
         <p className="faces-line" role="status">{note}</p>

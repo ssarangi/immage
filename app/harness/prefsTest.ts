@@ -133,7 +133,7 @@ export async function runPrefsTest() {
     check(faces.calls.includes("strictness:strict") && btn("Stricter groups")?.getAttribute("aria-pressed") === "true", "faces: strictness did not apply");
     check(btn("Balanced") !== undefined, "faces: no Balanced choice");
     btn("Thorough")?.click(); await wait(150);
-    check(!!box.querySelector(".faces-confirm button") && /takes about 4 times longer\. Your photos will be scanned again/.test(box.querySelector(".faces-confirm")?.textContent ?? ""), "faces: no re-scan note for Thorough");
+    check(!!box.querySelector('.faces-confirm[data-for="detail"] button') && /takes about 4 times longer\. Your photos will be scanned again/.test(box.querySelector('.faces-confirm[data-for="detail"]')?.textContent ?? ""), "faces: no re-scan note for Thorough");
     check(!faces.calls.some((c) => c.startsWith("detect:")), "faces: thoroughness applied without the confirmation");
     check(JSON.stringify(lay()) === JSON.stringify(l0), "faces: the layout moved when the note came up");
     [...box.querySelectorAll<HTMLButtonElement>(".faces-confirm button")].find((b) => b.textContent === "Cancel")?.click(); await wait(120);
@@ -146,7 +146,12 @@ export async function runPrefsTest() {
     // the thoroughness text says what it costs; the recognizer choice (ArcFace is available on this fake) asks first
     check(/About 33% more faces found, but about 4 times slower/.test(box.textContent ?? "") && /Balanced \(default\): fastest\./.test(box.textContent ?? ""), "faces: the thoroughness numbers are not on the page");
     btn("ArcFace")?.click(); await wait(150);
-    check(/Switching re-processes all photos/.test(box.querySelector(".faces-confirm")?.textContent ?? ""), "faces: no note for the recognizer");
+    check(/Switching re-processes all photos/.test(box.querySelector('.faces-confirm[data-for="recognizer"]')?.textContent ?? ""), "faces: no note for the recognizer");
+    // each confirm line sits directly under the setting it belongs to
+    const under = (slot: string, rowId: string) => { const el = box.querySelector(`.faces-confirm[data-for="${slot}"]`); const row = box.querySelector(`.pref-row[data-pref-label="${rowId}"]`); return !!el && !!row && row.nextElementSibling === el; };
+    check(under("recognizer", "Recognizer"), "faces: the recognizer's confirm line is not directly under the Face matching model row");
+    check(under("detail", "Scan thoroughness"), "faces: the thoroughness confirm line is not directly under the Scan thoroughness row");
+    check(!box.querySelector('.faces-confirm[data-for="detail"] button'), "faces: the thoroughness slot shows the recognizer's question");
     check(!faces.calls.includes("recognizer:arcface"), "faces: the recognizer changed without the confirmation");
     check(JSON.stringify(lay()) === JSON.stringify(l0), "faces: the layout moved when the recognizer note came up");
     [...box.querySelectorAll<HTMLButtonElement>(".faces-confirm button")].find((b) => b.textContent === "Change")?.click(); await wait(200);
