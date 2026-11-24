@@ -12,7 +12,11 @@ mod library_ids;
 mod analysis_queue;
 mod analysis_image;
 mod faces_cluster;
+mod faces_cmds;
 mod faces_detect;
+mod faces_models;
+mod faces_service;
+mod faces_store;
 mod ram_models;
 mod tags_cmds;
 mod tags_health;
@@ -333,7 +337,11 @@ fn main() {
             ram_models.threshold_flag().store(
                 analysis_settings::load_keywords_threshold(&app.state::<settings::Settings>()),
                 std::sync::atomic::Ordering::Release);
-            let packs = Arc::new(packs::PackManager::new(vec![clip_models.store(), ram_models.store()]));
+            let faces_models = Arc::new(faces_models::Models::new(runtime.join("faces-models"), runtime.join("faces-eyes")));
+            faces_models.enabled_flag().store(
+                analysis_settings::load_faces(&app.state::<settings::Settings>()) && faces_models.installed(),
+                std::sync::atomic::Ordering::Release);
+            let packs = Arc::new(packs::PackManager::new(vec![clip_models.store(), ram_models.store(), faces_models.store()]));
             clip_models.analysis_flag().store(
                 analysis_settings::load_smart_search(&app.state::<settings::Settings>(), clip_models.installed()),
                 std::sync::atomic::Ordering::Release);
@@ -352,8 +360,20 @@ fn main() {
             };
             let tags_control = tags_service::start(search_cache.clone(), ram_models.clone(), tag_store.clone(), analysis_queue.clone(),
                 engine.tagged(), bin.clone(), apply.clone(), frame_output.clone(), runtime.clone());
+            let faces_store = Arc::new(faces_store::FaceStore::open(&runtime.join("faces.sqlite"))
+                .map_err(|e| format!("cannot open faces.sqlite: {e}"))?);
+            let faces_emit: faces_service::Emit = {
+                let events = app.handle().clone();
+                Arc::new(move |event| match event {
+                    faces_service::FacesEvent::Progress(p) => { let _ = events.emit("faces-progress", p); }
+                    faces_service::FacesEvent::Changed => { let _ = events.emit("faces-changed", ()); }
+                })
+            };
+            let faces_control = faces_service::start(search_cache.clone(), faces_models.clone(), faces_store.clone(), analysis_queue.clone(),
+                engine.tagged(), frame_output.clone(), runtime.clone(), faces_emit);
             app.manage(pack_cmds::AiState { packs, smart_search: clip_models.analysis_flag(), keywords: ram_models, tags: tag_store,
-                tags_service: tags_control, apply });
+                tags_service: tags_control, apply, faces: faces_models, faces_store, faces_service: faces_control,
+                faces_crops: runtime.join("faces-crops"), faces_runtime: runtime.clone(), faces_output: frame_output.clone() });
             let search_analysis = search_analysis::start(search_cache.clone(), clip_models.clone(), analysis_queue.clone(), engine.tagged(), frame_output.clone(), runtime.clone());
             app.manage(AppState {
                 search_analysis,

@@ -31,6 +31,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 pub enum PackId {
     Clip,
     Ram,
+    Faces,
 }
 
 // UpdateAvailable and Unsupported are part of the page's contract (the card draws them) and are

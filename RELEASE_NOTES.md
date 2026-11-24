@@ -7,6 +7,11 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- **Faces (engine and AI models):** a new optional **Faces** model (YuNet detector and
+  SFace recognizer, about 39 MB) under Preferences > AI models can find the faces in
+  your photos on this computer and group the ones that look alike. It is off until
+  you turn it on, nothing is uploaded, and all face data can be deleted at any
+  time. People view to follow.
 - **Library panel:** the Metadata, Keywording, Folders, Catalog and History cards
   now always open independently, so Folders and Catalog can be open together;
   Focus mode applies only to the Edit view's tool panels, Presets and Advanced

@@ -61,6 +61,10 @@ const NAMES: Record<PackId, () => { name: string; does: string; photos: string; 
     name: t("aimodels.kw.name"), does: t("aimodels.kw.does"), photos: t("aimodels.kw.photos"),
     what: t("aimodels.kw.what", { n: 3 }), analysis: t("aimodels.kw.analysisName"), card: "ai-models/keywords",
   }),
+  faces: () => ({
+    name: t("aimodels.faces.name"), does: t("aimodels.faces.does"), photos: t("aimodels.faces.photos"),
+    what: t("aimodels.faces.what", { n: 2 }), analysis: t("aimodels.faces.analysisName"), card: "ai-models/faces",
+  }),
 };
 
 export function AiModelsView(p: ViewProps) {

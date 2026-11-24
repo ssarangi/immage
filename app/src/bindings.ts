@@ -134,6 +134,37 @@ export const commands = {
 	analysisStatus: () => __TAURI_INVOKE<AnalysisStatusAll>("analysis_status"),
 	/**  The same pause as `search_pause` and the Find icon. */
 	analysisPause: (paused: boolean) => __TAURI_INVOKE<null>("analysis_pause", { paused }),
+	facesStatus: () => __TAURI_INVOKE<FacesStatus>("faces_status"),
+	/**  Scans a folder (and its subfolders) once, whether or not it is in the Catalog. Needs the pack. */
+	facesScanFolder: (path: string) => __TAURI_INVOKE<null>("faces_scan_folder", { path }),
+	facesRetry: () => __TAURI_INVOKE<void>("faces_retry"),
+	facesPeople: (includeRemoved: boolean) => __TAURI_INVOKE<PersonRow[]>("faces_people", { includeRemoved }),
+	facesGroups: () => __TAURI_INVOKE<ClusterRow[]>("faces_groups"),
+	facesList: (filter: FaceFilter, offset: number, limit: number) => __TAURI_INVOKE<FaceRow[]>("faces_list", { filter, offset, limit }),
+	facesPersonCreate: (name: string, faces: number[]) => __TAURI_INVOKE<number>("faces_person_create", { name, faces }),
+	facesPersonRename: (id: number, name: string) => __TAURI_INVOKE<null>("faces_person_rename", { id, name }),
+	facesPersonMerge: (from: number, into: number) => __TAURI_INVOKE<null>("faces_person_merge", { from, into }),
+	/**  "Remove person" (hide and exclude from suggestions) or restore. */
+	facesPersonRemove: (id: number, removed: boolean) => __TAURI_INVOKE<null>("faces_person_remove", { id, removed }),
+	facesPersonCover: (id: number, face: number) => __TAURI_INVOKE<null>("faces_person_cover", { id, face }),
+	/**  Names faces after a person: the bulk assign and the confirm of a suggestion. */
+	facesAssign: (person: number, faces: number[]) => __TAURI_INVOKE<null>("faces_assign", { person, faces }),
+	facesUnassign: (faces: number[]) => __TAURI_INVOKE<null>("faces_unassign", { faces }),
+	/**  "Not this person": rejects a suggestion or a naming, for good. */
+	facesNotPerson: (person: number, faces: number[]) => __TAURI_INVOKE<null>("faces_not_person", { person, faces }),
+	/**  "Not a face": a false detection. */
+	facesNotFace: (faces: number[]) => __TAURI_INVOKE<null>("faces_not_face", { faces }),
+	/**  Reverses the latest change; returns what it was. */
+	facesUndo: () => __TAURI_INVOKE<string | null>("faces_undo"),
+	/**  Deletes every face, person, group and crop, and turns the switch off so nothing is scanned again unasked. */
+	facesDeleteAll: () => __TAURI_INVOKE<null>("faces_delete_all"),
+	/**
+	 *  A face's picture as a JPEG file in the local cache, made from the source photo the first time it
+	 *  is asked for (`size` 32 to 512). The cache holds no more than a few thousand and is emptied by
+	 *  `faces_delete_all`.
+	 */
+	facesCrop: (face: number, size: number) => __TAURI_INVOKE<string>("faces_crop", { face, size }),
+	facesEyeState: (face: number) => __TAURI_INVOKE<EyeState>("faces_eye_state", { face }),
 	keywordsSummary: () => __TAURI_INVOKE<KeywordsSummary>("keywords_summary"),
 	/**
 	 *  Sets the confidence a tag needs to become a keyword. Stored results are re-decided in
@@ -517,7 +548,7 @@ export type Album = {
 	count: number,
 };
 
-export type AnalysisId = "smartSearch" | "keywords";
+export type AnalysisId = "smartSearch" | "keywords" | "faces";
 
 export type AnalysisProgress = {
 	installed: boolean,
@@ -770,6 +801,12 @@ export type ChosenFile = {
 	path: string,
 	label?: string | null,
 	hash: number | null,
+};
+
+export type ClusterRow = {
+	id: number,
+	rep_face_id: number,
+	size: number,
 };
 
 export type ColorLabel = "red" | "yellow" | "green" | "blue" | "purple";
@@ -1141,6 +1178,72 @@ export type ExposureMedian = {
 	fNumber: number | null,
 	shutterSec: number | null,
 	iso: number | null,
+};
+
+export type EyeState = {
+	/**  False when the user has not supplied the eye model: nothing was computed. */
+	available: boolean,
+	/**  Probability each eye is open (0 to 1), the person's right eye first (the left one in the picture). */
+	right: number | null,
+	left: number | null,
+	/**  The worse eye decides. */
+	verdict: EyeVerdict | null,
+};
+
+export type EyeVerdict = "open" | "semiClosed" | "closed";
+
+/**  Where a list of faces comes from. */
+export type FaceFilter = { kind: "person"; id: number } | { kind: "cluster"; id: number } | 
+/**  Unreviewed faces suggested for this person. */
+{ kind: "suggested"; id: number } | 
+/**  Unreviewed faces with no suggestion and no group. */
+{ kind: "unknown" } | { kind: "photo"; path: string };
+
+export type FaceRow = {
+	id: number,
+	path: string,
+	x: number | null,
+	y: number | null,
+	w: number | null,
+	h: number | null,
+	score: number | null,
+	frontal: number | null,
+	person_id: number | null,
+	state: string,
+	suggested_person: number | null,
+	suggested_sim: number | null,
+	cluster_id: number | null,
+};
+
+export type FaceTotals = {
+	photos: number,
+	faces: number,
+	people: number,
+	unreviewed: number,
+	groups: number,
+	suggestions: number,
+};
+
+export type FacesStatus = {
+	/**  The Faces switch (Preferences > AI models). */
+	enabled: boolean,
+	/**  The YuNet and SFace pack is installed. */
+	installed: boolean,
+	/**  The user has supplied the eye-state model (optional, never downloaded). */
+	eyes_available: boolean,
+	totals: FaceTotals,
+	/**  Photos scanned in this session and the faces found in them. */
+	scanned: number,
+	faces_found: number,
+	/**  Photos still to scan, once counted. */
+	pending: number | null,
+	folders_waiting: number,
+	/**  Milliseconds of the last photo's detection and embedding, once measured. */
+	infer_ms: number | null,
+	/**  "ok", "retrying" or "blocked", with the reason once not ok. */
+	health: string,
+	failure: string | null,
+	undo: string | null,
 };
 
 export type FavouriteFocal = {
@@ -1908,7 +2011,7 @@ export type PackErrorKind = "offline" | "diskFull" | "hashMismatch" | "unsupport
 /**  Not shown to the user: a cancelled download is a Stopped pack with no error. */
 "cancelled" | "other";
 
-export type PackId = "clip" | "ram";
+export type PackId = "clip" | "ram" | "faces";
 
 export type PackInfo = {
 	id: PackId,
@@ -2042,6 +2145,18 @@ export type Peak = {
 export type PendingRoot = {
 	folder: string,
 	pending: number,
+};
+
+export type PersonRow = {
+	id: number,
+	name: string,
+	state: string,
+	faces: number,
+	photos: number,
+	cover_face_id: number | null,
+	cover_manual: boolean,
+	/**  Unreviewed faces the analysis suggests for this person. */
+	suggestions: number,
 };
 
 /**  What the analysis knows about one photo, for the Keywording card's Auto-keywords group. */

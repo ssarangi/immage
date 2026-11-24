@@ -157,13 +157,13 @@ pub fn orientation(jpeg: &[u8]) -> u8 {
     find().unwrap_or(1)
 }
 
-fn decode(jpeg: &[u8]) -> Result<RgbImage, String> {
+fn decode(jpeg: &[u8], edge: u32) -> Result<RgbImage, String> {
     let mut reader = image::ImageReader::with_format(std::io::Cursor::new(jpeg), image::ImageFormat::Jpeg);
     let mut limits = image::Limits::default();
     limits.max_alloc = Some(1 << 30);
     reader.limits(limits);
     let img = reader.decode().map_err(|e| e.to_string())?;
-    let img = if img.width().max(img.height()) > EDGE { img.thumbnail(EDGE, EDGE) } else { img };
+    let img = if img.width().max(img.height()) > edge { img.thumbnail(edge, edge) } else { img };
     Ok(crate::catalog_thumb_src::orient(DynamicImage::from(img), orientation(jpeg)).to_rgb8())
 }
 
@@ -180,6 +180,11 @@ fn is_raw_name(path: &Path) -> bool {
 /// The photo's own small picture, or None when the engine should render it: a file type this
 /// does not read, no usable preview, a preview shorter than `MIN_EDGE`, or a failed decode.
 pub fn picture(path: &Path) -> Option<Picture> {
+    picture_at(path, EDGE)
+}
+
+/// `picture` with another long edge (a face crop wants more pixels than an analysis).
+pub fn picture_at(path: &Path, edge: u32) -> Option<Picture> {
     let size = std::fs::metadata(path).ok()?.len();
     let mut file = std::fs::File::open(path).ok()?;
     if is_jpeg_name(path) {
@@ -188,7 +193,7 @@ pub fn picture(path: &Path) -> Option<Picture> {
         }
         let mut bytes = Vec::with_capacity(size as usize);
         file.read_to_end(&mut bytes).ok()?;
-        let rgb = decode(&bytes).ok()?;
+        let rgb = decode(&bytes, edge).ok()?;
         return Some(Picture { rgb, source: Source::Jpeg });
     }
     if !is_raw_name(path) {
@@ -198,7 +203,7 @@ pub fn picture(path: &Path) -> Option<Picture> {
     file.seek(SeekFrom::Start(0)).ok()?;
     file.take(HEAD).read_to_end(&mut head).ok()?;
     let (s, e) = largest_embedded_jpeg(&head)?;
-    let rgb = decode(&head[s..e]).ok()?;
+    let rgb = decode(&head[s..e], edge).ok()?;
     // the preview's own size, before the shrink to EDGE: a shrunk one is at least MIN_EDGE
     if rgb.width().max(rgb.height()) < MIN_EDGE {
         return None;
@@ -320,7 +325,7 @@ mod tests {
         with.extend_from_slice(&base[2..]);
         assert_eq!(orientation(&with), 6);
         assert_eq!(orientation(&base), 1);
-        let img = decode(&with).unwrap();
+        let img = decode(&with, EDGE).unwrap();
         assert_eq!((img.width(), img.height()), (100, 200), "turned upright");
     }
 

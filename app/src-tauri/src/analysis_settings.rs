@@ -12,6 +12,8 @@
 //!   ai.smart_search.analysis_consent  unix seconds, or "migrated"
 //!   ai.keywords.enabled               "1" | "0" (always off until the user turns it on)
 //!   ai.keywords.analysis_consent      unix seconds
+//!   ai.faces.enabled                  "1" | "0" (always off until the user turns it on)
+//!   ai.faces.analysis_consent         unix seconds
 //!   ai.keywords.threshold             percent, 40..=95 (70 when absent)
 //!   ai.<pack>.download_consent        unix seconds, or "migrated"
 use crate::settings::Settings;
@@ -21,6 +23,7 @@ use crate::settings::Settings;
 pub enum AnalysisId {
     SmartSearch,
     Keywords,
+    Faces,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, specta::Type)]
@@ -33,18 +36,21 @@ pub fn enabled_key(id: AnalysisId) -> &'static str {
     match id {
         AnalysisId::SmartSearch => "ai.smart_search.enabled",
         AnalysisId::Keywords => "ai.keywords.enabled",
+        AnalysisId::Faces => "ai.faces.enabled",
     }
 }
 pub fn analysis_consent_key(id: AnalysisId) -> &'static str {
     match id {
         AnalysisId::SmartSearch => "ai.smart_search.analysis_consent",
         AnalysisId::Keywords => "ai.keywords.analysis_consent",
+        AnalysisId::Faces => "ai.faces.analysis_consent",
     }
 }
 pub fn download_consent_key(pack: crate::packs::PackId) -> &'static str {
     match pack {
         crate::packs::PackId::Clip => "ai.clip.download_consent",
         crate::packs::PackId::Ram => "ai.ram.download_consent",
+        crate::packs::PackId::Faces => "ai.faces.download_consent",
     }
 }
 fn stamp() -> String {
@@ -91,6 +97,10 @@ pub fn load_keywords_burst(settings: &Settings) -> bool {
 /// The Auto-keywords switch: off until the user turns it on, whatever else is stored.
 pub fn load_keywords(settings: &Settings) -> bool {
     settings.get(enabled_key(AnalysisId::Keywords)).as_deref() == Some("1")
+}
+/// The Faces switch: off until the user turns it on, whatever else is stored (embeddings are biometric).
+pub fn load_faces(settings: &Settings) -> bool {
+    settings.get(enabled_key(AnalysisId::Faces)).as_deref() == Some("1")
 }
 /// The confidence setting in percent, kept inside the range the page offers.
 pub fn load_keywords_threshold(settings: &Settings) -> u8 {

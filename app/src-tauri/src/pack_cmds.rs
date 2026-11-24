@@ -23,6 +23,14 @@ pub struct AiState {
     pub tags: Arc<crate::tags_store::TagStore>,
     pub tags_service: crate::tags_service::Control,
     pub apply: crate::tags_service::Applier,
+    /// The Faces pack (YuNet, SFace), its switch, store, background service and the places it writes to
+    /// (faces_cmds.rs, faces_service.rs).
+    pub faces: Arc<crate::faces_models::Models>,
+    pub faces_store: Arc<crate::faces_store::FaceStore>,
+    pub faces_service: crate::faces_service::Control,
+    pub faces_crops: std::path::PathBuf,
+    pub faces_runtime: std::path::PathBuf,
+    pub faces_output: Arc<crate::frame_output::FrameOutput>,
 }
 
 fn with_consents(mut info: PackInfo, settings: &Settings) -> PackInfo {
@@ -114,6 +122,7 @@ pub async fn pack_remove(
             match a {
                 AnalysisId::SmartSearch => ai.smart_search.store(false, Ordering::Release),
                 AnalysisId::Keywords => ai.keywords.enabled_flag().store(false, Ordering::Release),
+                AnalysisId::Faces => ai.faces.enabled_flag().store(false, Ordering::Release),
             }
         }
         state.analysis_queue.cancel();
@@ -122,6 +131,10 @@ pub async fn pack_remove(
                 if let Some(cache) = &state.search_cache {
                     cache.clear_analyses()?;
                 }
+            }
+            if analyses.contains(&AnalysisId::Faces) {
+                // removing the model keeps the faces and people (Delete all face data is its own command)
+                ai.faces_service.request_analysis();
             }
             if analyses.contains(&AnalysisId::Keywords) {
                 // the stored tags only; keywords already on photos stay (Remove AI keywords takes them off)
@@ -141,7 +154,7 @@ pub fn pack_license(ai: State<'_, AiState>, id: PackId) -> Result<String, String
 #[tauri::command]
 #[specta::specta]
 pub fn analysis_get(settings: State<'_, Settings>) -> Vec<AnalysisSettings> {
-    [AnalysisId::SmartSearch, AnalysisId::Keywords]
+    [AnalysisId::SmartSearch, AnalysisId::Keywords, AnalysisId::Faces]
         .into_iter()
         .map(|id| AnalysisSettings { id, enabled: settings.get(ai::enabled_key(id)).as_deref() == Some("1") })
         .collect()
@@ -174,6 +187,7 @@ pub async fn analysis_set(
     match id {
         AnalysisId::SmartSearch => ai.smart_search.store(enabled, Ordering::Release),
         AnalysisId::Keywords => ai.keywords.enabled_flag().store(enabled, Ordering::Release),
+        AnalysisId::Faces => ai.faces.enabled_flag().store(enabled, Ordering::Release),
     }
     if !enabled {
         // queued photos are dropped; the one in flight finishes and is kept
@@ -216,6 +230,7 @@ pub fn analysis_status(state: State<'_, AppState>, ai: State<'_, AiState>) -> An
         rows: vec![
             row(AnalysisId::SmartSearch, state.search_analysis.status(paused)),
             row(AnalysisId::Keywords, ai.tags_service.status(paused)),
+            row(AnalysisId::Faces, ai.faces_service.status(paused)),
         ],
     }
 }
