@@ -1,0 +1,303 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
+// The pure model of the People view (notes/faces-ux-spec.md): the sections and their tiles, the stable
+// order that never moves a tile under the pointer, the selection reducer, the grid geometry and the
+// marquee, the keyboard map, the name combobox's ranking, the Undo line's merging and the plain-language
+// state of the scan. No React and no commands: a Node test and the harness check all of it.
+import type { ClusterRow, FaceRow, FacesStatus, PersonRow } from "./bindings";
+
+export type Section = "people" | "review" | "unassigned" | "ignored";
+export const SECTIONS: Section[] = ["people", "review", "unassigned", "ignored"];
+
+// ---- tiles ----
+
+export type Tile =
+  | { key: string; kind: "person"; id: number; name: string; faces: number; photos: number; cover: number | null; review: number; ignored: boolean }
+  | { key: string; kind: "group"; id: number; size: number; rep: number }
+  | { key: string; kind: "maybe"; person: number; name: string; size: number; rep: number | null }
+  | { key: string; kind: "face"; id: number; path: string; maybe: number | null };
+
+export type PeopleData = {
+  people: PersonRow[];            // active and ignored
+  groups: ClusterRow[];
+  unknown: FaceRow[];             // faces with no person and no group (loaded so far)
+  unknownMore: boolean;           // more of them than are loaded
+  covers?: ReadonlyMap<number, number>;
+};
+
+export const personKey = (id: number) => `p:${id}`;
+export const groupKey = (id: number) => `g:${id}`;
+export const maybeKey = (id: number) => `s:${id}`;
+export const faceKey = (id: number) => `f:${id}`;
+export const keyId = (key: string) => Number(key.slice(2));
+
+export function personTile(p: PersonRow): Tile {
+  return { key: personKey(p.id), kind: "person", id: p.id, name: p.name, faces: p.faces, photos: p.photos, cover: p.cover_face_id,
+           review: p.suggestions, ignored: p.state !== "active" };
+}
+
+// the tiles of a section in their natural order (most photos first, biggest groups first)
+export function sectionTiles(section: Section, d: PeopleData): Tile[] {
+  switch (section) {
+    case "people":
+      return d.people.filter((p) => p.state === "active").sort((a, b) => b.photos - a.photos || a.name.localeCompare(b.name)).map(personTile);
+    case "ignored":
+      return d.people.filter((p) => p.state !== "active").sort((a, b) => a.name.localeCompare(b.name)).map(personTile);
+    case "review": {
+      const maybes: Tile[] = d.people.filter((p) => p.state === "active" && p.suggestions > 0).sort((a, b) => b.suggestions - a.suggestions)
+        .map((p) => ({ key: maybeKey(p.id), kind: "maybe" as const, person: p.id, name: p.name, size: p.suggestions, rep: p.cover_face_id }));
+      const groups: Tile[] = [...d.groups].sort((a, b) => b.size - a.size || a.id - b.id)
+        .map((g) => ({ key: groupKey(g.id), kind: "group" as const, id: g.id, size: g.size, rep: g.rep_face_id }));
+      return [...maybes, ...groups];
+    }
+    case "unassigned":
+      return d.unknown.map((f) => ({ key: faceKey(f.id), kind: "face" as const, id: f.id, path: f.path, maybe: f.suggested_person }));
+  }
+}
+
+// What the rail counts. `unassigned` is how many are loaded; more says the real count is higher.
+export function sectionCounts(d: PeopleData): Record<Section, { n: number; more: boolean }> {
+  return {
+    people: { n: d.people.filter((p) => p.state === "active").length, more: false },
+    review: { n: sectionTiles("review", d).length, more: false },
+    unassigned: { n: d.unknown.length, more: d.unknownMore },
+    ignored: { n: d.people.filter((p) => p.state !== "active").length, more: false },
+  };
+}
+
+// New data keeps the order the user is looking at: tiles that stay keep their place, those that went are
+// dropped, new ones append. The order changes only when the user sorts or leaves the view (`prev` is null).
+export function stableOrder(prev: readonly string[] | null, next: readonly Tile[]): Tile[] {
+  if (!prev || !prev.length) return [...next];
+  const by = new Map(next.map((t) => [t.key, t]));
+  const out: Tile[] = [];
+  const seen = new Set<string>();
+  for (const k of prev) { const t = by.get(k); if (t) { out.push(t); seen.add(k); } }
+  for (const t of next) if (!seen.has(t.key)) out.push(t);
+  return out;
+}
+
+// ---- selection ----
+
+export type Sel = { keys: ReadonlySet<string>; anchor: number | null; active: number };
+export const NO_SEL: Sel = { keys: new Set(), anchor: null, active: 0 };
+
+export type SelAction =
+  | { type: "click"; index: number }                         // plain click
+  | { type: "toggle"; index: number }                        // cmd or ctrl click
+  | { type: "range"; index: number }                         // shift click, from the anchor
+  | { type: "move"; index: number; extend: boolean }         // the keyboard's active tile (shift extends)
+  | { type: "all" }
+  | { type: "clear" }
+  | { type: "marquee"; indexes: number[]; additive: boolean; base: ReadonlySet<string> };
+
+export function select(s: Sel, a: SelAction, order: readonly string[]): Sel {
+  const last = Math.max(0, order.length - 1);
+  const clamp = (i: number) => Math.min(Math.max(0, i), last);
+  const runKeys = (from: number, to: number) => {
+    const [lo, hi] = from <= to ? [from, to] : [to, from];
+    return order.slice(lo, hi + 1);
+  };
+  switch (a.type) {
+    case "click": { const i = clamp(a.index); return { keys: new Set(order[i] ? [order[i]] : []), anchor: i, active: i }; }
+    case "toggle": {
+      const i = clamp(a.index), k = order[i];
+      if (!k) return s;
+      const keys = new Set(s.keys);
+      if (!keys.delete(k)) keys.add(k);
+      return { keys, anchor: i, active: i };
+    }
+    case "range": {
+      const i = clamp(a.index), from = s.anchor ?? i;
+      return { keys: new Set(runKeys(from, i)), anchor: from, active: i };
+    }
+    case "move": {
+      const i = clamp(a.index);
+      if (!a.extend) return { keys: new Set(order[i] ? [order[i]] : []), anchor: i, active: i };
+      const from = s.anchor ?? s.active;
+      return { keys: new Set(runKeys(from, i)), anchor: from, active: i };
+    }
+    case "all": return { keys: new Set(order), anchor: s.anchor, active: s.active };
+    case "clear": return { keys: new Set(), anchor: null, active: s.active };
+    case "marquee": {
+      const keys = new Set(a.additive ? a.base : []);
+      for (const i of a.indexes) if (order[i]) keys.add(order[i]);
+      return { keys, anchor: a.indexes.length ? a.indexes[0] : s.anchor, active: s.active };
+    }
+  }
+}
+
+// selection survives a data change by key; keys that are gone fall out
+export function keepSelected(s: Sel, order: readonly string[]): Sel {
+  const have = new Set(order);
+  const keys = new Set([...s.keys].filter((k) => have.has(k)));
+  if (keys.size === s.keys.size) return { ...s, active: Math.min(s.active, Math.max(0, order.length - 1)) };
+  return { keys, anchor: null, active: Math.min(s.active, Math.max(0, order.length - 1)) };
+}
+
+// ---- grid geometry ----
+
+export const TILE_MIN = 72, TILE_MAX = 160, TILE_DEFAULT = 112;
+export const GAP = 12, PAD = 16, CAPTION = 36;   // two caption lines, fixed
+
+export type Geometry = { cols: number; tile: number; rowH: number; pad: number; gap: number };
+export function geometry(width: number, tile: number): Geometry {
+  const t = Math.min(TILE_MAX, Math.max(TILE_MIN, Math.round(tile)));
+  const cols = Math.max(1, Math.floor((width - 2 * PAD + GAP) / (t + GAP)));
+  return { cols, tile: t, rowH: t + CAPTION + GAP, pad: PAD, gap: GAP };
+}
+export const rowsOf = (count: number, g: Geometry) => Math.ceil(count / g.cols);
+export const totalHeight = (count: number, g: Geometry) => rowsOf(count, g) * g.rowH + 2 * g.pad;
+export const tilePos = (index: number, g: Geometry) => ({
+  x: g.pad + (index % g.cols) * (g.tile + g.gap), y: g.pad + Math.floor(index / g.cols) * g.rowH,
+});
+
+// the tiles to mount: the rows in view and two each side
+export function visibleRange(scrollTop: number, viewH: number, count: number, g: Geometry, over = 2): { from: number; to: number } {
+  const rows = rowsOf(count, g);
+  const first = Math.max(0, Math.floor((scrollTop - g.pad) / g.rowH) - over);
+  const last = Math.min(rows - 1, Math.floor((scrollTop + viewH - g.pad) / g.rowH) + over);
+  if (last < first) return { from: 0, to: 0 };
+  return { from: first * g.cols, to: Math.min(count, (last + 1) * g.cols) };
+}
+
+// the tiles a rectangle (in the scroll content's coordinates) touches; computed, not hit-tested, so
+// tiles that are not mounted count
+export function tilesInRect(r: { x: number; y: number; w: number; h: number }, count: number, g: Geometry): number[] {
+  const x0 = r.x, x1 = r.x + r.w, y0 = r.y, y1 = r.y + r.h;
+  const colA = Math.max(0, Math.floor((x0 - g.pad) / (g.tile + g.gap))), colB = Math.min(g.cols - 1, Math.floor((x1 - g.pad) / (g.tile + g.gap)));
+  const rowA = Math.max(0, Math.floor((y0 - g.pad) / g.rowH)), rowB = Math.floor((y1 - g.pad) / g.rowH);
+  const out: number[] = [];
+  for (let row = rowA; row <= rowB; row++) {
+    for (let col = colA; col <= colB; col++) {
+      const i = row * g.cols + col;
+      if (i >= count) break;
+      const p = tilePos(i, g);
+      if (p.x < x1 && p.x + g.tile > x0 && p.y < y1 && p.y + g.tile + CAPTION > y0) out.push(i);
+    }
+  }
+  return out;
+}
+
+// ---- keyboard ----
+
+export type KeyIn = { key: string; shift: boolean; meta: boolean; alt: boolean };
+export type Intent =
+  | { kind: "move"; index: number; extend: boolean }
+  | { kind: "name"; seed: string }
+  | { kind: "open" } | { kind: "all" } | { kind: "clear" } | { kind: "rename" }
+  | { kind: "merge" } | { kind: "ignore" } | { kind: "reject" } | { kind: "confirm" } | { kind: "cover" } | { kind: "undo" };
+export type KeyCtx = { section: Section; open: boolean; count: number; cols: number; active: number; dir: "ltr" | "rtl" };
+
+// What a key does in the grid. In the sections that hold unnamed faces any letter opens the name box
+// with that letter in it (the quickest path: arrows, type "Dad", Enter); in People the letters are the
+// shortcuts M (merge), I (ignore) and C (cover), as the spec lists them.
+export function gridKey(e: KeyIn, c: KeyCtx): Intent | null {
+  if (c.count === 0 && e.key !== "Escape") return null;
+  const step = (d: number) => ({ kind: "move" as const, index: Math.min(Math.max(0, c.active + d), c.count - 1), extend: e.shift });
+  const fwd = c.dir === "rtl" ? -1 : 1;
+  const cmd = e.meta;
+  if (cmd) {
+    if (e.key === "a" || e.key === "A") return { kind: "all" };
+    if (e.key === "z" || e.key === "Z") return { kind: "undo" };
+    return null;
+  }
+  if (e.alt) return null;
+  switch (e.key) {
+    case "ArrowRight": return step(fwd);
+    case "ArrowLeft": return step(-fwd);
+    case "ArrowDown": return step(c.cols);
+    case "ArrowUp": return step(-c.cols);
+    case "Home": return { kind: "move", index: 0, extend: e.shift };
+    case "End": return { kind: "move", index: c.count - 1, extend: e.shift };
+    case "PageDown": return step(c.cols * 4);
+    case "PageUp": return step(-c.cols * 4);
+    case "Escape": return { kind: "clear" };
+    case "Enter": return { kind: "open" };
+    case "F2": return c.section === "people" ? { kind: "rename" } : null;
+    case "Backspace": case "Delete": return c.section === "people" ? null : { kind: "reject" };
+    case " ": return null;
+  }
+  const naming = c.section === "review" || c.section === "unassigned" || c.open;
+  if (naming && (e.key === "n" || e.key === "N")) return { kind: "name", seed: "" };
+  if (naming && e.key.length === 1 && /\p{L}/u.test(e.key)) return { kind: "name", seed: e.key };
+  if (c.section === "people") {
+    if (e.key === "m" || e.key === "M") return { kind: "merge" };
+    if (e.key === "i" || e.key === "I") return { kind: "ignore" };
+    if (e.key === "c" || e.key === "C") return { kind: "cover" };
+  }
+  if (c.section === "ignored" && (e.key === "r" || e.key === "R")) return { kind: "ignore" };
+  return null;
+}
+
+// ---- the name combobox ----
+
+export type NameOption = { kind: "person"; id: number; name: string; photos: number } | { kind: "create"; name: string };
+
+const norm = (s: string) => s.normalize("NFKD").replace(/\p{M}/gu, "").trim().toLowerCase();
+
+// existing people that match what is typed, best first (prefix, then contains, then the most photos),
+// and a Create row last when the name is not already taken (names are unique, case-insensitively)
+export function nameOptions(query: string, people: readonly PersonRow[], limit = 8): NameOption[] {
+  const q = norm(query);
+  const active = people.filter((p) => p.state === "active");
+  const scored = active.map((p) => {
+    const n = norm(p.name);
+    const rank = !q ? 2 : n === q ? 0 : n.startsWith(q) ? 1 : n.split(/\s+/).some((w) => w.startsWith(q)) ? 2 : n.includes(q) ? 3 : 9;
+    return { p, rank };
+  }).filter((x) => x.rank < 9).sort((a, b) => a.rank - b.rank || b.p.photos - a.p.photos || a.p.name.localeCompare(b.p.name));
+  const out: NameOption[] = scored.slice(0, limit).map(({ p }) => ({ kind: "person", id: p.id, name: p.name, photos: p.photos }));
+  const trimmed = query.trim();
+  if (trimmed && !active.some((p) => norm(p.name) === q)) out.push({ kind: "create", name: trimmed });
+  return out;
+}
+
+// ---- the Undo line ----
+
+export type UndoKind = "assigned" | "confirmed" | "ignored" | "removed" | "merged" | "renamed" | "cover" | "restored" | "notPerson" | "notFace";
+export type UndoEntry = { kind: UndoKind; n: number; name: string; other: string; steps: number };
+
+// a second action of the same kind and name while the line is up joins it ("Ignored 3 faces"); each
+// action is one step of faces_undo, and Undo takes them all back
+export function mergeUndo(prev: UndoEntry | null, next: UndoEntry): UndoEntry {
+  if (!prev || prev.kind !== next.kind || prev.name !== next.name || prev.other !== next.other
+      || next.kind === "merged" || next.kind === "renamed" || next.kind === "cover") return next;
+  return { ...next, n: prev.n + next.n, steps: prev.steps + next.steps };
+}
+
+// ---- the scan, in plain words ----
+
+export type ScanKind = "off" | "idle" | "scanning" | "paused" | "waiting" | "blocked" | "retrying";
+export type ScanView = { kind: ScanKind; done: number; total: number | null; left: number | null; reason: string | null };
+
+// from faces_status and the shared pause. `left` is the estimate in seconds, once a photo has been timed
+export function scanView(s: Pick<FacesStatus, "enabled" | "installed" | "scanned" | "pending" | "infer_ms" | "health" | "failure" | "folders_waiting">, paused: boolean): ScanView {
+  const done = s.scanned;
+  const pend = s.pending;
+  const total = pend === null ? null : done + pend;
+  const base = { done, total, left: pend !== null && s.infer_ms ? Math.round((pend * s.infer_ms) / 1000) : null, reason: s.failure };
+  if (!s.enabled || !s.installed) return { ...base, kind: "off" };
+  if (s.health === "blocked") return { ...base, kind: "blocked" };
+  if (s.health === "retrying") return { ...base, kind: "retrying" };
+  const busy = (pend ?? 0) > 0 || s.folders_waiting > 0;
+  if (busy && paused) return { ...base, kind: "paused" };
+  if (busy) return { ...base, kind: "scanning" };
+  if (pend === null && s.scanned === 0) return { ...base, kind: "waiting" };
+  return { ...base, kind: "idle" };
+}
+
+export type ViewKind = "consent" | "loading" | "error" | "scanning" | "none" | "ready";
+
+// what the centre shows: the consent card until People is on, a skeleton while the first faces are looked for
+export function viewKind(s: FacesStatus | null, failed: boolean, scan: ScanView, loaded: boolean): ViewKind {
+  if (!s) return failed ? "error" : "loading";
+  if (!s.enabled || !s.installed) return "consent";
+  if (s.totals.faces === 0) return scan.kind === "scanning" || scan.kind === "waiting" || scan.kind === "paused" ? "scanning" : loaded ? "none" : "loading";
+  return "ready";
+}
+
+// the dot on the People tab: faces that need a look
+export function needsReview(s: FacesStatus | null): boolean {
+  return !!s && s.enabled && s.installed && (s.totals.groups > 0 || s.totals.suggestions > 0);
+}

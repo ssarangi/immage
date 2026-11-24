@@ -1,0 +1,150 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// peopleModel.ts: sections and tiles, stable order, the selection reducer, grid geometry and marquee, the
+// keyboard map, the name combobox's ranking, the Undo line and the scan's plain state.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { NO_SEL, GAP, PAD, CAPTION, geometry, gridKey, keepSelected, mergeUndo, nameOptions, needsReview, scanView, sectionCounts,
+  sectionTiles, select, stableOrder, tilePos, tilesInRect, totalHeight, viewKind, visibleRange } from '../app/src/peopleModel.ts';
+
+const person = (id, name, o = {}) => ({ id, name, state: 'active', faces: 5, photos: 10, cover_face_id: null, cover_manual: false, suggestions: 0, ...o });
+const data = (o = {}) => ({ people: [], groups: [], unknown: [], unknownMore: false, ...o });
+const face = (id, o = {}) => ({ id, path: `/p/${id}.jpg`, x: 0, y: 0, w: 1, h: 1, score: 1, frontal: 1, person_id: null, state: 'unreviewed',
+  suggested_person: null, suggested_sim: null, cluster_id: null, ...o });
+const status = (o = {}) => ({ enabled: true, installed: true, eyes_available: false, scanned: 0, faces_found: 0, pending: null, folders_waiting: 0,
+  infer_ms: null, health: 'ok', failure: null, undo: null, totals: { photos: 0, faces: 0, people: 0, unreviewed: 0, groups: 0, suggestions: 0 }, ...o });
+
+test('sections: people by photos, ignored apart, review lists "maybe" tiles then groups by size', () => {
+  const d = data({ people: [person(1, 'Zed', { photos: 3 }), person(2, 'Amy', { photos: 30, suggestions: 4 }), person(3, 'Old', { state: 'ignored' })],
+    groups: [{ id: 7, rep_face_id: 70, size: 3 }, { id: 8, rep_face_id: 80, size: 9 }], unknown: [face(1), face(2)], unknownMore: true });
+  assert.deepEqual(sectionTiles('people', d).map((t) => t.key), ['p:2', 'p:1']);
+  assert.deepEqual(sectionTiles('ignored', d).map((t) => t.key), ['p:3']);
+  assert.deepEqual(sectionTiles('review', d).map((t) => t.key), ['s:2', 'g:8', 'g:7']);
+  assert.deepEqual(sectionTiles('unassigned', d).map((t) => t.key), ['f:1', 'f:2']);
+  assert.deepEqual(sectionCounts(d), { people: { n: 2, more: false }, review: { n: 3, more: false }, unassigned: { n: 2, more: true }, ignored: { n: 1, more: false } });
+});
+
+test('stable order: kept tiles stay, gone ones drop, new ones append', () => {
+  const t = (k) => ({ key: k, kind: 'face', id: 0, path: '', maybe: null });
+  assert.deepEqual(stableOrder(['a', 'b', 'c'], [t('c'), t('x'), t('a')]).map((x) => x.key), ['a', 'c', 'x']);
+  assert.deepEqual(stableOrder(null, [t('c'), t('a')]).map((x) => x.key), ['c', 'a']);
+});
+
+test('selection: click, toggle, range, keyboard extend, all, clear, marquee', () => {
+  const order = ['a', 'b', 'c', 'd', 'e'];
+  let s = select(NO_SEL, { type: 'click', index: 1 }, order);
+  assert.deepEqual([...s.keys], ['b']);
+  s = select(s, { type: 'toggle', index: 3 }, order);
+  assert.deepEqual([...s.keys].sort(), ['b', 'd']);
+  s = select(s, { type: 'toggle', index: 1 }, order);
+  assert.deepEqual([...s.keys], ['d']);
+  s = select(select(NO_SEL, { type: 'click', index: 1 }, order), { type: 'range', index: 3 }, order);
+  assert.deepEqual([...s.keys], ['b', 'c', 'd']);
+  s = select(s, { type: 'range', index: 0 }, order);   // the anchor stays where the first click was
+  assert.deepEqual([...s.keys], ['a', 'b']);
+  s = select(select(NO_SEL, { type: 'click', index: 2 }, order), { type: 'move', index: 4, extend: true }, order);
+  assert.deepEqual([...s.keys], ['c', 'd', 'e']);
+  assert.equal(select(s, { type: 'all' }, order).keys.size, 5);
+  assert.equal(select(s, { type: 'clear' }, order).keys.size, 0);
+  const base = new Set(['a']);
+  assert.deepEqual([...select(NO_SEL, { type: 'marquee', indexes: [2, 3], additive: true, base }, order).keys].sort(), ['a', 'c', 'd']);
+  assert.deepEqual([...select(NO_SEL, { type: 'marquee', indexes: [2], additive: false, base }, order).keys], ['c']);
+  assert.deepEqual([...keepSelected(s, ['c', 'x']).keys], ['c']);
+});
+
+test('geometry: columns follow the width, rows are fixed, the window is bounded', () => {
+  const g = geometry(1000, 112);
+  assert.equal(g.cols, Math.floor((1000 - 2 * PAD + GAP) / (112 + GAP)));
+  assert.equal(g.rowH, 112 + CAPTION + GAP);
+  assert.equal(geometry(10, 112).cols, 1);
+  assert.equal(geometry(1000, 500).tile, 160);
+  const r = visibleRange(0, 600, 5000, g);
+  assert.equal(r.from, 0);
+  assert.ok(r.to < 200, `mounts ${r.to}`);
+  const far = visibleRange(totalHeight(5000, g) - 600, 600, 5000, g);
+  assert.equal(far.to, 5000);
+  assert.ok(far.to - far.from < 200);
+  assert.deepEqual(tilePos(g.cols + 1, g), { x: PAD + (112 + GAP), y: PAD + g.rowH });
+});
+
+test('marquee: tiles that are not mounted still count, gaps do not', () => {
+  const g = geometry(560, 100);      // 4 columns
+  assert.equal(g.cols, 4);
+  const a = tilePos(0, g), b = tilePos(5, g);
+  const hit = tilesInRect({ x: a.x + 50, y: a.y + 50, w: b.x - a.x, h: b.y - a.y }, 100, g);
+  assert.deepEqual(hit.sort((x, y) => x - y), [0, 1, 4, 5]);
+  assert.deepEqual(tilesInRect({ x: a.x + 100 + 1, y: a.y + 1, w: 5, h: 5 }, 100, g), []);          // in the gap
+  assert.deepEqual(tilesInRect({ x: a.x, y: a.y + 100 + CAPTION - 1, w: 5, h: 2 }, 100, g), [0]);   // the caption belongs to the tile
+  assert.deepEqual(tilesInRect({ x: 0, y: 100000, w: 500, h: 50 }, 8, g), []);
+});
+
+test('keys: arrows move, letters name in review, M and I are People shortcuts', () => {
+  const k = (key, o = {}) => ({ key, shift: false, meta: false, alt: false, ...o });
+  const c = (o = {}) => ({ section: 'review', open: false, count: 20, cols: 5, active: 7, dir: 'ltr', ...o });
+  assert.deepEqual(gridKey(k('ArrowRight'), c()), { kind: 'move', index: 8, extend: false });
+  assert.deepEqual(gridKey(k('ArrowDown', { shift: true }), c()), { kind: 'move', index: 12, extend: true });
+  assert.deepEqual(gridKey(k('ArrowRight'), c({ dir: 'rtl' })), { kind: 'move', index: 6, extend: false });
+  assert.deepEqual(gridKey(k('ArrowUp'), c({ active: 2 })), { kind: 'move', index: 0, extend: false });
+  assert.deepEqual(gridKey(k('End'), c()), { kind: 'move', index: 19, extend: false });
+  assert.deepEqual(gridKey(k('n'), c()), { kind: 'name', seed: '' });
+  assert.deepEqual(gridKey(k('d'), c()), { kind: 'name', seed: 'd' });
+  assert.equal(gridKey(k('m'), c()).kind, 'name');
+  assert.deepEqual(gridKey(k('m'), c({ section: 'people' })), { kind: 'merge' });
+  assert.deepEqual(gridKey(k('i'), c({ section: 'people' })), { kind: 'ignore' });
+  assert.equal(gridKey(k('d'), c({ section: 'people' })), null);
+  assert.deepEqual(gridKey(k('a', { meta: true }), c()), { kind: 'all' });
+  assert.deepEqual(gridKey(k('Escape'), c()), { kind: 'clear' });
+  assert.deepEqual(gridKey(k('Enter'), c()), { kind: 'open' });
+  assert.equal(gridKey(k('Backspace'), c({ section: 'people' })), null);
+  assert.equal(gridKey(k('1'), c()), null);
+  assert.equal(gridKey(k('ArrowRight'), c({ count: 0 })), null);
+});
+
+test('name options: prefix before contains, existing before create, no second Maya', () => {
+  const people = [person(1, 'Maya', { photos: 400 }), person(2, 'Marcus', { photos: 90 }), person(3, 'Dad', { photos: 300 }),
+    person(4, 'Old', { state: 'ignored' }), person(5, 'Annemarie', { photos: 5 })];
+  const o = (q) => nameOptions(q, people).map((x) => x.kind === 'create' ? `+${x.name}` : x.name);
+  assert.deepEqual(o('ma'), ['Maya', 'Marcus', 'Annemarie', '+ma']);
+  assert.deepEqual(o('maya'), ['Maya']);                // an exact match offers no second Maya
+  assert.deepEqual(o('MAYA '), ['Maya']);
+  assert.deepEqual(o('zoe'), ['+zoe']);
+  assert.deepEqual(o('old'), ['+old']);                 // an ignored person is not offered
+  assert.deepEqual(o('').map((n) => n), ['Maya', 'Dad', 'Marcus', 'Annemarie']);
+  assert.deepEqual(nameOptions('é', [person(9, 'Élodie')]).map((x) => x.kind === 'create' ? '+' : x.name), ['Élodie', '+']);
+});
+
+test('undo line: the same action joins, others replace', () => {
+  const e = (kind, n, name = '', o = {}) => ({ kind, n, name, other: '', steps: 1, ...o });
+  const a = mergeUndo(null, e('ignored', 3));
+  const b = mergeUndo(a, e('ignored', 2));
+  assert.deepEqual([b.n, b.steps], [5, 2]);
+  assert.equal(mergeUndo(b, e('assigned', 4, 'Dad')).kind, 'assigned');
+  const c = mergeUndo(e('assigned', 4, 'Dad'), e('assigned', 1, 'Dad'));
+  assert.equal(c.n, 5);
+  assert.equal(mergeUndo(e('assigned', 4, 'Dad'), e('assigned', 1, 'Mum')).n, 1);
+  assert.equal(mergeUndo(e('merged', 1, 'Dad', { other: 'Dan' }), e('merged', 1, 'Dad', { other: 'Dan' })).steps, 1);
+});
+
+test('scan view and the centre state', () => {
+  assert.equal(scanView(status({ enabled: false }), false).kind, 'off');
+  const busy = scanView(status({ scanned: 100, pending: 900, infer_ms: 200 }), false);
+  assert.deepEqual([busy.kind, busy.done, busy.total, busy.left], ['scanning', 100, 1000, 180]);
+  assert.equal(scanView(status({ scanned: 100, pending: 900 }), true).kind, 'paused');
+  assert.equal(scanView(status({ scanned: 100, pending: 0 }), true).kind, 'idle');
+  assert.equal(scanView(status({ health: 'retrying', failure: 'x' }), false).kind, 'retrying');
+  assert.equal(scanView(status({ health: 'blocked', failure: 'engine' }), false).reason, 'engine');
+  const none = status();
+  assert.equal(viewKind(null, false, scanView(none, false), false), 'loading');
+  assert.equal(viewKind(null, true, scanView(none, false), false), 'error');
+  assert.equal(viewKind(status({ enabled: false }), false, scanView(none, false), false), 'consent');
+  assert.equal(viewKind(status({ installed: false }), false, scanView(none, false), false), 'consent');
+  const scanning = status({ scanned: 3, pending: 40 });
+  assert.equal(viewKind(scanning, false, scanView(scanning, false), true), 'scanning');
+  const done = status({ scanned: 50, pending: 0 });
+  assert.equal(viewKind(none, false, scanView(none, false), true), 'scanning');   // nothing counted yet
+  assert.equal(viewKind(done, false, scanView(done, false), true), 'none');
+  const faces = status({ totals: { photos: 1, faces: 4, people: 0, unreviewed: 4, groups: 1, suggestions: 0 } });
+  assert.equal(viewKind(faces, false, scanView(faces, false), true), 'ready');
+  assert.equal(needsReview(faces), true);
+  assert.equal(needsReview(status({ ...faces, enabled: false })), false);
+  assert.equal(needsReview(null), false);
+});
