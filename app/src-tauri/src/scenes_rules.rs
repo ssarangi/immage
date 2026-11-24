@@ -21,6 +21,7 @@
 use crate::cull::CullAnalysis;
 use crate::cull_plan::{CullFactor, CullReason, CullStatus, Planned};
 use crate::cull_store::{CullTarget, Item};
+use crate::faces_culling::EyeLabel;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -36,11 +37,19 @@ pub struct Rules {
     pub rated_at_least: u32,
     /// a scene of one frame is kept (else left undecided)
     pub singles_keep: bool,
+    /// rank frames by their score with the faces' adjustment (closed eyes lower it); it only changes the order,
+    /// never the minimum-quality rule, so a closed-eye frame is not rejected for its eyes alone
+    #[serde(default = "yes")]
+    pub prefer_open_eyes: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 impl Default for Rules {
     fn default() -> Self {
-        Self { keep_best: 2, min_quality: 0, always_keep: true, rated_at_least: 3, singles_keep: false }
+        Self { keep_best: 2, min_quality: 0, always_keep: true, rated_at_least: 3, singles_keep: false, prefer_open_eyes: true }
     }
 }
 
@@ -70,6 +79,19 @@ pub struct RuleFrame {
     pub accepted: bool,
     #[serde(default)]
     pub force: Option<Force>,
+    /// the frame's eye verdict (from the build or `scenes_score`), None while unknown
+    #[serde(default)]
+    pub eyes: Option<EyeLabel>,
+    /// what Faces adds to the quality (-0.2 to +0.04), None without faces data
+    #[serde(default)]
+    pub face_adjust: Option<f64>,
+}
+
+impl RuleFrame {
+    /// The score a scene ranks by: the quality with the faces' adjustment, while the rule is on.
+    fn ranked(&self, rules: &Rules) -> Option<f64> {
+        self.quality.map(|q| if rules.prefer_open_eyes { (q + self.face_adjust.unwrap_or(0.0)).max(0.0) } else { q })
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Type)]
@@ -133,6 +155,8 @@ pub struct RuleCounts {
     pub undecided: u32,
     /// frames rejected in the library before, left as they are
     pub already_rejected: u32,
+    /// frames with closed or half closed eyes that the rules reject only because the eyes lowered their rank
+    pub demoted_for_eyes: u32,
 }
 
 pub fn counts(verdicts: &[Vec<Verdict>]) -> RuleCounts {
@@ -146,6 +170,24 @@ pub fn counts(verdicts: &[Vec<Verdict>]) -> RuleCounts {
         }
     }
     out
+}
+
+/// Frames with closed or half closed eyes that are kept without the eye rule and rejected with it.
+pub fn demoted_for_eyes(scenes: &[RuleScene], rules: &Rules) -> u32 {
+    if !rules.prefer_open_eyes {
+        return 0;
+    }
+    let with = evaluate(scenes, rules);
+    let without = evaluate(scenes, &Rules { prefer_open_eyes: false, ..*rules });
+    let mut n = 0;
+    for ((scene, on), off) in scenes.iter().zip(&with).zip(&without) {
+        for ((frame, on), off) in scene.frames.iter().zip(on).zip(off) {
+            if matches!(frame.eyes, Some(EyeLabel::Closed | EyeLabel::Semi)) && off.kind() == Kind::Keep && on.kind() == Kind::Reject {
+                n += 1;
+            }
+        }
+    }
+    n
 }
 
 fn percent(q: f64) -> u32 {
@@ -194,7 +236,7 @@ fn evaluate_scene(frames: &[RuleFrame], rules: &Rules) -> Vec<Verdict> {
     if ranked.iter().any(|&i| frames[i].quality.is_none()) {
         return out;   // the ranked frames stay UndecidedUnscored
     }
-    ranked.sort_by(|&a, &b| frames[b].quality.partial_cmp(&frames[a].quality).unwrap_or(std::cmp::Ordering::Equal).then(a.cmp(&b)));
+    ranked.sort_by(|&a, &b| frames[b].ranked(rules).partial_cmp(&frames[a].ranked(rules)).unwrap_or(std::cmp::Ordering::Equal).then(a.cmp(&b)));
     let slots = if rules.keep_best == 0 { usize::MAX } else { (rules.keep_best as usize).saturating_sub(protected) };
     for (rank, &i) in ranked.iter().enumerate() {
         let low = rules.min_quality > 0 && percent(frames[i].quality.unwrap_or(0.0)) < rules.min_quality;
@@ -248,7 +290,8 @@ pub fn plan_items(
                 failed.push((frame.path.clone(), "the file is missing or unreadable".to_string()));
                 continue;
             };
-            let quality = frame.quality.unwrap_or(0.0);
+            let quality = frame.quality.unwrap_or(0.0) + frame.face_adjust.unwrap_or(0.0);
+            let quality = quality.max(0.0);
             let analysis = k.analysis.unwrap_or_else(|| blank(quality));
             let keep = v.kind() == Kind::Keep;
             let (reason, text) = match v {
@@ -256,19 +299,28 @@ pub fn plan_items(
                 Verdict::KeepKept => (CullReason::KeptInGroup, "Ranked high enough to stay".to_string()),
                 Verdict::KeepProtected => (CullReason::KeptInGroup, "Accepted, rated high enough, or kept by you".to_string()),
                 Verdict::KeepSingle => (CullReason::Unique, "The only frame of its scene".to_string()),
-                Verdict::RejectLowQuality => (CullReason::LowQuality, format!("Quality {} is under the minimum", percent(quality))),
+                Verdict::RejectLowQuality => (CullReason::LowQuality, format!("Quality {} is under the minimum", percent(frame.quality.unwrap_or(0.0)))),
                 Verdict::RejectManual => (CullReason::DuplicateOf, "Moved to the Reject pile by you".to_string()),
                 _ => (
                     CullReason::DuplicateOf,
                     format!("Ranked below the frames kept from its scene (quality {})", percent(quality)),
                 ),
             };
-            let factor = CullFactor {
+            let mut factors = vec![CullFactor {
                 id: "scene_rule".into(),
                 label: "Scenes rule".into(),
                 detail: text,
                 impact: if keep { "context" } else { "reject" }.into(),
-            };
+            }];
+            if let Some(label @ (EyeLabel::Closed | EyeLabel::Semi)) = frame.eyes {
+                let (name, penalty) = if label == EyeLabel::Closed { ("Eyes closed", "-0.15") } else { ("Eyes half closed", "-0.05") };
+                factors.push(CullFactor {
+                    id: "eye_state".into(),
+                    label: name.into(),
+                    detail: format!("{name}: the score is lowered ({penalty} for the main face), a strong signal but not a hard rule"),
+                    impact: "supporting".into(),
+                });
+            }
             let in_set = reason != CullReason::Unique;
             items.push(Item {
                 target: CullTarget { path: frame.path.clone(), version: frame.version },
@@ -283,7 +335,7 @@ pub fn plan_items(
                     best_path: if in_set && v != Verdict::KeepBest { best.clone() } else { None },
                     highlight: false,
                     quality_score: quality,
-                    factors: vec![factor],
+                    factors,
                     blurry_region: None,
                     analysis,
                 },
@@ -298,13 +350,13 @@ mod tests {
     use super::*;
 
     fn f(name: &str, q: Option<f64>) -> RuleFrame {
-        RuleFrame { path: format!("/s/{name}"), version: 0, quality: q, rating: 0, rejected: false, accepted: false, force: None }
+        RuleFrame { path: format!("/s/{name}"), version: 0, quality: q, rating: 0, rejected: false, accepted: false, force: None, eyes: None, face_adjust: None }
     }
     fn scene(frames: Vec<RuleFrame>) -> RuleScene {
         RuleScene { frames }
     }
     fn rules(keep_best: u32) -> Rules {
-        Rules { keep_best, min_quality: 0, always_keep: false, rated_at_least: 3, singles_keep: false }
+        Rules { keep_best, min_quality: 0, always_keep: false, rated_at_least: 3, singles_keep: false, prefer_open_eyes: false }
     }
     use Verdict::*;
 
@@ -315,6 +367,63 @@ mod tests {
         assert_eq!(evaluate(&[s.clone()], &rules(1))[0], vec![RejectDuplicate, KeepBest, RejectDuplicate, RejectDuplicate]);
         // 0 is no cap: nothing is rejected
         assert_eq!(evaluate(&[s], &rules(0))[0], vec![KeepKept, KeepBest, KeepKept, KeepKept]);
+    }
+
+    fn eyed(name: &str, q: f64, eyes: EyeLabel) -> RuleFrame {
+        let adjust = match eyes {
+            EyeLabel::Open => 0.0,
+            EyeLabel::Semi => -0.05,
+            EyeLabel::Closed => -0.15,
+        };
+        RuleFrame { eyes: Some(eyes), face_adjust: Some(adjust), ..f(name, Some(q)) }
+    }
+
+    #[test]
+    fn closed_eyes_move_a_frame_down_the_ranking_when_the_rule_is_on() {
+        // the closed frame scores best, the open one is 0.1 behind
+        let s = scene(vec![eyed("closed", 0.80, EyeLabel::Closed), eyed("open", 0.70, EyeLabel::Open)]);
+        let off = Rules { prefer_open_eyes: false, ..rules(1) };
+        let on = Rules { prefer_open_eyes: true, ..rules(1) };
+        assert_eq!(evaluate(&[s.clone()], &off)[0], vec![KeepBest, RejectDuplicate]);
+        assert_eq!(evaluate(&[s.clone()], &on)[0], vec![RejectDuplicate, KeepBest]);
+        assert_eq!(demoted_for_eyes(&[s.clone()], &on), 1);
+        assert_eq!(demoted_for_eyes(&[s], &off), 0);
+    }
+
+    #[test]
+    fn closed_eyes_never_reject_a_frame_for_quality_or_a_lone_frame() {
+        // the minimum quality judges the measured score, not the eye adjustment
+        let s = scene(vec![eyed("a", 0.55, EyeLabel::Closed), f("b", Some(0.20))]);
+        let r = Rules { min_quality: 50, prefer_open_eyes: true, ..rules(0) };
+        assert_eq!(evaluate(&[s.clone()], &r)[0], vec![KeepBest, RejectLowQuality]);
+        // a scene whose every frame is closed still keeps its best
+        let all = scene(vec![eyed("a", 0.6, EyeLabel::Closed), eyed("b", 0.5, EyeLabel::Closed)]);
+        assert_eq!(evaluate(&[all], &Rules { prefer_open_eyes: true, ..rules(1) })[0], vec![KeepBest, RejectDuplicate]);
+        // a single closed frame is decided by the singles rule alone
+        let one = scene(vec![eyed("only", 0.9, EyeLabel::Closed)]);
+        assert_eq!(evaluate(&[one], &Rules { singles_keep: true, prefer_open_eyes: true, ..rules(1) })[0], vec![KeepSingle]);
+    }
+
+    #[test]
+    fn a_plan_item_of_a_closed_frame_carries_the_eye_factor_and_the_adjusted_score() {
+        let s = scene(vec![eyed("closed", 0.80, EyeLabel::Closed), eyed("open", 0.70, EyeLabel::Open)]);
+        let r = Rules { prefer_open_eyes: true, ..rules(1) };
+        let verdicts = evaluate(&[s.clone()], &r);
+        let known = |_: &RuleFrame| Some(Known { analysis: None, size: 1, modified_ms: 1 });
+        let (items, _) = plan_items(&[s], &verdicts, &known);
+        let closed = &items[0].planned;
+        assert_eq!(closed.proposed, CullStatus::Reject);
+        assert!((closed.quality_score - 0.65).abs() < 1e-9);
+        assert!(closed.factors.iter().any(|x| x.id == "eye_state" && x.impact == "supporting"));
+        assert!(!items[1].planned.factors.iter().any(|x| x.id == "eye_state"));
+    }
+
+    #[test]
+    fn older_rules_and_frames_fill_their_defaults() {
+        let r: Rules = serde_json::from_str(r#"{"keepBest":2,"minQuality":0,"alwaysKeep":true,"ratedAtLeast":3,"singlesKeep":false}"#).unwrap();
+        assert!(r.prefer_open_eyes);
+        let frame: RuleFrame = serde_json::from_str(r#"{"path":"/a.jpg"}"#).unwrap();
+        assert_eq!((frame.eyes, frame.face_adjust), (None, None));
     }
 
     #[test]
@@ -484,7 +593,7 @@ mod tests {
             for min_quality in [0, 30, 80] {
                 for always_keep in [false, true] {
                     for singles_keep in [false, true] {
-                        let r = Rules { keep_best, min_quality, always_keep, rated_at_least: 3, singles_keep };
+                        let r = Rules { keep_best, min_quality, always_keep, rated_at_least: 3, singles_keep, prefer_open_eyes: false };
                         let c = counts(&evaluate(&scenes, &r));
                         let p = plan_counts(&scenes, &r);
                         assert_eq!((c.keep, c.reject), (p.keep, p.reject), "{r:?}");

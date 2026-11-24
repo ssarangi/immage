@@ -51,6 +51,19 @@ looks at 640 px tiles) is part of the stored model version. `cargo test opt_in_d
 
 `faces_set_recognizer` switches the embedding network (ArcFace only with its local file); see the design note.
 
+## Eyes and culling
+`faces_culling.rs` (pure) turns a photo's stored faces into `FaceQuality`: primary face (`0.8 * frontal + 0.2 * w * h`), pose
+`clamp((frontal - 0.5) * 0.08, +-0.04)`, eye penalty (main subject: -0.15 closed, -0.05 semi; any face: -0.08, -0.03; the
+worse eye decides), total clamped to -0.2..+0.04, and the `face_pose` / `eye_state` factors. Only faces of at least 48 px
+(width in the scan picture) with frontal >= 0.5 can have an eye verdict. `faces_eyes.rs` stores the verdict per face
+(schema v4: `faces.eye_open`, `eye_state`, `eye_model`; `unknown` marks a face that was looked at and cannot be judged),
+computes the missing ones for the photos a cull, a Scenes view or `faces_eyes_for` asks about (the user's OCEC file,
+2048 px picture; network photos and unscanned photos are skipped) and answers Find's `closedEyes` flag. `cull_plan::plan_with_faces`
+adds the adjustment to the frame score (ranking, set winner, highlights) and never rejects on it; `scenes_rules` ranks by
+`quality + faceAdjust` while `Rules.preferOpenEyes` is on but judges the minimum quality on the raw score.
+`cargo test opt_in_real_eyes -- --ignored --nocapture` (needs the same variables as `opt_in_real_faces`, plus `IMMAGE_FACES_EYES`)
+prints the eye step's counts and timings only. Notes: notes/faces-p4-backend-notes.md.
+
 ## Network shares
 Faces never reads, stats or lists a path on a network share (judged from the mount table, `volumes::MountSnapshot`)
 unless the user allowed that source (`faces.network_sources`, `faces_network_source`) or asked for that folder with

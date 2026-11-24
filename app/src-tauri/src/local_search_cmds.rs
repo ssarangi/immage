@@ -202,6 +202,17 @@ pub async fn local_search(
                         provider.people = Some(ai.faces_store.filter_paths(people)?);
                     }
                 }
+                // Find's Closed eyes flag: only with the eye model, and it narrows what the People row allows
+                if let (true, Some(ai)) = (args.filters.closed_eyes, app.try_state::<crate::pack_cmds::AiState>()) {
+                    if ai.faces.enabled() && ai.faces.eyes().is_some() {
+                        let closed = ai.faces_store.closed_eye_paths(crate::faces_culling::EyeMode::MainSubject)?;
+                        let sets = provider.people.get_or_insert_with(Default::default);
+                        sets.allow = Some(match sets.allow.take() {
+                            Some(allowed) => allowed.intersection(&closed).cloned().collect(),
+                            None => closed,
+                        });
+                    }
+                }
                 if let Some(mapped) = config.mapped_root() {
                     for (scope, recursive) in provider_scopes(&args, &roots, &hidden, &mapped) {
                         if !config.covers(&scope) {

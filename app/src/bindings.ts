@@ -212,6 +212,11 @@ export const commands = {
 	 */
 	facesCrop: (face: number, size: number) => __TAURI_INVOKE<string>("faces_crop", { face, size }),
 	facesEyeState: (face: number) => __TAURI_INVOKE<EyeState>("faces_eye_state", { face }),
+	/**
+	 *  The eye verdicts of up to 200 photos, computing the missing ones (see the notes: faces-p4-backend-notes.md).
+	 *  Stops starting photos after about 20 s; the rest come back unknown, so a second call finishes them.
+	 */
+	facesEyesFor: (paths: string[], mode: EyeMode | null) => __TAURI_INVOKE<PhotoEyes[]>("faces_eyes_for", { paths, mode }),
 	keywordsSummary: () => __TAURI_INVOKE<KeywordsSummary>("keywords_summary"),
 	/**
 	 *  Sets the confidence a tag needs to become a keyword. Stored results are re-decided in
@@ -387,6 +392,11 @@ export const commands = {
 	 *  be read has an `error`. Stopped by `scenes_cancel`, keeping what it measured.
 	 */
 	scenesScore: (job: number, items: CullTarget[]) => __TAURI_INVOKE<SceneScore[]>("scenes_score", { job, items }),
+	/**
+	 *  `scenes_score` counting the eyes of `eye_mode` (default: the main subject's) in each frame's `eyes`, `faceAdjust`
+	 *  and `adjustedQuality`.
+	 */
+	scenesScoreFor: (job: number, items: CullTarget[], eyeMode: EyeMode | null) => __TAURI_INVOKE<SceneScore[]>("scenes_score_for", { job, items, eyeMode }),
 	/**
 	 *  Remembers a split or a merge the user made, so every later grouping replays it. `action` is
 	 *  "split" (a scene starts at this frame) or "merge" (the frame's scene joins the next scene of its
@@ -1121,6 +1131,10 @@ export type CullSettings = {
 	duplicateRatio?: DuplicateRatio,
 	/**  the share of the keepers flagged as highlights, 0-100 */
 	highlightPercent?: number,
+	/**  whose closed eyes lower a frame's score: the main subject's (default) or any face's */
+	eyeMode?: EyeMode,
+	/**  let the faces Faces stored (pose, eyes) adjust the quality score; nothing happens while Faces is off */
+	useFaces?: boolean,
 };
 
 export type CullStatus = "keep" | "reject";
@@ -1230,6 +1244,16 @@ export type ExposureMedian = {
 	shutterSec: number | null,
 	iso: number | null,
 };
+
+/**  A face's eye verdict as the page sees it. */
+export type EyeLabel = "open" | "semi" | "closed";
+
+/**  Whose eyes count in a photo with several faces. */
+export type EyeMode = 
+/**  only the primary face decides (default) */
+"mainSubject" | 
+/**  any eligible face with closed eyes counts, at a smaller weight */
+"anyFace";
 
 export type EyePair = {
 	left_open: number | null,
@@ -1564,6 +1588,11 @@ export type GpuEditState = {
 export type GridFilter = {
 	/**  Find's People row (faces_store.rs `filter_paths`); ignored while Faces is off. */
 	people?: PeopleFilter | null,
+	/**
+	 *  Keep photos whose main face has closed or half closed eyes (faces_eyes.rs `closed_eye_paths`); ignored while
+	 *  Faces is off or the eye model is missing, and it sees only photos whose eye verdicts are already computed.
+	 */
+	closedEyes?: boolean,
 	minRating?: number,
 	rejected?: string,
 	edited?: string,
@@ -2307,6 +2336,17 @@ export type PersonRow = {
 	suggestions: number,
 };
 
+/**  One photo's eye summary for the page. */
+export type PhotoEyes = {
+	path: string,
+	/**  the verdict that counts (see `EyeMode`), None while unknown */
+	state: EyeLabel | null,
+	/**  the face the verdict came from, else the primary face */
+	primaryFace: number | null,
+	/**  faces stored for the photo (not counting "not a face") */
+	faces: number,
+};
+
 /**
  *  A face of one photo for the editor's overlay. The box is in the picture's displayed orientation
  *  (faces are found on the oriented picture) and does not follow crops or rotations made in the editor.
@@ -2655,6 +2695,8 @@ export type RuleCounts = {
 	undecided: number,
 	/**  frames rejected in the library before, left as they are */
 	alreadyRejected: number,
+	/**  frames with closed or half closed eyes that the rules reject only because the eyes lowered their rank */
+	demotedForEyes: number,
 };
 
 export type RuleFrame = {
@@ -2667,6 +2709,10 @@ export type RuleFrame = {
 	/**  Scenes accepted it */
 	accepted?: boolean,
 	force?: Force | null,
+	/**  the frame's eye verdict (from the build or `scenes_score`), None while unknown */
+	eyes?: EyeLabel | null,
+	/**  what Faces adds to the quality (-0.2 to +0.04), None without faces data */
+	faceAdjust?: number | null,
 };
 
 export type RuleScene = {
@@ -2683,6 +2729,11 @@ export type Rules = {
 	ratedAtLeast: number,
 	/**  a scene of one frame is kept (else left undecided) */
 	singlesKeep: boolean,
+	/**
+	 *  rank frames by their score with the faces' adjustment (closed eyes lower it); it only changes the order,
+	 *  never the minimum-quality rule, so a closed-eye frame is not rejected for its eyes alone
+	 */
+	preferOpenEyes?: boolean,
 };
 
 export type RulesPreview = {
@@ -2762,6 +2813,10 @@ export type SceneScore = {
 	quality: number | null,
 	sharpRegion: CullBlurRegion | null,
 	error: string | null,
+	/**  the frame's eye verdict, computed here when the eye model is present */
+	eyes: EyeLabel | null,
+	faceAdjust: number | null,
+	adjustedQuality: number | null,
 };
 
 export type ScenesBuild = {
@@ -2770,6 +2825,12 @@ export type ScenesBuild = {
 	quality: (number | null)[],
 	/**  each item's cached sharpest region, in the request's order, None while unscored */
 	regions: (CullBlurRegion | null)[],
+	/**  each item's stored eye verdict (nothing is computed by a build), None while unknown or while Faces is off */
+	eyes: (EyeLabel | null)[],
+	/**  what Faces adds to each item's quality (-0.2 to +0.04), None without faces data */
+	faceAdjust: (number | null)[],
+	/**  quality plus `faceAdjust` (at least 0): the score "best frame" and keep-N rank by */
+	adjustedQuality: (number | null)[],
 	/**  the photos are on a network volume */
 	network: boolean,
 	hashed: number,
@@ -2781,6 +2842,8 @@ export type ScenesBuild = {
 export type ScenesRequest = {
 	items: SceneItem[],
 	params?: SceneParams | null,
+	/**  whose closed eyes count (default: the main subject's) */
+	eyeMode?: EyeMode | null,
 };
 
 export type SchemaEnumValue = {

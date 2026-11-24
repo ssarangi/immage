@@ -15,6 +15,7 @@ use crate::cull_cmds;
 use crate::cull::CullBlurRegion;
 use crate::cull_cmds::CullPlan;
 use crate::cull_store::{CullFailure, CullTarget, Store as CullStore};
+use crate::faces_culling::{EyeLabel, EyeMode};
 use crate::scenes_rules::{self, RuleCounts, Known, RuleScene, Rules, Verdict};
 use crate::scenes::{self, Block, Frame, Override, SceneItem, SceneParams};
 use crate::scenes_store::{SceneAccepted, Store};
@@ -56,6 +57,9 @@ pub struct ScenesRequest {
     pub items: Vec<SceneItem>,
     #[serde(default)]
     pub params: Option<SceneParams>,
+    /// whose closed eyes count (default: the main subject's)
+    #[serde(default)]
+    pub eye_mode: Option<EyeMode>,
 }
 
 /// One scene: indexes into the request's items, in capture order.
@@ -87,6 +91,12 @@ pub struct ScenesBuild {
     pub quality: Vec<Option<f64>>,
     /// each item's cached sharpest region, in the request's order, None while unscored
     pub regions: Vec<Option<CullBlurRegion>>,
+    /// each item's stored eye verdict (nothing is computed by a build), None while unknown or while Faces is off
+    pub eyes: Vec<Option<EyeLabel>>,
+    /// what Faces adds to each item's quality (-0.2 to +0.04), None without faces data
+    pub face_adjust: Vec<Option<f64>>,
+    /// quality plus `faceAdjust` (at least 0): the score "best frame" and keep-N rank by
+    pub adjusted_quality: Vec<Option<f64>>,
     /// the photos are on a network volume
     pub network: bool,
     pub hashed: u32,
@@ -103,6 +113,19 @@ pub struct SceneScore {
     pub quality: Option<f64>,
     pub sharp_region: Option<CullBlurRegion>,
     pub error: Option<String>,
+    /// the frame's eye verdict, computed here when the eye model is present
+    pub eyes: Option<EyeLabel>,
+    pub face_adjust: Option<f64>,
+    pub adjusted_quality: Option<f64>,
+}
+
+/// What Faces stored about a frame's faces, as the three per-frame fields.
+fn face_fields(quality: Option<f64>, q: &crate::faces_culling::FaceQuality) -> (Option<EyeLabel>, Option<f64>, Option<f64>) {
+    if q.faces == 0 {
+        return (None, None, quality);
+    }
+    let adjust = f64::from(q.adjust);
+    (q.eye, Some(adjust), quality.map(|v| (v + adjust).max(0.0)))
 }
 
 fn scenes_path(state: &AppState) -> PathBuf {
@@ -196,13 +219,16 @@ pub fn build(
         }
         None => vec![None; total],
     };
-    let quality = analyses.iter().map(|a| a.as_ref().map(|a| a.quality_score)).collect();
+    let quality: Vec<Option<f64>> = analyses.iter().map(|a| a.as_ref().map(|a| a.quality_score)).collect();
     let regions = analyses.iter().map(|a| a.as_ref().and_then(|a| a.sharp_region)).collect();
     let network = items.first().is_some_and(|i| crate::volumes::on_network(Path::new(&i.path)));
     Ok(Some(ScenesBuild {
         blocks,
+        adjusted_quality: quality.clone(),
         quality,
         regions,
+        eyes: vec![None; total],
+        face_adjust: vec![None; total],
         network,
         hashed: (total as u32).saturating_sub(unhashed_total.min(total as u32)),
         unhashed: unhashed_total,
@@ -241,7 +267,19 @@ pub(crate) async fn scenes_build(app: AppHandle, caches: State<'_, Caches>, job:
                 emit(&app, job, "reading", done, total);
             }
         };
-        build(&request, &read, &store, Some(&cull), workers, &cancel, &progress)?.ok_or_else(|| "cancelled".to_string())
+        let mut built = build(&request, &read, &store, Some(&cull), workers, &cancel, &progress)?.ok_or_else(|| "cancelled".to_string())?;
+        // the verdicts already stored, while Faces is on (a build computes nothing)
+        if let Some(ctx) = crate::faces_eyes::EyeCtx::from_app(&app).filter(|c| c.faces_on()) {
+            let mode = request.eye_mode.unwrap_or_default();
+            for (i, item) in request.items.iter().enumerate() {
+                let q = crate::faces_eyes::quality_of(&ctx.store, &item.path, mode);
+                let (eyes, adjust, adjusted) = face_fields(built.quality[i], &q);
+                built.eyes[i] = eyes;
+                built.face_adjust[i] = adjust;
+                built.adjusted_quality[i] = adjusted;
+            }
+        }
+        Ok(built)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -281,6 +319,15 @@ pub(crate) async fn scenes_set_accepted(state: State<'_, AppState>, path: String
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn scenes_score(app: AppHandle, job: u64, items: Vec<CullTarget>) -> Result<Vec<SceneScore>, String> {
+    scenes_score_for(app, job, items, None).await
+}
+
+/// `scenes_score` counting the eyes of `eye_mode` (default: the main subject's) in each frame's `eyes`, `faceAdjust`
+/// and `adjustedQuality`.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn scenes_score_for(app: AppHandle, job: u64, items: Vec<CullTarget>, eye_mode: Option<EyeMode>) -> Result<Vec<SceneScore>, String> {
+    let eye_mode = eye_mode.unwrap_or_default();
     let (cancel, _entry) = register(job);
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
@@ -290,6 +337,7 @@ pub(crate) async fn scenes_score(app: AppHandle, job: u64, items: Vec<CullTarget
         let done = AtomicUsize::new(0);
         let throttle = Throttle::new();
         let out: Mutex<Vec<(usize, SceneScore)>> = Mutex::new(Vec::new());
+        let faces = crate::faces_eyes::EyeCtx::from_app(&app).filter(|c| c.faces_on());
         // the engine renders each analysis preview on its own thread, so two workers keep it busy
         std::thread::scope(|scope| {
             for _ in 0..2.min(total.max(1)) {
@@ -317,7 +365,15 @@ pub(crate) async fn scenes_score(app: AppHandle, job: u64, items: Vec<CullTarget
                         if throttle.due(finished, total) {
                             emit(&app, job, "scoring", finished, total);
                         }
-                        out.lock().unwrap_or_else(|e| e.into_inner()).push((i, SceneScore { path: target.path.clone(), version: target.version, quality, sharp_region, error }));
+                        // the eye verdicts of a scored frame, computed once; a failure leaves them unknown
+                        let (eyes, face_adjust, adjusted_quality) = match &faces {
+                            Some(ctx) if error.is_none() => {
+                                let _ = crate::faces_eyes::ensure_photo(ctx, &target.path);
+                                face_fields(quality, &crate::faces_eyes::quality_of(&ctx.store, &target.path, eye_mode))
+                            }
+                            _ => (None, None, quality),
+                        };
+                        out.lock().unwrap_or_else(|e| e.into_inner()).push((i, SceneScore { path: target.path.clone(), version: target.version, quality, sharp_region, error, eyes, face_adjust, adjusted_quality }));
                     }
                 });
             }
@@ -366,7 +422,9 @@ pub struct RulesPreview {
 pub(crate) async fn scenes_rules_preview(request: RulesRequest) -> Result<RulesPreview, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let verdicts = scenes_rules::evaluate(&request.scenes, &request.rules);
-        RulesPreview { counts: scenes_rules::counts(&verdicts), verdicts }
+        let mut counts = scenes_rules::counts(&verdicts);
+        counts.demoted_for_eyes = scenes_rules::demoted_for_eyes(&request.scenes, &request.rules);
+        RulesPreview { counts, verdicts }
     })
     .await
     .map_err(|e| e.to_string())
@@ -377,8 +435,15 @@ pub(crate) async fn scenes_rules_preview(request: RulesRequest) -> Result<RulesP
 /// session's failed photos. Nothing is recorded when the rules leave nothing to do.
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn scenes_rules_plan(app: AppHandle, label: String, request: RulesRequest) -> Result<CullPlan, String> {
+pub(crate) async fn scenes_rules_plan(app: AppHandle, label: String, mut request: RulesRequest) -> Result<CullPlan, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        // with the rule off the plan says nothing about eyes
+        if !request.rules.prefer_open_eyes {
+            for frame in request.scenes.iter_mut().flat_map(|s| s.frames.iter_mut()) {
+                frame.eyes = None;
+                frame.face_adjust = None;
+            }
+        }
         let verdicts = scenes_rules::evaluate(&request.scenes, &request.rules);
         let state = app.state::<AppState>();
         let mut store = CullStore::open(&cull_cmds::store_path(&state))?;
@@ -426,7 +491,7 @@ mod tests {
         let store = dir.path().join("scenes.sqlite");
         let items = vec![item("a", "07:10:00"), item("b", "07:10:02"), item("c", "07:10:04"), item("d", "07:40:00"), item("e", "07:40:01")];
         let seeds: HashMap<String, u32> = [("a", 1), ("b", 1), ("c", 2), ("d", 3)].iter().map(|(n, s)| (n.to_string(), *s)).collect();
-        let request = ScenesRequest { items, params: None };
+        let request = ScenesRequest { items, params: None, eye_mode: None };
         let cancel = AtomicBool::new(false);
         let first = build(&request, &reader(seeds.clone()), &store, None, 2, &cancel, &|_, _| {}).unwrap().unwrap();
         assert_eq!(first.blocks.len(), 2);
@@ -448,7 +513,7 @@ mod tests {
         let items = vec![item("a", "07:10:00"), item("b", "07:10:02"), item("c", "07:10:04")];
         Store::open(&store).unwrap().override_put("/fake/c", 0, "split").unwrap();
         let seeds: HashMap<String, u32> = [("a", 1), ("b", 1), ("c", 1)].iter().map(|(n, s)| (n.to_string(), *s)).collect();
-        let request = ScenesRequest { items, params: None };
+        let request = ScenesRequest { items, params: None, eye_mode: None };
         let got = build(&request, &reader(seeds), &store, None, 1, &AtomicBool::new(false), &|_, _| {}).unwrap().unwrap();
         assert_eq!(got.blocks[0].scenes.len(), 2);
     }
@@ -459,7 +524,7 @@ mod tests {
         let store = dir.path().join("scenes.sqlite");
         let items = vec![item("a", "07:10:00"), item("b", "07:10:02"), item("c", "07:10:04"), item("d", "07:10:06")];
         let seeds: HashMap<String, u32> = ["a", "b", "c", "d"].iter().map(|n| (n.to_string(), 1)).collect();
-        let request = ScenesRequest { items, params: None };
+        let request = ScenesRequest { items, params: None, eye_mode: None };
         let groups = |store: &Path| {
             let got = build(&request, &reader(seeds.clone()), store, None, 1, &AtomicBool::new(false), &|_, _| {}).unwrap().unwrap();
             got.blocks[0].scenes.iter().map(|s| s.frames.clone()).collect::<Vec<_>>()
@@ -477,7 +542,7 @@ mod tests {
     #[test]
     fn a_cancelled_build_returns_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        let request = ScenesRequest { items: vec![item("a", "07:10:00")], params: None };
+        let request = ScenesRequest { items: vec![item("a", "07:10:00")], params: None, eye_mode: None };
         let got = build(&request, &reader(HashMap::new()), &dir.path().join("s.sqlite"), None, 1, &AtomicBool::new(true), &|_, _| {}).unwrap();
         assert!(got.is_none());
     }
@@ -489,7 +554,7 @@ mod tests {
         from_file.from_file = true;
         let mut none = item("z", "07:10:00");
         none.taken_at.clear();
-        let request = ScenesRequest { items: vec![none, from_file], params: None };
+        let request = ScenesRequest { items: vec![none, from_file], params: None, eye_mode: None };
         let got = build(&request, &reader(HashMap::new()), &dir.path().join("s.sqlite"), None, 1, &AtomicBool::new(false), &|_, _| {}).unwrap().unwrap();
         assert!(got.blocks[0].approx && !got.blocks[0].no_time);
         assert!(got.blocks[1].no_time && got.blocks[1].start_ms.is_none());
@@ -507,7 +572,7 @@ mod tests {
             sharp_region: Some(CullBlurRegion { x: 0.5, y: 0.25, width: 0.375, height: 0.375 }),
         };
         cull.cache_put(&CullTarget { path: "/fake/a".into(), version: 0 }, 1, 1, "h", &analysis).unwrap();
-        let request = ScenesRequest { items: vec![item("a", "07:10:00"), item("b", "07:10:01")], params: None };
+        let request = ScenesRequest { items: vec![item("a", "07:10:00"), item("b", "07:10:01")], params: None, eye_mode: None };
         let got = build(&request, &reader(HashMap::new()), &dir.path().join("s.sqlite"), Some(&cull_path), 1, &AtomicBool::new(false), &|_, _| {}).unwrap().unwrap();
         assert_eq!(got.quality, vec![Some(0.84), None]);
         assert_eq!(got.regions[0].map(|r| (r.x, r.y)), Some((0.5, 0.25)));
@@ -529,7 +594,7 @@ mod tests {
                 SceneItem { path: format!("/fake/{i}.jpg"), version: 0, name: format!("{i}.jpg"), taken_at: when, from_file: false }
             })
             .collect();
-        let request = ScenesRequest { items, params: None };
+        let request = ScenesRequest { items, params: None, eye_mode: None };
         let read = |item: &SceneItem| item.name.trim_end_matches(".jpg").parse::<usize>().ok().map(|i| pictures[(i / 8) % 40].clone());
         let cancel = AtomicBool::new(false);
         let cold = build(&request, &read, &store, None, 4, &cancel, &|_, _| {}).unwrap().unwrap();

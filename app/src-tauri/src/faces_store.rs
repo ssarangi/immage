@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 pub const MAX_NAME: usize = 80;
 const UNDO_DEPTH: usize = 20;
 
@@ -95,6 +95,12 @@ CREATE TABLE people_not_same (
 -- the shot a file belongs to (shot_key), so counts are of photos and not of files
 ALTER TABLE photos ADD COLUMN shot TEXT;
 CREATE INDEX photos_shot ON photos(shot);
+", "
+-- the eye verdict of a face (faces_eyes.rs): the worse eye's probability of being open, the label (open, semi,
+-- closed, or unknown when the face cannot be judged) and the eye model that made it; NULL until computed
+ALTER TABLE faces ADD COLUMN eye_open REAL;
+ALTER TABLE faces ADD COLUMN eye_state TEXT;
+ALTER TABLE faces ADD COLUMN eye_model TEXT;
 "];
 
 /// The shot a file belongs to: its folder (a trailing `Processed` folder is the folder it was made from) and its
@@ -108,12 +114,6 @@ pub fn shot_key(path: &str) -> String {
         dir = dir.parent().unwrap_or(dir);
     }
     format!("{}/{}", dir.to_string_lossy(), stem)
-}
-
-pub struct FaceStore {
-    db: Mutex<Connection>,
-    undo: Mutex<Vec<Undo>>,
-    path: Option<std::path::PathBuf>,
 }
 
 /// A consistent copy of a faces.sqlite at `dest` through SQLite's online backup, safe while the app has it open.
@@ -162,6 +162,12 @@ pub fn restore_into(staged: &Path, live: &Path) -> Result<(), String> {
     }
     // a store of an older version is migrated now: the open app does not do it again
     FaceStore::open(live).map(|_| ())
+}
+
+pub struct FaceStore {
+    db: Mutex<Connection>,
+    undo: Mutex<Vec<Undo>>,
+    path: Option<std::path::PathBuf>,
 }
 
 /// A face as the scan produces it.
@@ -463,7 +469,7 @@ impl FaceStore {
         }
         Ok(Self { db: Mutex::new(db), undo: Mutex::new(Vec::new()), path: None })
     }
-    fn db(&self) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
+    pub(crate) fn db(&self) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
         self.db.lock().map_err(|_| "face store lock poisoned".to_string())
     }
     pub fn schema_version(&self) -> Result<i64, String> {
@@ -1637,13 +1643,13 @@ mod tests {
     #[test]
     fn the_schema_is_created_once_and_a_newer_one_is_refused() {
         let s = store();
-        assert_eq!(s.schema_version().unwrap(), 3);
+        assert_eq!(s.schema_version().unwrap(), SCHEMA_VERSION);
         // a database of the first version gains the pair tables and keeps its data
         let old = Connection::open_in_memory().unwrap();
         old.execute_batch(&format!("BEGIN; {} PRAGMA user_version = 1; COMMIT;", LADDER[0])).unwrap();
         old.execute("INSERT INTO people(name,created_at) VALUES('Ann',1)", []).unwrap();
         let migrated = FaceStore::from_connection(old).unwrap();
-        assert_eq!(migrated.schema_version().unwrap(), 3);
+        assert_eq!(migrated.schema_version().unwrap(), SCHEMA_VERSION);
         assert_eq!(migrated.list_people(false).unwrap().len(), 1);
         assert!(migrated.face_links().unwrap().is_empty());
         let db = Connection::open_in_memory().unwrap();
@@ -2116,7 +2122,7 @@ mod tests {
         old.execute_batch(&format!("BEGIN; {} {} PRAGMA user_version = 2; COMMIT;", LADDER[0], LADDER[1])).unwrap();
         old.execute("INSERT INTO photos(path,fingerprint,model,scanned_at,width,height) VALUES('/d/Processed/X.jpg','f','m',1,10,10)", []).unwrap();
         let s = FaceStore::from_connection(old).unwrap();
-        assert_eq!(s.schema_version().unwrap(), 3);
+        assert_eq!(s.schema_version().unwrap(), SCHEMA_VERSION);
         assert_eq!(s.totals().unwrap().photos, 1);
         assert!(s.stats().unwrap().db_bytes == 0, "an in-memory store has no file");
     }
@@ -2171,12 +2177,6 @@ mod tests {
     }
 
     #[test]
-    fn meta_values_are_kept() {
-        let s = store();
-        assert_eq!(s.meta_get("k").unwrap(), None);
-        s.meta_set("k", "1").unwrap();
-        s.meta_set("k", "2").unwrap();
-    #[test]
     fn a_snapshot_restores_into_a_store_that_is_open_and_a_newer_one_is_refused() {
         let dir = tempfile::tempdir().unwrap();
         let live = dir.path().join("faces.sqlite");
@@ -2218,6 +2218,12 @@ mod tests {
         assert_eq!(FaceStore::open(&live).unwrap().totals().unwrap().photos, 1);
     }
 
+    #[test]
+    fn meta_values_are_kept() {
+        let s = store();
+        assert_eq!(s.meta_get("k").unwrap(), None);
+        s.meta_set("k", "1").unwrap();
+        s.meta_set("k", "2").unwrap();
         assert_eq!(s.meta_get("k").unwrap().as_deref(), Some("2"));
     }
 

@@ -20,8 +20,9 @@ Until it is on, the People view is one card with three steps.
    People**. The box is your consent and is recorded on this computer. The button says why
    it waits (no model, box not ticked) in the line above it.
 
-*Use eye detection only* is listed for the closed-eye detection planned for Auto Cull and is
-not available yet.
+*Use eye detection only* is listed for closed-eye detection for culling and is not available yet. Today
+Auto Cull and Scenes use the faces People already found, plus closed-eye detection when you have supplied the eye
+model file (it is never downloaded); see [Auto cull](library.md#starting-a-cull).
 
 ## The view
 

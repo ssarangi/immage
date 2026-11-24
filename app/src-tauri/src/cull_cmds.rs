@@ -10,7 +10,7 @@
 //! cull_plan.rs; writing to the library is cull_apply.rs.
 //!
 //! Progress reaches the page as the `cull-progress` event:
-//! `{ job, stage: "analyzing" | "grouping", done, total, file }`.
+//! `{ job, stage: "analyzing" | "eyes" | "grouping", done, total, file }` ("eyes" only while Faces is on).
 use crate::cull::{self, Analysed};
 use crate::cull_apply::{self, CullApplyOptions, CullApplyResult, CullChange, Library};
 use crate::cull_plan::{self, CullSettings, CullStatus};
@@ -189,6 +189,25 @@ fn analyse_all(app: &AppHandle, job: u64, items: &[CullScopeItem], cancel: &Atom
     Some((measured, failed))
 }
 
+/// The face adjustment of each measured photo, in order. Empty while Faces is off, the setting is off, or no
+/// photo has stored faces. Computes the eye verdicts still missing (with the user's eye model, when present).
+fn face_qualities(app: &AppHandle, job: u64, measured: &[Measured], settings: &CullSettings, cancel: &AtomicBool) -> Vec<Option<crate::faces_culling::FaceQuality>> {
+    let Some(ctx) = crate::faces_eyes::EyeCtx::from_app(app).filter(|c| settings.use_faces && c.faces_on()) else { return Vec::new() };
+    let total = measured.len();
+    let mut out = Vec::with_capacity(total);
+    for (i, m) in measured.iter().enumerate() {
+        if cancel.load(Ordering::SeqCst) {
+            return Vec::new();
+        }
+        // a photo that fails here only goes without its eyes
+        let _ = crate::faces_eyes::ensure_photo(&ctx, &m.item.path);
+        let q = crate::faces_eyes::quality_of(&ctx.store, &m.item.path, settings.eye_mode);
+        out.push((q.faces > 0).then_some(q));
+        progress(app, job, "eyes", i + 1, total, &file_name(&m.item.path));
+    }
+    out
+}
+
 /// Plans a cull over `scope`: measures each photo, groups look-alikes,
 /// decides keepers, rejects and highlights, and records it as a session
 /// without changing any photo. `job` is the page's number for it, for
@@ -207,12 +226,18 @@ pub(crate) async fn cull_plan(app: AppHandle, job: u64, scope: CullScope, settin
         let total = scope.items.len();
         progress(&app, job, "analyzing", 0, total, "");
         let (measured, failed) = analyse_all(&app, job, &scope.items, &cancel).ok_or("cancelled")?;
+        // what Faces stored about each photo's faces (pose, eyes), while Faces is on; the missing eye verdicts are
+        // computed here, and only for these photos
+        let faces = face_qualities(&app, job, &measured, &settings, &cancel);
+        if cancel.load(Ordering::SeqCst) {
+            return Err("cancelled".to_string());
+        }
         progress(&app, job, "grouping", total, total, "");
         let inputs: Vec<cull_plan::Input> = measured
             .iter()
             .map(|m| cull_plan::Input { path: m.item.path.clone(), analysis: m.analysed.result.clone(), hash: m.analysed.hash.clone() })
             .collect();
-        let items: Vec<Item> = cull_plan::plan(&inputs, &settings)
+        let items: Vec<Item> = cull_plan::plan_with_faces(&inputs, &faces, &settings)
             .into_iter()
             .zip(measured)
             .map(|(planned, m)| Item {

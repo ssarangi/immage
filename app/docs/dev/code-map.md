@@ -191,6 +191,10 @@ Support bundle: [scrub.rs](../../src-tauri/src/scrub.rs) (the scrubber),
 [SupportBundleDialog.tsx](../../src/SupportBundleDialog.tsx) (review and remove lines); opened from Help
 (`support-bundle` in menu.ts) and from the engine-exit status in App.tsx.
 
+Faces in culling: [faces_culling.rs](../../src-tauri/src/faces_culling.rs) (pure: primary face, pose and eye adjustment, `EyeMode`),
+[faces_eyes.rs](../../src-tauri/src/faces_eyes.rs) (eye verdicts per face in faces.sqlite v4, `faces_eyes_for`, Find's closed-eyes paths);
+`plan_with_faces` in cull_plan.rs, `face_qualities` in cull_cmds.rs, `Rules.preferOpenEyes` and `demoted_for_eyes` in scenes_rules.rs.
+
 Auto cull (page): [cullModel.ts](../../src/cullModel.ts) (pure: scope, chips, `reviewOrder`, review keys, defaults, `applySearch` for Find), [cullStore.ts](../../src/cullStore.ts) (the plan under review; `useDecision` for a thumbnail's badge), [cullDefaults.ts](../../src/cullDefaults.ts), [CullDialog.tsx](../../src/CullDialog.tsx) (setup), `runCull` in [background.ts](../../src/background.ts) (the job and `cull-progress`), [CullPanel.tsx](../../src/CullPanel.tsx) (review, in Find's slot via `renderCull` in App.tsx), [CullInspector.tsx](../../src/CullInspector.tsx) (the lightbox's decision, overrides, critique and overlay, mounted by GridCulling.tsx), the `cull-badge` in Filmstrip.tsx's `FilmCell`, and Find's "Describe the photos in words" row in FindPanel.tsx (`geminiSearch`). Menu `auto-cull` and the toolbar's Auto Cull button send the `auto-cull-open` window event; once a plan exists the button is Review cull and opens the panel (`onReview` in App.tsx).
 
 Gemini (AI grading): [gemini.rs](../../src-tauri/src/gemini.rs) (HTTP with model fallback, critique

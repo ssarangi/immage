@@ -522,7 +522,7 @@ pub fn crop_rect(f: &FaceRow, img_w: u32, img_h: u32, margin: f32) -> (u32, u32,
 
 const CROP_EDGE: u32 = 2048;
 
-fn load_picture(engine: &crate::engine::Tagged, output: &crate::frame_output::FrameOutput, path: &str, edge: u32) -> Result<image::RgbImage, String> {
+pub(crate) fn load_picture(engine: &crate::engine::Tagged, output: &crate::frame_output::FrameOutput, path: &str, edge: u32) -> Result<image::RgbImage, String> {
     if let Some(p) = crate::analysis_image::picture_at(Path::new(path), edge) {
         return Ok(p.rgb);
     }

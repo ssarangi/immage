@@ -22,6 +22,9 @@ pub const MAX_FILTER_PEOPLE: usize = 500;
 pub struct GridFilter {
     /// Find's People row (faces_store.rs `filter_paths`); ignored while Faces is off.
     pub people: Option<PeopleFilter>,
+    /// Keep photos whose main face has closed or half closed eyes (faces_eyes.rs `closed_eye_paths`); ignored while
+    /// Faces is off or the eye model is missing, and it sees only photos whose eye verdicts are already computed.
+    pub closed_eyes: bool,
     pub min_rating: u8,
     pub rejected: String,
     pub edited: String,
@@ -258,6 +261,12 @@ mod tests {
         assert_eq!(decimal(2.25, 1).as_deref(), Some("2.3"));
         assert_eq!(decimal(35.0, 0).as_deref(), Some("35"));
         assert!(decimal(f64::NAN, 1).is_none());
+    }
+
+    #[test]
+    fn the_closed_eyes_flag_defaults_off_and_parses() {
+        assert!(!serde_json::from_str::<GridFilter>("{}").unwrap().closed_eyes);
+        assert!(serde_json::from_str::<GridFilter>(r#"{"closedEyes":true}"#).unwrap().closed_eyes);
     }
 
     #[test]
