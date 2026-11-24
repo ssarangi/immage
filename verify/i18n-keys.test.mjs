@@ -83,3 +83,39 @@ test('every menu action has its menu text', () => {
   const missing = actions.filter((a) => items.has(a)).map((a) => `menu.${a}`).filter((k) => !exists(k));
   assert.deepEqual(missing, []);
 });
+
+// ---- keys held as data: label: "viewTabs.people", read later by t(tab.label) ----
+// Any string literal whose shape is a key and whose first segment is a top-level prefix of en.json must be a key (or a
+// namespace of keys, or a plural base). Literals that only look like keys are listed here with the reason.
+const prefixes = new Set(keys.map((k) => k.split('.')[0]));
+const ALLOW = new Map([
+  // (file-relative path: literal) -> why it is not a key
+]);
+const SHAPE = /^[a-z][A-Za-z0-9]*(?:\.[A-Za-z0-9_-]+)+$/;
+const isTest = (f) => /\.test\.|\/tests?\//.test(f);
+
+function literals() {
+  const out = [];
+  for (const file of walk(SRC)) {
+    const rel = file.slice(SRC.length);
+    if (isTest(rel)) continue;
+    const src = readFileSync(file, 'utf8');
+    for (const m of src.matchAll(/(["'])([A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z0-9_-]+)+)\1/g)) {
+      const lit = m[2];
+      if (!SHAPE.test(lit) || !prefixes.has(lit.split('.')[0])) continue;
+      out.push({ rel, lit });
+    }
+  }
+  return out;
+}
+
+// a namespace: some key continues it ("library.find" before "library.find.rating")
+const namespace = (lit) => keys.some((k) => k.startsWith(`${lit}.`) || k.startsWith(`${lit}_`));
+
+test('every string in the code that names a text key is one (keys held as data, read later by t(x))', () => {
+  const found = literals();
+  const bad = found.filter(({ rel, lit }) => !exists(lit) && !namespace(lit) && !ALLOW.has(`${rel}: ${lit}`))
+    .map(({ rel, lit }) => `${rel}: ${lit}`);
+  assert.ok(found.length > 1500, `only ${found.length} key-shaped literals found`);
+  assert.deepEqual([...new Set(bad)], [], `${new Set(bad).size} literals look like keys but are not:\n${[...new Set(bad)].join('\n')}`);
+});
