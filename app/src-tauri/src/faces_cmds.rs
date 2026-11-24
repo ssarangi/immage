@@ -629,12 +629,16 @@ pub async fn faces_eye_state(ai: State<'_, AiState>, state: State<'_, AppState>,
     tauri::async_runtime::spawn_blocking(move || {
         let img = load_picture(&engine, &output, &row.path, CROP_EDGE)?;
         let f = det::Face { x: row.x, y: row.y, w: row.w, h: row.h, score: row.score, lm: std::array::from_fn(|i| (lm[2 * i], lm[2 * i + 1])) };
-        let mut probs = [None, None];
-        for (k, right) in [true, false].into_iter().enumerate() {
-            probs[k] = crate::faces_eyes::eye_probability(&engine, &runtime, &eyes_root, &img, &f, right)?;
-        }
-        let worst = probs.iter().flatten().copied().fold(None, |m: Option<f32>, p| Some(m.map_or(p, |m| m.min(p))));
-        Ok(EyeState { available: true, right: probs[0], left: probs[1], verdict: worst.map(det::eye_verdict) })
+        let crops = [true, false].map(|right| crate::faces_eyes::eye_crops(&engine, &runtime, &eyes_root, &img, &f, right));
+        let (right, left) = (crops[0].clone()?, crops[1].clone()?);
+        let mean = |c: &Option<Vec<f32>>| c.as_ref().map(|c| c.iter().sum::<f32>() / c.len() as f32);
+        // the same conservative verdict the culling stores (faces_eyes::decide)
+        let verdict = crate::faces_eyes::decide([right.as_deref(), left.as_deref()]).map(|(_, l)| match l {
+            crate::faces_culling::EyeLabel::Open => det::EyeVerdict::Open,
+            crate::faces_culling::EyeLabel::Semi => det::EyeVerdict::SemiClosed,
+            crate::faces_culling::EyeLabel::Closed => det::EyeVerdict::Closed,
+        });
+        Ok(EyeState { available: true, right: mean(&right), left: mean(&left), verdict })
     })
     .await
     .map_err(|e| e.to_string())?

@@ -312,12 +312,11 @@ pub fn plan_items(
                 detail: text,
                 impact: if keep { "context" } else { "reject" }.into(),
             }];
-            if let Some(label @ (EyeLabel::Closed | EyeLabel::Semi)) = frame.eyes {
-                let (name, penalty) = if label == EyeLabel::Closed { ("Eyes closed", "-0.15") } else { ("Eyes half closed", "-0.05") };
+            if frame.eyes == Some(EyeLabel::Closed) {
                 factors.push(CullFactor {
                     id: "eye_state".into(),
-                    label: name.into(),
-                    detail: format!("{name}: the score is lowered ({penalty} for the main face), a strong signal but not a hard rule"),
+                    label: "Eyes closed".into(),
+                    detail: "Eyes closed: the score is lowered (-0.15 for the main face), a strong signal but not a hard rule".into(),
                     impact: "supporting".into(),
                 });
             }
@@ -372,7 +371,7 @@ mod tests {
     fn eyed(name: &str, q: f64, eyes: EyeLabel) -> RuleFrame {
         let adjust = match eyes {
             EyeLabel::Open => 0.0,
-            EyeLabel::Semi => -0.05,
+            EyeLabel::Semi => 0.0,
             EyeLabel::Closed => -0.15,
         };
         RuleFrame { eyes: Some(eyes), face_adjust: Some(adjust), ..f(name, Some(q)) }

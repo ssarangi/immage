@@ -632,7 +632,7 @@ The window asks:
 - **Blur threshold**: a single photo softer than this is rejected as blurry.
 - **Advanced > Similarity**: how alike two photos must be to count as one set.
 - **Advanced > Closed eyes** (with People on): **Main subject** (default) lets only the largest, most frontal face
-  decide; **Any face** also counts a closed face of at least 48 pixels that looks at the camera, at a smaller weight.
+  decide; **Any face** also counts a closed face of at least 80 pixels that looks at the camera, at a smaller weight.
   Faces looking away and tiny faces never give a verdict. A closed-eye frame only scores lower, so a sibling wins; if
   nothing in its set is better it stays Keep, with the note "no better frame in this set". The decision list shows
   **Face pose** and **Eyes closed / Eyes half closed / Eyes open** with their effect. Closed-eye detection needs an eye
@@ -828,8 +828,8 @@ is written until you press **Apply**:
   kept. They, and the frames you accepted in Scenes, count toward the Keep best
   number.
 - **Single frames**: a scene of one frame is kept, or skipped (left as it is).
-- **Prefer frames with open eyes**: with People on, a frame whose main face has closed or half closed eyes ranks lower
-  (by 0.15 or 0.05 of the quality, a small step), so an open-eyed sibling wins the slot. It changes the order only:
+- **Prefer frames with open eyes**: with People on, a frame whose main face has closed eyes ranks lower
+  (by 0.15 of the quality, a small step; half closed eyes only show a glyph), so an open-eyed sibling wins the slot. It changes the order only:
   Minimum quality still judges the measured quality, so a frame is never rejected for its eyes alone, and a scene's
   best frame stays. The preview counts the frames this rule demoted. On by default; it does nothing without face
   data or the eye model.

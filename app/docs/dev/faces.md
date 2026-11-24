@@ -53,18 +53,20 @@ looks at 640 px tiles) is part of the stored model version. `cargo test opt_in_d
 
 ## Eyes and culling
 `faces_culling.rs` (pure) turns a photo's stored faces into `FaceQuality`: primary face (`0.8 * frontal + 0.2 * w * h`), pose
-`clamp((frontal - 0.5) * 0.08, +-0.04)`, eye penalty (main subject: -0.15 closed, -0.05 semi; any face: -0.08, -0.03; the
-worse eye decides), total clamped to -0.2..+0.04, and the `face_pose` / `eye_state` factors. Only faces of at least 48 px
-(width in the scan picture) with frontal >= 0.5 can have an eye verdict. `faces_eyes.rs` stores the verdict per face
+`clamp((frontal - 0.5) * 0.08, +-0.04)`, eye penalty (main subject: -0.15 closed; any face: -0.08; half closed costs nothing; the
+worse eye decides), total clamped to -0.2..+0.04, and the `face_pose` / `eye_state` factors. Only faces of at least 80 px
+(width in the scan picture) with frontal >= 0.5 and an eye line tilted at most 25 degrees can have an eye verdict. `faces_eyes.rs` stores the verdict per face
 (schema v4: `faces.eye_open`, `eye_state`, `eye_model`; `unknown` marks a face that was looked at and cannot be judged),
 computes the missing ones for the photos a cull, a Scenes view or `faces_eyes_for` asks about (the user's OCEC file,
 2048 px picture; network photos and unscanned photos are skipped) and answers Find's `closedEyes` flag. `cull_plan::plan_with_faces`
 adds the adjustment to the frame score (ranking, set winner, highlights) and never rejects on it; `scenes_rules` ranks by
 `quality + faceAdjust` while `Rules.preferOpenEyes` is on but judges the minimum quality on the raw score.
 The eye crop is centred 0.10 to 0.15 eye distances below the YuNet landmark (it sits above the visible eye on lowered lids) and the
-verdict averages three crops (`faces_detect::EYE_CROPS`); the stored `eye_model` carries a `crops3` suffix so a recipe change recomputes.
-Checked by eye on 13 real faces: the old single 0.55 crop on the landmark was wrong on 5, this recipe agrees on 11 with 2 ambiguous
-lowered-lid cases; the model's output is the probability of an OPEN eye (polarity confirmed).
+verdict averages three crops (`faces_detect::EYE_CROPS`); the stored `eye_model` carries a `rule2` suffix so a recipe or rule change recomputes.
+The verdict (`faces_eyes::decide`) is conservative: closed only when the worse eye's mean is under 0.15 and both under 0.25, half closed
+(shown, costs nothing) under 0.4, unknown when one eye's crops disagree by more than 0.5. Known limit: the model cannot tell eyes cast down from
+eyes shut, so on a portraits folder about 30% of eligible faces are still `closed` and only about a third of those are truly shut.
+The model's output is the probability of an OPEN eye (polarity confirmed).
 `cargo test opt_in_real_eyes -- --ignored --nocapture` (needs the same variables as `opt_in_real_faces`, plus `IMMAGE_FACES_EYES`)
 prints the eye step's counts and timings only. Notes: notes/faces-p4-backend-notes.md.
 

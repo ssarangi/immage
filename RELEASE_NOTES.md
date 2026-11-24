@@ -51,7 +51,7 @@ Improvements
   faces, such as small ones in group photos, but is about 4 times slower, and re-scans in the background) and **Reprocess all faces**. Face counts now
   count photos once, however many files a shot has.
 - **Faces in culling:** with People on, Auto Cull and Scenes use the faces found in a photo as a small hint when they
-  rank frames of a set or scene: a face looking at the camera counts slightly more, and closed or half closed eyes
+  rank frames of a set or scene: a face looking at the camera counts slightly more, and closed eyes
   lower the score (never enough to reject a photo on their own, and a lone frame stays Keep with a note). The
   decision list says "Closed eyes" and by how much. Closed-eye detection uses an eye model you supply yourself and
   is simply skipped without it; "Closed eyes: Main subject | Any face" picks whose eyes count, Scenes gains

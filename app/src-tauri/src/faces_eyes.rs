@@ -28,8 +28,8 @@ const EYE_EDGE: u32 = 2048;
 
 /// What `eye_model` holds for verdicts made by the pinned file.
 pub fn model_tag() -> String {
-    // the suffix names the crop recipe (faces_detect::EYE_CROPS): a change of it makes stored verdicts stale
-    format!("ocec-s:{}:crops3", &fm::EYES_SHA256[..8])
+    // the suffix names the crop recipe and the verdict rule (faces_detect::EYE_CROPS, `decide`): a change of either makes stored verdicts stale
+    format!("ocec-s:{}:rule2", &fm::EYES_SHA256[..8])
 }
 
 /// A face that still needs a verdict.
@@ -37,7 +37,7 @@ pub fn model_tag() -> String {
 pub struct EyeTask {
     pub id: i64,
     pub face: det::Face,
-    /// 48 px and frontal enough to be judged (`CullFace::eligible`)
+    /// wide enough, frontal enough and not tilted: the only faces whose eyes are judged (`CullFace::eligible`, `MAX_TILT`)
     pub eligible: bool,
 }
 
@@ -68,7 +68,7 @@ impl FaceStore {
         let db = self.db()?;
         let mut q = db
             .prepare(
-                "SELECT f.id,f.x,f.y,f.w,f.h,f.score,f.lm,f.frontal,f.w*p.width FROM faces f JOIN photos p ON p.path=f.path
+                "SELECT f.id,f.x,f.y,f.w,f.h,f.score,f.lm,f.frontal,f.w*p.width,f.roll FROM faces f JOIN photos p ON p.path=f.path
                  WHERE f.path=?1 AND f.state<>'rejected' AND (f.eye_model IS NULL OR f.eye_model<>?2) ORDER BY f.x, f.id",
             )
             .map_err(|e| e.to_string())?;
@@ -76,13 +76,13 @@ impl FaceStore {
             .query_map(params![path, model], |r| {
                 let lm: Vec<u8> = r.get(6)?;
                 let lm: Vec<f32> = lm.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
-                Ok((r.get::<_, i64>(0)?, [r.get::<_, f32>(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?], lm, r.get::<_, f32>(7)?, r.get::<_, f64>(8)? as f32))
+                Ok((r.get::<_, i64>(0)?, [r.get::<_, f32>(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?], lm, r.get::<_, f32>(7)?, r.get::<_, f64>(8)? as f32, r.get::<_, f32>(9)?))
             })
             .map_err(|e| e.to_string())?;
         let mut out = Vec::new();
         for row in rows {
-            let (id, b, lm, frontal, px) = row.map_err(|e| e.to_string())?;
-            let eligible = px >= fc::MIN_EYE_PX && frontal >= fc::MIN_EYE_FRONTAL && lm.len() == 10;
+            let (id, b, lm, frontal, px, roll) = row.map_err(|e| e.to_string())?;
+            let eligible = px >= fc::MIN_EYE_PX && frontal >= fc::MIN_EYE_FRONTAL && lm.len() == 10 && (roll <= MAX_TILT || roll >= 180.0 - MAX_TILT);
             let lm: [(f32, f32); 5] = std::array::from_fn(|i| (lm.get(2 * i).copied().unwrap_or(0.0), lm.get(2 * i + 1).copied().unwrap_or(0.0)));
             out.push(EyeTask { id, face: det::Face { x: b[0], y: b[1], w: b[2], h: b[3], score: b[4], lm }, eligible });
         }
@@ -154,16 +154,57 @@ pub fn open_prob(tensors: &[fm::Tensor]) -> Option<f32> {
     tensors.iter().find(|t| t.name == "prob_open").or(tensors.first()).and_then(|t| t.data.first().copied()).filter(|p| p.is_finite()).map(|p| p.clamp(0.0, 1.0))
 }
 
-/// One eye's probability of being open: the mean over the crops of `faces_detect::EYE_CROPS`.
-/// `Ok(None)` when the eye cannot be cropped.
-pub fn eye_probability(engine: &crate::engine::Tagged, runtime: &Path, eyes_root: &Path, img: &image::RgbImage, face: &det::Face, right: bool) -> Result<Option<f32>, String> {
+/// One eye's probability of being open from each crop of `faces_detect::EYE_CROPS`.
+/// `Ok(None)` when the eye cannot be cropped or a crop gave no answer.
+pub fn eye_crops(engine: &crate::engine::Tagged, runtime: &Path, eyes_root: &Path, img: &image::RgbImage, face: &det::Face, right: bool) -> Result<Option<Vec<f32>>, String> {
     let mut probs = Vec::new();
     for (scale, down) in det::EYE_CROPS {
         let Some(input) = det::eye_input_with(img, face, right, scale, down, false) else { return Ok(None) };
         let (tensors, _) = fm::run(engine, runtime, eyes_root, Model::Eyes, &[1, 3, 24, 40], &input)?;
-        probs.extend(open_prob(&tensors));
+        let Some(p) = open_prob(&tensors) else { return Ok(None) };
+        probs.push(p);
     }
-    Ok((!probs.is_empty()).then(|| probs.iter().sum::<f32>() / probs.len() as f32))
+    Ok(Some(probs))
+}
+
+/// One eye's probability of being open: the mean over its crops.
+pub fn eye_probability(engine: &crate::engine::Tagged, runtime: &Path, eyes_root: &Path, img: &image::RgbImage, face: &det::Face, right: bool) -> Result<Option<f32>, String> {
+    Ok(eye_crops(engine, runtime, eyes_root, img, face, right)?.map(|c| c.iter().sum::<f32>() / c.len() as f32))
+}
+
+/// A closed verdict needs the worse eye under this (mean of its crops) and both eyes under `CLOSED_BOTH`.
+pub const CLOSED_WORSE: f32 = 0.15;
+pub const CLOSED_BOTH: f32 = 0.25;
+/// Below this the face is "half closed", a verdict that is only shown.
+pub const SEMI_BELOW: f32 = 0.4;
+/// The crops of one eye may disagree by this much (largest minus smallest) before the verdict is unknown.
+pub const MAX_SPREAD: f32 = 0.5;
+/// Faces tilted more than this (degrees of the eye line) get no verdict.
+pub const MAX_TILT: f32 = 25.0;
+
+/// The conservative verdict of a face from the crop probabilities of its right and left eye. A false "closed"
+/// hides a good photo, a missed one costs little, so: closed only when both eyes are confidently closed,
+/// half closed (shown, never scored) when the worse eye is under 0.4, unknown when the crops of an eye disagree.
+/// Eyes cast down look closed to the model and are the main source of closed verdicts on portraits.
+pub fn decide(eyes: [Option<&[f32]>; 2]) -> Option<(f32, EyeLabel)> {
+    let mut means = Vec::new();
+    for crops in eyes.into_iter().flatten() {
+        let (lo, hi) = crops.iter().fold((f32::MAX, f32::MIN), |(l, h), p| (l.min(*p), h.max(*p)));
+        if crops.is_empty() || hi - lo > MAX_SPREAD {
+            return None;
+        }
+        means.push(crops.iter().sum::<f32>() / crops.len() as f32);
+    }
+    let worse = means.iter().copied().fold(None, |m: Option<f32>, p| Some(m.map_or(p, |m| m.min(p))))?;
+    let both_low = means.len() == 2 && means.iter().all(|m| *m < CLOSED_BOTH);
+    let label = if worse < CLOSED_WORSE && both_low {
+        EyeLabel::Closed
+    } else if worse < SEMI_BELOW {
+        EyeLabel::Semi
+    } else {
+        EyeLabel::Open
+    };
+    Some((worse, label))
 }
 
 /// A face's probability of open eyes: the worse eye decides, and one eye is enough.
@@ -183,9 +224,9 @@ fn judge(ctx: &EyeCtx, eyes_root: &Path, path: &str, tasks: &[EyeTask]) -> Resul
             out.push((t.id, None));
             continue;
         }
-        let [right, left] = [true, false].map(|right| eye_probability(&ctx.engine, &ctx.runtime, eyes_root, &img, &t.face, right));
-        let worst = face_probability([right?, left?]);
-        out.push((t.id, worst.map(|p| (p, det::eye_verdict(p).into()))));
+        let [right, left] = [true, false].map(|right| eye_crops(&ctx.engine, &ctx.runtime, eyes_root, &img, &t.face, right));
+        let (right, left) = (right?, left?);
+        out.push((t.id, decide([right.as_deref(), left.as_deref()])));
     }
     Ok(out)
 }
@@ -317,6 +358,26 @@ mod tests {
     }
 
     #[test]
+    fn the_verdict_is_conservative() {
+        let l = |c: [f32; 3]| decide([Some(&c[..]), Some(&[0.9f32, 0.9, 0.9][..])]).map(|v| v.1);
+        // closed needs both eyes confidently closed
+        assert_eq!(decide([Some(&[0.02f32, 0.05, 0.0][..]), Some(&[0.01f32, 0.0, 0.03][..])]).map(|v| v.1), Some(EyeLabel::Closed));
+        // one closed eye and one open eye is not a closed face
+        assert_eq!(l([0.0, 0.0, 0.0]), Some(EyeLabel::Semi));
+        // a worse eye of 0.15 to 0.4 is half closed
+        assert_eq!(decide([Some(&[0.3f32, 0.3, 0.3][..]), Some(&[0.2f32, 0.2, 0.2][..])]).map(|v| v.1), Some(EyeLabel::Semi));
+        // both low but the worse eye above 0.15 is not closed
+        assert_eq!(decide([Some(&[0.2f32, 0.2, 0.2][..]), Some(&[0.2f32, 0.2, 0.2][..])]).map(|v| v.1), Some(EyeLabel::Semi));
+        assert_eq!(decide([Some(&[0.95f32, 0.9, 0.99][..]), Some(&[0.8f32, 0.9, 1.0][..])]).map(|v| v.1), Some(EyeLabel::Open));
+        // crops that disagree by more than 0.5 make the verdict unknown, whatever the mean
+        assert_eq!(l([0.0, 0.0, 0.9]), None);
+        assert_eq!(decide([Some(&[0.0f32, 0.1, 0.7][..]), Some(&[0.0f32, 0.0, 0.0][..])]), None);
+        // a single eye is never enough for closed, and nothing is unknown
+        assert_eq!(decide([Some(&[0.0f32, 0.0, 0.0][..]), None]).map(|v| v.1), Some(EyeLabel::Semi));
+        assert_eq!(decide([None, None]), None);
+    }
+
+    #[test]
     fn the_worse_eye_decides_and_one_eye_is_enough() {
         assert_eq!(face_probability([Some(0.95), Some(0.1)]), Some(0.1));
         assert_eq!(face_probability([None, Some(0.8)]), Some(0.8));
@@ -326,7 +387,7 @@ mod tests {
 
     #[test]
     fn the_stored_model_tag_names_the_crop_recipe() {
-        assert!(model_tag().starts_with("ocec-s:9a346a08:crops"), "{}", model_tag());
+        assert!(model_tag().starts_with("ocec-s:9a346a08:rule"), "{}", model_tag());
     }
 
     #[test]

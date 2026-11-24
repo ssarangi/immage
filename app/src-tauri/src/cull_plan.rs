@@ -493,7 +493,7 @@ mod tests {
     fn closed_eyes_alone_never_reject_a_frame() {
         use crate::faces_culling::EyeLabel;
         let inputs = vec![input("/s/only.jpg", analyze(&other_scene())), input("/s/other.jpg", analyze(&sharp_scene(320, 240, 5)))];
-        for eye in [EyeLabel::Closed, EyeLabel::Semi] {
+        for eye in [EyeLabel::Closed] {
             let faces = vec![Some(face_quality(0.9, Some(eye))), None];
             for settings in [CullSettings::default(), CullSettings { filter_blurry: false, highlight_percent: 100, ..Default::default() }] {
                 let out = plan_with_faces(&inputs, &faces, &settings);

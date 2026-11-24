@@ -6,16 +6,16 @@
 //!
 //! The rules are the old app's (notes/faces-port-inventory.md): the adjustment is
 //! `clamp(pose + eyes, -0.2, +0.04)`, `pose = clamp((frontal - 0.5) * 0.08, +-0.04)` of the primary face
-//! (the one with the highest `0.8 * frontal + 0.2 * frame fraction`), closed eyes -0.15, half closed -0.05,
-//! the worse eye deciding. Only a face of at least 48 px that looks at the camera (frontal >= 0.5) can
-//! have an eye verdict. A closed-eye verdict only lowers a score; it never rejects a photo by itself.
+//! (the one with the highest `0.8 * frontal + 0.2 * frame fraction`), closed eyes -0.15 (half closed eyes are shown and cost nothing),
+//! the worse eye deciding. Only a face of at least 80 px that looks at the camera (frontal >= 0.5) can
+//! have an eye verdict (eyes cast down look closed to the model, so the rule in faces_eyes.rs is deliberately conservative). A closed-eye verdict only lowers a score; it never rejects a photo by itself.
 use crate::cull_plan::CullFactor;
 use crate::faces_detect::EyeVerdict;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
 /// Narrowest face, in pixels of the picture it was found in, that may have an eye verdict.
-pub const MIN_EYE_PX: f32 = 48.0;
+pub const MIN_EYE_PX: f32 = 80.0;
 /// Least frontal score a face may have to get an eye verdict (a profile face has no usable eyes).
 pub const MIN_EYE_FRONTAL: f32 = 0.5;
 /// The adjustment's limits.
@@ -129,9 +129,8 @@ impl FaceQuality {
 fn eye_penalty(label: EyeLabel, mode: EyeMode) -> f32 {
     match (mode, label) {
         (_, EyeLabel::Open) => 0.0,
-        (EyeMode::MainSubject, EyeLabel::Semi) => -0.05,
+        (_, EyeLabel::Semi) => 0.0,
         (EyeMode::MainSubject, EyeLabel::Closed) => -0.15,
-        (EyeMode::AnyFace, EyeLabel::Semi) => -0.03,
         (EyeMode::AnyFace, EyeLabel::Closed) => -0.08,
     }
 }
@@ -185,7 +184,7 @@ pub fn assess(faces: &[CullFace], mode: EyeMode) -> FaceQuality {
         };
         let (name, detail, impact) = match label {
             EyeLabel::Open => ("Eyes open", format!("Eyes open (counted: {who}): no change"), "context"),
-            EyeLabel::Semi => ("Eyes half closed", format!("Half closed eyes: {eye_adjust:+.2}, a mild signal, not a hard rule (counted: {who})"), "supporting"),
+            EyeLabel::Semi => ("Eyes half closed", format!("Half closed or looking down (counted: {who}): shown only, no effect on the score"), "context"),
             EyeLabel::Closed => ("Eyes closed", format!("Closed eyes: {eye_adjust:+.2}, strong signal, not a hard rule (counted: {who})"), "supporting"),
         };
         factors.push(CullFactor { id: "eye_state".into(), label: name.into(), detail, impact: impact.into() });
@@ -236,10 +235,10 @@ mod tests {
         let closed = assess(&[face(1, 200.0, 1.0, Some(EyeLabel::Closed))], EyeMode::MainSubject);
         assert!((closed.adjust - (0.04 - 0.15)).abs() < 1e-6, "{}", closed.adjust);
         let semi = assess(&[face(1, 200.0, 0.5, Some(EyeLabel::Semi))], EyeMode::MainSubject);
-        assert!((semi.adjust + 0.05).abs() < 1e-6);
+        assert!(semi.adjust.abs() < 1e-6, "half closed eyes never lower a score");
         let worst = assess(&[face(1, 200.0, 0.5, Some(EyeLabel::Closed))], EyeMode::MainSubject);
         assert!((worst.adjust + 0.15).abs() < 1e-6);
-        for q in [&closed, &semi, &worst] {
+        for q in [&closed, &worst] {
             assert!(q.adjust >= MIN_ADJUST && q.adjust <= MAX_ADJUST);
             let eye = q.factors.iter().find(|f| f.id == "eye_state").unwrap();
             assert_eq!(eye.impact, "supporting");
@@ -274,7 +273,7 @@ mod tests {
             assert_eq!(eye_of(&both, mode), None, "{mode:?}");
         }
         // exactly at the limits is eligible
-        assert_eq!(eye_of(&[face(1, 48.0, 0.5, Some(EyeLabel::Closed))], EyeMode::MainSubject).map(|e| e.0), Some(EyeLabel::Closed));
+        assert_eq!(eye_of(&[face(1, 80.0, 0.5, Some(EyeLabel::Closed))], EyeMode::MainSubject).map(|e| e.0), Some(EyeLabel::Closed));
     }
 
     #[test]
@@ -288,9 +287,9 @@ mod tests {
         let pose = ((0.95f32 - 0.5) * 0.08).clamp(-0.04, 0.04);
         assert!((any.adjust - (pose - 0.08)).abs() < 1e-6, "{}", any.adjust);
         assert!(any.adjust > main.adjust - 0.2 && any.adjust < main.adjust);
-        // half closed counts -0.03 in any face mode (the primary face here is the second, frontal 0.8: pose +0.024)
+        // half closed counts nothing in any mode (the primary face here is the second, frontal 0.8: pose +0.024)
         let semi = assess(&[face(1, 300.0, 0.5, Some(EyeLabel::Open)), face(2, 120.0, 0.8, Some(EyeLabel::Semi))], EyeMode::AnyFace);
-        assert!((semi.adjust - (0.024 - 0.03)).abs() < 1e-6, "{}", semi.adjust);
+        assert!((semi.adjust - 0.024).abs() < 1e-6, "{}", semi.adjust);
     }
 
     #[test]
