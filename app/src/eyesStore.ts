@@ -18,7 +18,7 @@ const listeners = new Map<string, Set<() => void>>();
 let lastTick = -1;
 
 const queue = new EyeQueue(
-  (paths) => peopleApi().eyesFor(paths, null).then((r) => r.map((x) => ({ path: x.path, state: x.state }))),
+  (paths) => peopleApi().eyesFor(paths, null).then((r) => r.map((x) => ({ path: x.path, state: x.state, primaryFace: x.primaryFace }))),
   (results) => {
     for (const path of setEyeVerdicts(results)) listeners.get(path)?.forEach((l) => l());
   },
@@ -74,7 +74,7 @@ export const useEyesOn = () => useSyncExternalStore(subscribePeople, eyesActive)
 export function startEyesScan(paths: readonly string[]) {
   if (!eyesActive()) return;
   const token = ++scanToken;
-  void scanPaths(paths, (p) => peopleApi().eyesFor(p, null).then((r) => r.map((x) => ({ path: x.path, state: x.state }))), {
+  void scanPaths(paths, (p) => peopleApi().eyesFor(p, null).then((r) => r.map((x) => ({ path: x.path, state: x.state, primaryFace: x.primaryFace }))), {
     have: (p) => eyeVerdict(p) !== undefined, onChunk: (r) => { setEyeVerdicts(r); },
     progress: (done, total) => { if (token === scanToken) setScan({ running: done < total, done, total }); }, stopped: () => token !== scanToken,
   }).then(() => { if (token === scanToken) setScan({ ...scan, running: false }); });

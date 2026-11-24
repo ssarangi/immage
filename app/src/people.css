@@ -233,3 +233,8 @@ html[data-scheme="light"] .people-view { background: color-mix(in srgb, var(--wi
 .face-box:hover .face-label, .face-box:focus-visible .face-label, .face-box.selected .face-label { opacity: 1; }
 .face-pop-actions { display: flex; gap: 6px; margin-top: 8px; }
 
+
+/* the closed-eye tag on the main face's box: inside the box, at its foot, so it moves nothing and is always readable */
+.face-eyes { position: absolute; inset-inline: 2px; bottom: 2px; height: 18px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; max-width: calc(100% - 4px);
+  overflow: hidden; border-radius: 9px; background: rgba(0, 0, 0, .72); color: #ffb454; font-size: var(--fs-micro); line-height: 18px; white-space: nowrap; pointer-events: none; }
+.face-eyes.closed { color: #ff6b5a; }

@@ -8,7 +8,7 @@
 // time, remembers every answer, and never asks twice for a photo until `forget()` (the faces changed). A failed batch does
 // not wedge the queue.
 export type EyeLabel = "open" | "semi" | "closed";
-export type EyeResult = { path: string; state: EyeLabel | null };
+export type EyeResult = { path: string; state: EyeLabel | null; primaryFace?: number | null };
 export type Timers = { set: (fn: () => void, ms: number) => unknown; clear: (h: unknown) => void };
 const real: Timers = { set: (fn, ms) => setTimeout(fn, ms), clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) };
 

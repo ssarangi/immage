@@ -8,6 +8,9 @@
 // nothing here changes a size. Clicking a box opens the name box (the People view's own combobox) to name or reassign
 // the face, or to say it is not them or not a face. Boxes exist only while People is on; the overlay never touches the
 // photo or an export.
+import { EyeGlyph } from "./EyeBadge";
+import { eyePrimary } from "./eyesKnown";
+import { useEye } from "./eyesStore";
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 import { boxStyle, faceAria, faceTitle, labelSide } from "./faceOverlayModel";
@@ -18,6 +21,9 @@ import { usePhotoFaces } from "./usePhotoFaces";
 
 export function FaceOverlay({ path, selected, onSelect }: { path: string; selected: number | null; onSelect: (face: number | null) => void }) {
   const { faces } = usePhotoFaces(path, true);
+  // the closed-eye verdict of the photo's main face (Faces' eye model): a small tag on that face's box
+  const eye = useEye(path);
+  const primary = eyePrimary(path);
   const people = usePeople().data.people;
   useEffect(() => { void ensurePeople(); }, []);
   const [pick, setPick] = useState<{ face: PhotoFace; rect: DOMRect } | null>(null);
@@ -34,6 +40,10 @@ export function FaceOverlay({ path, selected, onSelect }: { path: string; select
                 onFocus={() => onSelect(f.face)} onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
                 onClick={(e) => { e.stopPropagation(); onSelect(f.face); setPick({ face: f, rect: e.currentTarget.getBoundingClientRect() }); }}>
           <span className="face-label" aria-hidden="true">{faceTitle(f, t)}</span>
+          {(eye === "closed" || eye === "semi") && primary === f.face && (
+            <span className={`face-eyes ${eye}`} role="img" aria-label={t(eye === "closed" ? "cull.eyes.closed" : "cull.eyes.semi")}>
+              <EyeGlyph state={eye} /><span aria-hidden="true">{t(eye === "closed" ? "cull.eyes.closed" : "cull.eyes.semi")}</span></span>
+          )}
         </button>
       ))}
       {pick && createPortal(

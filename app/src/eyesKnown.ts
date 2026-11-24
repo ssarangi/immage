@@ -6,18 +6,21 @@
 import type { EyeLabel } from "./eyesQueue";
 
 const known = new Map<string, EyeLabel | null>();
+const primary = new Map<string, number | null>();   // the face the verdict came from
 let version = 0;
 const listeners = new Set<() => void>();
 
 export const eyeVerdict = (path: string): EyeLabel | null | undefined => known.get(path);
+/** the face a photo's verdict came from, when the backend said */
+export const eyePrimary = (path: string): number | null => primary.get(path) ?? null;
 export const eyesVersion = () => version;
 export const subscribeEyes = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
-export function setEyeVerdicts(list: readonly { path: string; state: EyeLabel | null }[]): string[] {
+export function setEyeVerdicts(list: readonly { path: string; state: EyeLabel | null; primaryFace?: number | null }[]): string[] {
   const changed: string[] = [];
-  for (const r of list) if (known.get(r.path) !== r.state || !known.has(r.path)) { known.set(r.path, r.state); changed.push(r.path); }
+  for (const r of list) if (known.get(r.path) !== r.state || !known.has(r.path) || primary.get(r.path) !== (r.primaryFace ?? null)) { known.set(r.path, r.state); primary.set(r.path, r.primaryFace ?? null); changed.push(r.path); }
   if (changed.length) { version++; listeners.forEach((l) => l()); }
   return changed;
 }
 /** a photo whose primary face is closed or half closed (what Find's Closed eyes keeps) */
 export const eyesClosed = (path: string) => { const v = known.get(path); return v === "closed" || v === "semi"; };
-export function forgetEyes() { known.clear(); version++; listeners.forEach((l) => l()); }
+export function forgetEyes() { known.clear(); primary.clear(); version++; listeners.forEach((l) => l()); }

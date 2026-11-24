@@ -701,6 +701,22 @@ A session applies once. Sessions and the remembered measurements are in the
 `cull.sqlite` file in Immage's runtime folder; **Clear analysis cache** in
 Preferences forgets the measurements only.
 
+### Faces in Auto cull
+
+With People on, the Auto Cull dialog has **Use faces in the score** (on by default) and **Eyes: Main subject / Any face**. The
+face's pose and closed eyes then adjust a frame's quality score: **closed eyes only lower the score, so a better frame in the same
+set wins, and they never reject a photo on their own** (a frame with no better sibling stays a Keep, and the decision says so). The
+decision panel lists the two new factors in plain words, such as "Closed eyes: -0.15, strong signal, not a hard rule"; a closed-eye
+factor has a warning mark, not a tick. Closed-eye detection needs the optional eye model file; without it only the face pose counts,
+and the dialog says so. Photos whose main face is closed or half closed carry a small eye glyph (an eye with a slash, or a half lid)
+in the corner of their thumbnail in the Grid and on a scene's card; it is asked for only for the photos on screen, a few at a time.
+These glyphs and verdicts are a **preview** until the eye model is validated.
+
+Find has a **Closed eyes** row (in the Photo group, only with People on and the eye model present): it keeps photos whose main face is
+closed or half closed. Switching it on makes the app check the open folder's photos in chunks, with a progress line; only photos
+already checked can match. In the Grid's photo preview and the Scene view, with the face boxes on (Shift+F), the main face of a frame
+with closed eyes carries an "Eyes closed" tag.
+
 ## Scenes
 
 Scenes shows the grid's photos as a timeline of bursts instead of a wall of
@@ -857,6 +873,9 @@ Scenes works with [Auto cull](#auto-cull): its scores are shared, and a scene's
 frames can be looked at in either. Scenes' scores also keep each frame's
 sharpest region; scores measured by an earlier version of Immage are measured
 again once, the first time they are needed.
+
+With People on, the rules panel also has **Prefer frames with open eyes** (on by default): ranking, Keep best and the minimum quality use
+the quality plus what faces add, and the preview says how many frames "are ranked lower for closed eyes".
 
 ## AI critique and natural-language search
 

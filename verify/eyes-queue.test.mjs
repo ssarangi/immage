@@ -85,3 +85,16 @@ test('nothing is wanted: no wait, no call', async () => {
   assert.equal(r.timers.length, 0);
   assert.equal(r.calls.length, 0);
 });
+
+test('the verdict remembers which face it came from, and forgets with the rest', async () => {
+  const K = await import('../app/src/eyesKnown.ts');
+  K.setEyeVerdicts([{ path: '/p', state: 'closed', primaryFace: 7 }, { path: '/q', state: 'open' }]);
+  assert.deepEqual([K.eyeVerdict('/p'), K.eyePrimary('/p'), K.eyesClosed('/p')], ['closed', 7, true]);
+  assert.deepEqual([K.eyeVerdict('/q'), K.eyePrimary('/q'), K.eyesClosed('/q')], ['open', null, false]);
+  assert.equal(K.eyeVerdict('/never'), undefined);
+  const v = K.eyesVersion();
+  K.setEyeVerdicts([{ path: '/p', state: 'closed', primaryFace: 7 }]);
+  assert.equal(K.eyesVersion(), v);          // the same answer again changes nothing
+  K.forgetEyes();
+  assert.equal(K.eyeVerdict('/p'), undefined);
+});

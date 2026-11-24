@@ -62,6 +62,11 @@ Improvements
 - **Backup of People:** **People & face data** is an optional item in Back Up and Restore. It is never
   ticked for you, says that it holds names and biometric face data, and a restore checks the file and keeps
   a copy of what it replaced.
+- **Closed eyes in culling (preview):** with People on and the optional eye model, a small eye glyph marks
+  frames whose main face has closed or half closed eyes in the Grid and on scene cards; Auto Cull can use
+  faces in the score (closed eyes only lower it, never reject), with a choice of the main subject's or any
+  face's eyes; Scenes can prefer frames with open eyes and says how many it ranked lower; Find has a Closed
+  eyes row; and the face boxes tag the main face when its eyes are closed.
 - **Person page:** double-click a person in People to open their page: their photos in the
   app's grid (with **Open in Grid**, which sets Find's People filter), and their faces to
   confirm, reject (**Not Maya**, **Not a face**) or choose as cover.
