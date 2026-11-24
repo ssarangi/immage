@@ -244,6 +244,8 @@ Brilliance (`whites_brilliance`, AgX only).
 remembered) and `AdvancedToggle` (the title-row icon, with a dot for hidden
 edits).
 
+Faces (design in [faces.md](faces.md)): engine [faces.c](../../../engine/faces.c) (`faces_infer`); Rust [faces_models.rs](../../src-tauri/src/faces_models.rs) (pack, engine call), [faces_detect.rs](../../src-tauri/src/faces_detect.rs) (pure detection and alignment maths), [faces_cluster.rs](../../src-tauri/src/faces_cluster.rs), [faces_store.rs](../../src-tauri/src/faces_store.rs) (`faces.sqlite`), [faces_service.rs](../../src-tauri/src/faces_service.rs), [faces_cmds.rs](../../src-tauri/src/faces_cmds.rs); `python3 verify/faces-engine.py`.
+
 Auto-keywords: [ram_models.rs](../../src-tauri/src/ram_models.rs) (the pack pin, vocabulary, preprocessing), [tags_store.rs](../../src-tauri/src/tags_store.rs) (`tags.sqlite`), [tags_service.rs](../../src-tauri/src/tags_service.rs) (the background service), [tags_health.rs](../../src-tauri/src/tags_health.rs) (failure classes, backoff, block, skipped photos), [tags_cmds.rs](../../src-tauri/src/tags_cmds.rs); the page side is [KeywordsCard.tsx](../../src/KeywordsCard.tsx) in AiModelsPrefs.tsx, `AiKeywords` in FindEditors.tsx and the Auto-keywords group in Keywording.tsx (state and split in [keywordGroup.ts](../../src/keywordGroup.ts)); `python3 verify/tags-engine.py` runs the real model through the engine.
 
 Metadata: [CaptureTimeDialog.tsx](../../src/CaptureTimeDialog.tsx) previews and

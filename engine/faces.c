@@ -150,6 +150,8 @@ static gboolean _faces_do(JsonObject *req, JsonBuilder *reply, char **err)
   for(int i = 0; ok && i < no; i++)
   {
     const int rank = dt_ai_get_output_shape(ctx, i, shapes[i], 4);
+    // a dynamic batch dimension (OCEC) follows the input's
+    if(rank >= 1 && rank <= 4 && shapes[i][0] <= 0) shapes[i][0] = in_shape[0];
     size_t n = rank >= 1 && rank <= 4 ? dt_ai_tensor_element_count(shapes[i], rank) : 0;
     if(dt_ai_get_output_type(ctx, i) != DT_AI_FLOAT || n == 0 || n > (16u << 20)) { ok = FALSE; break; }
     outputs[i] = (dt_ai_tensor_t){ g_malloc0(n * sizeof(float)), DT_AI_FLOAT, shapes[i], rank };
