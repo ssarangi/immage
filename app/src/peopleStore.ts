@@ -8,7 +8,7 @@
 // backend only through `PeopleApi`, so the harness runs the real view on fixtures.
 import { useSyncExternalStore } from "react";
 import { commands } from "./commands";
-import type { ClusterRow, FaceFilter, FaceRow, FacesStatus, MergeSuggestion, PersonRow } from "./bindings";
+import type { ClusterRow, FaceFilter, FaceRow, FacesStatus, MergeSuggestion, PersonRow, Side } from "./bindings";
 import { settings } from "./settings";
 import { setScanJob } from "./background";
 import {
@@ -32,6 +32,8 @@ export type PeopleApi = {
   unignore(faces: number[]): Promise<void>;
   failedPhotos(limit: number): Promise<string[]>;
   mergeSuggestions(): Promise<MergeSuggestion[]>;
+  mergeGroups(from: number, into: number): Promise<void>;
+  notSame(a: Side, b: Side): Promise<void>;
   undo(): Promise<string | null>;
   deleteAll(): Promise<void>;
   retry(): Promise<void>;
@@ -61,6 +63,8 @@ const real: PeopleApi = {
   unignore: async (faces) => { await commands.facesUnignore(faces); },
   failedPhotos: (limit) => commands.facesFailedPhotos(limit),
   mergeSuggestions: () => commands.facesMergeSuggestions(),
+  mergeGroups: async (from, into) => { await commands.facesMergeGroups(from, into); },
+  notSame: async (a, b) => { await commands.facesNotSame(a, b); },
   undo: () => commands.facesUndo(),
   deleteAll: async () => { await commands.facesDeleteAll(); },
   retry: async () => { await commands.facesRetry(); },
@@ -258,8 +262,9 @@ export function startPeople(): () => void {
 // group whose faces are all named; those groups are kept out of the lists here (by their faces), so the grid and the
 // counts drop them at once and for good. Undo and Delete clear it, and the next read is then the backend's own.
 const settled = new Set<number>();
-const unsettled = (d: PeopleData): PeopleData => !settled.size ? d : {
-  ...d, groups: d.groups.filter((g) => !(g.members?.length ? g.members : [g.rep_face_id]).some((m) => settled.has(m))),
+const joined = new Set<number>();   // groups that were joined into another
+const unsettled = (d: PeopleData): PeopleData => !settled.size && !joined.size ? d : {
+  ...d, groups: d.groups.filter((g) => !joined.has(g.id) && !(g.members?.length ? g.members : [g.rep_face_id]).some((m) => settled.has(m))),
   unknown: d.unknown.filter((f) => !settled.has(f.id)),
 };
 const settle = (faces: readonly number[]) => { faces.forEach((f) => settled.add(f)); if (settled.size > 20000) settled.clear(); };
@@ -282,7 +287,7 @@ async function change(local: (d: PeopleData) => PeopleData, call: () => Promise<
     await call();
     if (done) postUndo(done);
   } catch (e) {
-    settled.clear();
+    settled.clear(); joined.clear();
     setPeople({ data: before, error: String(e) });
   } finally {
     setPeople({ busy: false });
@@ -291,7 +296,7 @@ async function change(local: (d: PeopleData) => PeopleData, call: () => Promise<
 }
 
 export async function undoLast(steps: number) {
-  settled.clear();
+  settled.clear(); joined.clear();
   setPeople({ undo: null, busy: true });
   try { for (let i = 0; i < steps; i++) if (!(await api.undo())) break; }
   catch (e) { setPeople({ error: String(e) }); }
@@ -386,6 +391,21 @@ export async function mergePeople(from: readonly number[], into: number) {
   }
 }
 
+// unnamed groups made one (faces_merge_groups): `from` joins `into`, the grid shows it at once
+export async function mergeGroups(from: readonly number[], into: number) {
+  for (const id of from) {
+    const g = state.data.groups.find((x) => x.id === id);
+    joined.add(id);
+    await change((d) => ({ ...d, groups: d.groups.filter((x) => x.id !== id).map((x) => (x.id === into ? { ...x, size: x.size + (g?.size ?? 0) } : x)) }),
+      () => api.mergeGroups(id, into), entry("joined", g?.size ?? 1));
+  }
+}
+
+// "not the same", remembered by the backend, so the pair is not offered again
+export async function notSame(a: Side, b: Side) {
+  await change((d) => d, () => api.notSame(a, b), entry("notSame", 1));
+}
+
 export async function setCover(id: number, face: number) {
   const name = state.data.people.find((p) => p.id === id)?.name ?? "";
   await change((d) => ({ ...d, people: d.people.map((p) => (p.id === id ? { ...p, cover_face_id: face, cover_manual: true } : p)) }), () => api.cover(id, face), entry("cover", 1, name));
@@ -420,7 +440,7 @@ export async function turnOff() {
   try { await api.setEnabled(false); await refreshAll(true); } catch (e) { setPeople({ error: String(e) }); }
 }
 export async function deleteAllFaceData() {
-  settled.clear();
+  settled.clear(); joined.clear();
   try { await api.deleteAll(); resetPeople({ on: true }); await refreshAll(true); } catch (e) { setPeople({ error: String(e) }); }
 }
 export async function togglePause() {

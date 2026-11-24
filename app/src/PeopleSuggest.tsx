@@ -11,7 +11,7 @@ import type { PersonRow } from "./bindings";
 import { formatNumber, t } from "./i18n";
 import { capRows, type SuggestRow } from "./peopleModel";
 
-export type SuggestAct = "merge" | "addTo" | "notThem";
+export type SuggestAct = "merge" | "addTo" | "notThem" | "notSame";
 
 export function PeopleSuggest({ rows, people, sizes, onAct, onDismiss }: {
   rows: SuggestRow[]; people: readonly PersonRow[]; sizes: ReadonlyMap<number, number>;
@@ -31,7 +31,12 @@ export function PeopleSuggest({ rows, people, sizes, onAct, onDismiss }: {
       <button type="button" className="people-btn" onClick={() => onAct(r, "addTo")}>{t("people.suggest.addTo", { name: name(r.b) })}</button>
       <button type="button" className="people-btn" onClick={() => onAct(r, "notThem")}>{t("people.act.notThem")}</button>
     </>
-  ) : <button type="button" className="people-btn" onClick={() => onAct(r, "merge")}>{t("people.suggest.merge")}</button>;
+  ) : (
+    <>
+      <button type="button" className="people-btn" onClick={() => onAct(r, "merge")}>{t("people.suggest.merge")}</button>
+      <button type="button" className="people-btn" onClick={() => onAct(r, "notSame")}>{t("people.suggest.notSame")}</button>
+    </>
+  );
   const top = rows[0];
   const keyDown = (e: React.KeyboardEvent) => {
     if (!top || e.target !== e.currentTarget) return;

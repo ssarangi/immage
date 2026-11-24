@@ -457,28 +457,59 @@ export async function runPeopleShift() {
   if (!/may be the same person/.test(second) || /looks like/.test(second)) fail(`suggestions: after Not them the row says "${second}"`);
   await frames(60);
   if (/looks like/.test(sText())) fail("suggestions: the pair came back after a refresh");
-  // the keyboard: focus the row, Enter merges the two groups (the name box opens for both), Escape closes it
+  // the keyboard: focus the row, Enter joins the two groups at once (faces_merge_groups, no name), and the line says so
+  const joinCalls = h().calls.length;
   sugg().focus();
   press(sugg(), "Enter");
-  await frames(4);
-  const nm = $(".people-name label")?.textContent ?? "";
-  out.suggest = { ...(out.suggest as object), second, name: nm };
-  if (!/^Name \d+ faces$/.test(nm)) fail(`suggestions: Enter on two groups opened "${nm}"`);
-  press($<HTMLInputElement>(".people-name input") ?? grid(), "Escape");
-  await frames(3);
-  // Escape on the row dismisses it for this session, and the people pair comes up
-  sugg().focus();
-  press(sugg(), "Escape");
-  await frames(4);
+  await frames(10);
+  const joined = h().calls.slice(joinCalls).find((c) => c.startsWith("mergeGroups:"));
+  out.suggest = { ...(out.suggest as object), second, joined, undo: $(".people-undo-text")?.textContent };
+  if (!joined) fail(`suggestions: Enter on two groups did not join them (${h().calls.slice(joinCalls).join(",")})`);
+  if (!/Joined a group/.test($(".people-undo-text")?.textContent ?? "")) fail(`suggestions: the Undo line says "${$(".people-undo-text")?.textContent}"`);
+  await frames(30);
+  const fromId = joined?.split(":")[1];
+  if (fromId && document.getElementById(`ptile-g:${fromId}`)) fail("suggestions: the joined group is still in the grid");
+  // "Not the same" for groups is remembered
+  if (/These groups/.test(sText())) {
+    const ns = h().calls.length;
+    click(Array.from(sugg().querySelectorAll<HTMLButtonElement>("button")).find((b) => b.textContent === "Not the same")!);
+    await frames(8);
+    if (!h().calls.slice(ns).some((c) => c.startsWith("notSame:group:"))) fail("suggestions: Not the same did not call not_same for groups");
+  }
+  // Escape on the row dismisses what it shows, until the people pair comes up
+  for (let k = 0; k < 8 && (!/ and .* may be the same person/.test(sText()) || /These groups|looks like/.test(sText())); k++) {
+    sugg().focus();
+    press(sugg(), "Escape");
+    await frames(4);
+  }
   const third = sText();
-  if (!/Nana|Sam|Maya|Dad|Alex|Marcus|Zoe/.test(third) || !/may be the same person/.test(third) || /groups/.test(third)) fail(`suggestions: after Escape the row says "${third}"`);
+  out.suggest = { ...(out.suggest as object), third };
+  if (!/ and .* may be the same person/.test(third) || /groups/.test(third)) fail(`suggestions: the people pair never came up ("${third}")`);
+  sugg().focus();
   press(sugg(), "Enter");
   await frames(6);
-  const dlg = !!$(".modal-backdrop");
-  if (!dlg) fail("suggestions: Enter on two people did not open the merge dialog");
+  if (!$(".modal-backdrop")) fail("suggestions: Enter on two people did not open the merge dialog");
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
   await frames(4);
-  note("suggestions act", diff(sBase, snapshot(view), SUG + ", .ptile, .ptile *, .people-canvas, .people-rail-count"));
+  const nsp = h().calls.length;
+  click(Array.from(sugg().querySelectorAll<HTMLButtonElement>("button")).find((b) => b.textContent === "Not the same")!);
+  await frames(8);
+  if (!h().calls.slice(nsp).some((c) => c.startsWith("notSame:person:"))) fail("suggestions: Not the same did not call not_same for people");
+  // two selected groups: Merge groups in the selection bar
+  const gt = $$(".ptile[data-kind=group]");
+  if (gt.length >= 2) {
+    click(gt[0]); click(gt[1], { ctrlKey: true });
+    await frames(3);
+    const mg = Array.from($$<HTMLButtonElement>(".people-selbar button")).find((b) => b.textContent === "Merge groups");
+    if (!mg) fail("selection: two selected groups offer no Merge groups");
+    else {
+      const mc = h().calls.length;
+      click(mg);
+      await frames(10);
+      if (!h().calls.slice(mc).some((c) => c.startsWith("mergeGroups:"))) fail("selection: Merge groups did not join the groups");
+    }
+  }
+  note("suggestions act", diff(sBase, snapshot(view), SUG + ", .ptile, .ptile *, .people-canvas, .people-rail-count, .people-selbar > *, .people-inspector *"));
   if (JSON.stringify(rect(sugg().getBoundingClientRect())) !== sRect) fail("suggestions: the row changed its size");
   checkFixed("suggestions");
   drain(false);

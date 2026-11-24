@@ -258,7 +258,7 @@ export function nameOptions(query: string, people: readonly PersonRow[], limit =
 
 // ---- the Undo line ----
 
-export type UndoKind = "unignored" | "assigned" | "confirmed" | "ignored" | "removed" | "merged" | "renamed" | "cover" | "restored" | "notPerson" | "notFace";
+export type UndoKind = "joined" | "notSame" | "unignored" | "assigned" | "confirmed" | "ignored" | "removed" | "merged" | "renamed" | "cover" | "restored" | "notPerson" | "notFace";
 export type UndoEntry = { kind: UndoKind; n: number; name: string; other: string; steps: number };
 
 // a second action of the same kind and name while the line is up joins it ("Ignored 3 faces"); each
@@ -368,4 +368,10 @@ export function lookAlikes(rows: readonly SuggestRow[]): Map<string, number> {
   const out = new Map<string, number>();
   for (const r of rows) if (r.kind === "group_person" && !out.has(groupKey(r.a))) out.set(groupKey(r.a), r.b);
   return out;
+}
+
+// two or more groups made one: the biggest takes the others in, so the group the user knows stays where it is
+export function joinPlan(ids: readonly number[], sizes: ReadonlyMap<number, number>): { into: number; from: number[] } | null {
+  const sorted = [...new Set(ids)].sort((a, b) => (sizes.get(b) ?? 0) - (sizes.get(a) ?? 0) || a - b);
+  return sorted.length < 2 ? null : { into: sorted[0], from: sorted.slice(1) };
 }

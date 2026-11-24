@@ -18,11 +18,11 @@ import { Crop, PeopleGrid, tileLabel, type GridOverlay } from "./PeopleGrid";
 import { NamePopover } from "./PeopleName";
 import { PeopleSuggest, type SuggestAct } from "./PeopleSuggest";
 import {
-  NO_SEL, SECTIONS, TILE_DEFAULT, TILE_MAX, TILE_MIN, keepSelected, lookAlikes, scanNotes, suggestRows, undoMs, sectionCounts, sectionTiles, select, stableOrder, viewKind,
+  NO_SEL, SECTIONS, TILE_DEFAULT, TILE_MAX, TILE_MIN, joinPlan, keepSelected, lookAlikes, scanNotes, suggestRows, undoMs, sectionCounts, sectionTiles, select, stableOrder, viewKind,
   type Intent, type Section, type Sel, type SelAction, type Tile, type UndoEntry,
 } from "./peopleModel";
 import {
-  clearUndo, confirmTiles, deleteAllFaceData, groupFaces, ignoreTiles, failedPhotos, loadMoreIgnored, loadMoreUnknown, maybeFaces, mergePeople, nameTiles, notPerson, personFaces,
+  clearUndo, confirmTiles, deleteAllFaceData, groupFaces, ignoreTiles, failedPhotos, loadMoreIgnored, loadMoreUnknown, maybeFaces, mergeGroups, mergePeople, nameTiles, notPerson, notSame, personFaces,
   refreshAll, renamePerson, restorePeople, retryFailed, unignoreFaces, setCover, togglePause, turnOff, turnOn, undoLast, usePeople, type NameTarget, type Scope,
 } from "./peopleStore";
 import { settings } from "./settings";
@@ -171,11 +171,14 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
   };
   const suggestAct = (r: (typeof rows)[number], what: SuggestAct) => {
     const person = (id: number) => data.people.find((p) => p.id === id);
-    if (r.kind === "groups") {
-      const ks = [`g:${r.a}`, `g:${r.b}`];
-      const at = Math.max(0, tiles.findIndex((x) => x.key === ks[0]));
+    if (what === "notSame") {
+      const side = r.kind === "groups" ? "group" : "person";
+      void notSame({ kind: side, id: r.a }, { kind: side, id: r.b });
+      setDismissed((d) => new Set([...d, r.key]));
+    } else if (r.kind === "groups") {
+      const plan = joinPlan([r.a, r.b], sizes);
+      if (plan) void mergeGroups(plan.from, plan.into);
       setSel(NO_SEL);
-      setNaming({ keys: ks, seed: "", index: at, faces: (sizes.get(r.a) ?? 0) + (sizes.get(r.b) ?? 0), groups: 2 });
     } else if (r.kind === "group_person") {
       const p = person(r.b);
       if (!p) return;
@@ -187,7 +190,15 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
       setDialog({ kind: "merge", ids: [a.id, b.id], into: b.photos > a.photos ? b.id : a.id });
     }
   };
+  // two or more selected groups: the biggest takes the others in, no name needed
+  const selectedGroups = selected.filter((x): x is Extract<Tile, { kind: "group" }> => x.kind === "group");
+  const askJoin = () => {
+    const plan = joinPlan(selectedGroups.map((x) => x.id), sizes);
+    if (plan) void mergeGroups(plan.from, plan.into);
+    setSel(NO_SEL);
+  };
   const askMerge = () => {
+    if (selectedGroups.length >= 2) { askJoin(); return; }
     if (people.length < 2) return;
     const ids = people.map((x) => (x.kind === "person" ? x.id : 0));
     const most = [...people].sort((a, b) => (b.kind === "person" ? b.photos : 0) - (a.kind === "person" ? a.photos : 0))[0];
@@ -323,6 +334,7 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
           {maybeOnly && <button type="button" className="people-btn" onClick={() => act({ kind: "confirm" })}>{t("people.act.confirm")}</button>}
           {nameable.length > 0 && <button type="button" className="people-btn" onClick={reject}>{maybeOnly ? t("people.act.notThem") : t("people.act.notFace")}</button>}
           {people.length >= 2 && section === "people" && <button type="button" className="people-btn" onClick={askMerge}>{t("people.act.merge")}</button>}
+          {selectedGroups.length >= 2 && section === "review" && <button type="button" className="people-btn" onClick={askJoin}>{t("people.act.mergeGroups")}</button>}
           {people.length === 1 && section === "people" && <button type="button" className="people-btn" onClick={() => setRenameKey(people[0].key)}>{t("people.act.rename")}</button>}
           {people.length > 0 && <button type="button" className="people-btn" onClick={ignore}>{section === "ignored" ? t("people.act.restore") : t("people.act.ignore")}</button>}
           {nameable.length > 0 && !maybeOnly && <button type="button" className="people-btn" onClick={ignore}>{t("people.act.ignore")}</button>}
@@ -398,7 +410,7 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
               <button type="button" className="people-btn" disabled={!nameable.length} onClick={reject}>{maybeOnly ? t("people.act.notThem") : t("people.act.notFace")}</button>
               <button type="button" className="people-btn" disabled={people.length !== 1 || section !== "people"} onClick={() => people[0] && setRenameKey(people[0].key)}>{t("people.act.rename")}</button>
               <button type="button" className="people-btn" disabled={people.length !== 1 || section !== "people"} onClick={() => void askCover()}>{t("people.act.cover")}</button>
-              <button type="button" className="people-btn" disabled={people.length < 2 || section !== "people"} onClick={askMerge}>{t("people.act.merge")}</button>
+              <button type="button" className="people-btn" disabled={!((people.length >= 2 && section === "people") || (selectedGroups.length >= 2 && section === "review"))} onClick={askMerge}>{t("people.act.merge")}</button>
               <button type="button" className="people-btn" disabled={!target.length || (target.some((x) => x.kind === "maybe") && section === "review" && target.every((x) => x.kind === "maybe"))} onClick={ignore}>
                 {section === "ignored" ? t("people.act.restore") : t("people.act.ignore")}</button>
             </div>

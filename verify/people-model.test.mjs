@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NO_SEL, GAP, PAD, CAPTION, geometry, gridKey, keepSelected, mergeUndo, nameOptions, needsReview, scanView, sectionCounts,
-  scanNotes, scanJob, undoMs, suggestRows, capRows, lookAlikes, sectionTiles, select, stableOrder, tilePos, tilesInRect, totalHeight, viewKind, visibleRange } from '../app/src/peopleModel.ts';
+  scanNotes, scanJob, joinPlan, undoMs, suggestRows, capRows, lookAlikes, sectionTiles, select, stableOrder, tilePos, tilesInRect, totalHeight, viewKind, visibleRange } from '../app/src/peopleModel.ts';
 
 const person = (id, name, o = {}) => ({ id, name, state: 'active', faces: 5, photos: 10, cover_face_id: null, cover_manual: false, suggestions: 0, ...o });
 const data = (o = {}) => ({ people: [], groups: [], unknown: [], unknownMore: false, ignoredFaces: [], ignoredMore: false, ...o });
@@ -202,4 +202,12 @@ test('suggestions: only what is still there, strongest first, low left out, dism
   assert.deepEqual([cap.shown.length, cap.more], [3, 1]);
   assert.deepEqual(capRows(rows.slice(0, 2), 3), { shown: rows.slice(0, 2), more: 0 });
   assert.deepEqual([...lookAlikes(rows)], [['g:3', 1]]);
+});
+
+test('joining groups: the biggest takes the others in', () => {
+  const sizes = new Map([[1, 5], [2, 40], [3, 12], [4, 12]]);
+  assert.deepEqual(joinPlan([1, 2], sizes), { into: 2, from: [1] });
+  assert.deepEqual(joinPlan([1, 3, 2, 4], sizes), { into: 2, from: [3, 4, 1] });   // ties by id
+  assert.equal(joinPlan([2], sizes), null);
+  assert.equal(joinPlan([2, 2], sizes), null);
 });

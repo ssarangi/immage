@@ -22,7 +22,7 @@ import { createRoot } from "react-dom/client";
 import { useEffect, useState } from "react";
 import "../src/styles.css";
 import { BUILTIN_THEMES, THEME_TOKENS } from "../src/themes";
-import type { ClusterRow, FaceFilter, FaceRow, FacesStatus, MergeSuggestion, PackInfo, PersonRow } from "../src/bindings";
+import type { ClusterRow, FaceFilter, FaceRow, FacesStatus, MergeSuggestion, PackInfo, PersonRow, Side } from "../src/bindings";
 import { PeopleView } from "../src/PeopleView";
 import { settings } from "../src/settings";
 import { peopleState, refreshAll, resetPeople, setPeopleApi, setPeopleOn, setScanFolderTotal, startPeople, type PeopleApi } from "../src/peopleStore";
@@ -123,6 +123,8 @@ const liveGroups = (): ClusterRow[] => {
 };
 let ghosts: ClusterRow[] = [];
 let suggestGroup = -1;   // the group the test wants to look like someone: one that is on screen
+const notSamePairs = new Set<string>();   // pairs the user said are not the same
+const pairKey = (kind: string, a: number, b: number) => `${kind}:${Math.min(a, b)}:${Math.max(a, b)}`;
 const notPairs = new Set<string>();   // group:person pairs the user said are not them
 const ghost = (faces: number[]) => { if (q.get("stale") !== "0") ghosts.push(...liveGroups().filter((g) => g.members.some((m) => faces.includes(m)))); };
 const fake: PeopleApi = {
@@ -169,11 +171,16 @@ const fake: PeopleApi = {
     const pick = g.find((x) => x.id === suggestGroup) ?? g[0];
     if (pick && ps[0] && !notPairs.has(`${pick.id}:${ps[0].id}`)) out.push({ kind: "group_person", a: pick.id, b: ps[0].id, similarity: 0.9, confidence: "high" });
     const others = g.filter((x) => x !== pick);
-    if (others[0] && others[1]) out.push({ kind: "groups", a: others[0].id, b: others[1].id, similarity: 0.8, confidence: "high" });
-    if (ps[1] && ps[2]) out.push({ kind: "people", a: ps[1].id, b: ps[2].id, similarity: 0.5, confidence: "medium" });
+    // the first two groups that were not said to be different people
+    let pair: [ClusterRow, ClusterRow] | null = null;
+    for (let i = 0; i < Math.min(others.length, 6) && !pair; i++) for (let j = i + 1; j < Math.min(others.length, 6) && !pair; j++) if (!notSamePairs.has(pairKey("group", others[i].id, others[j].id))) pair = [others[i], others[j]];
+    if (pair) out.push({ kind: "groups", a: pair[0].id, b: pair[1].id, similarity: 0.8, confidence: "high" });
+    if (ps[1] && ps[2] && !notSamePairs.has(pairKey("person", ps[1].id, ps[2].id))) out.push({ kind: "people", a: ps[1].id, b: ps[2].id, similarity: 0.5, confidence: "medium" });
     if (others[2] && others[3]) out.push({ kind: "groups", a: others[2].id, b: others[3].id, similarity: 0.46, confidence: "low" });
     return wait(out);
   },
+  mergeGroups: (from, into) => { mutate(`mergeGroups:${from}:${into}`, () => { for (const f of db.faces) if (f.cluster === from) f.cluster = into; }); return wait(undefined); },
+  notSame: (a: Side, b: Side) => { mutate(`notSame:${a.kind}:${a.id}:${b.id}`, () => { notSamePairs.add(pairKey(a.kind, a.id, b.id)); }); return wait(undefined); },
   undo: () => { const prev = undoStack.pop(); calls.push("undo"); if (!prev) return wait(null); db = prev; sizes = null; ghosts = []; return wait("undone"); },
   deleteAll: () => { db = { faces: [], people: [], nextPerson: 1 }; scan.enabled = false; undoStack.length = 0; calls.push("deleteAll"); return wait(undefined); },
   retry: () => { scan.health = "ok"; scan.failure = null; return wait(undefined); },
