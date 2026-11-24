@@ -1646,6 +1646,10 @@ static gpointer _read_requests(gpointer data)
         {
           tags_queue(parser); parser = NULL; taken = TRUE;
         }
+        else if(!g_strcmp0(cmd, "faces_infer") && json_object_has_member(req, "tag"))
+        {
+          faces_queue(parser); parser = NULL; taken = TRUE;
+        }
         else if((!g_strcmp0(cmd, "thumb") || !g_strcmp0(cmd, "analysis_preview")
                  || !g_strcmp0(cmd, "meta")) && json_object_has_member(req, "tag"))
         {
@@ -1789,6 +1793,7 @@ int main(int argc, char **argv)
 #endif
   clip_start(out);
   tags_start(out);
+  faces_start(out);
   GAsyncQueue *requests = g_async_queue_new();
   _requests = requests;
   g_thread_unref(g_thread_new("requests", _read_requests, requests));
@@ -1856,6 +1861,7 @@ int main(int argc, char **argv)
 
   clip_wait();
   tags_wait();
+  faces_wait();
   library_thumb_wait();
   library_import_wait();
   export_wait();

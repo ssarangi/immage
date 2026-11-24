@@ -11,6 +11,8 @@ mod search_analysis;
 mod library_ids;
 mod analysis_queue;
 mod analysis_image;
+mod faces_cluster;
+mod faces_detect;
 mod ram_models;
 mod tags_cmds;
 mod tags_health;
