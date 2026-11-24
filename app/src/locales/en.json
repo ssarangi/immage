@@ -173,6 +173,7 @@
   "prefs.section.immich.desc": "Connect to an Immich server to search and upload.",
   "prefs.section.morfphoto.desc": "Offload work to a NAS with the Immage Accelerator.",
   "prefs.section.culling.desc": "AI critique, scenes and how models interact with culling.",
+  "prefs.section.faces.desc": "Whether faces are found, the model, and the data kept on this computer.",
   "prefs.section.plugins.desc": "Programs that Edit In sends a photo to.",
   "prefs.section.about.desc": "Version, licenses and links.",
   "prefs.title": "Preferences",

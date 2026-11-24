@@ -173,6 +173,7 @@
   "prefs.section.immich.desc": "Connexion à un serveur Immich pour rechercher et envoyer des photos.",
   "prefs.section.morfphoto.desc": "Délègue des tâches à un NAS avec l’accélérateur Immage.",
   "prefs.section.culling.desc": "Critique par IA, scènes et interaction des modèles avec le tri.",
+  "prefs.section.faces.desc": "Si les visages sont recherchés, le modèle et les données conservées sur cet ordinateur.",
   "prefs.section.plugins.desc": "Programmes vers lesquels Modifier dans envoie une photo.",
   "prefs.section.about.desc": "Version, licences et liens.",
   "prefs.title": "Préférences",
