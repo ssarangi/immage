@@ -58,6 +58,16 @@ for (const [win, h] of [['900x640', 544], ['1280x800', 704], ['1600x1000', 904]]
     assert.equal(all.set.length, 5);
     assert.equal(r.headerMoves, 0, 'a header above the toggled card moved while the column had room');
     assert.equal(r.fixedMoves, 0, 'the Navigator or the first header moved');
+    // inside a card the controls stay put and only the tree / Auto-keywords chips scroll
+    for (const f of r.fixed) {
+      const what = `${f.id} with ${f.open.join('+')}: ${JSON.stringify(f)}`;
+      assert.ok(f.scrolls && f.scrolled, `the scrolling region does not scroll: ${what}`);
+      assert.equal(f.moved, 0, `a fixed control moved while scrolling: ${what}`);
+      // the scrolling region gives way first: the body only scrolls itself once it is at its floor
+      if (f.bodyScrolls) assert.ok(f.scrollerHeight <= 57, `the body scrolls before the region shrank: ${what}`);
+      else assert.ok(f.inCard, `a fixed control fell outside its card: ${what}`);
+      if (f.open.length === 1 && f.scrollerHeight > 57) assert.ok(!f.bodyScrolls, `the card body scrolls itself: ${what}`);
+    }
     assert.deepEqual(r.keys, ['true', 'false']);
     assert.ok(r.roles);
   });
@@ -67,4 +77,10 @@ test('the check fails when the column scroll is put back (negative control)', { 
   const r = run('h=544&break=1');
   assert.equal(r.error, undefined, r.error);
   assert.ok(r.combos.some((c) => c.columnScrollHeight > c.columnClientHeight), 'expected the column to scroll');
+});
+
+test('the fixed-controls check fails when the controls go back inside the scroller (negative control)', { skip }, () => {
+  const r = run('h=544&break=2');
+  assert.equal(r.error, undefined, r.error);
+  assert.ok(r.fixed.some((f) => f.moved > 0 || f.bodyScrolls), 'expected a fixed control to move or the body to scroll');
 });

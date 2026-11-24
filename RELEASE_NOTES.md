@@ -13,7 +13,10 @@ Improvements
   groups, and its Preferences row is now **Focus mode (tool panels)**. The panel
   is now as tall as the window and no longer scrolls as a whole: open cards
   share the height, and a card taller than its share scrolls inside itself
-  under its title.
+  under its title, but its controls stay put: the Folders and Catalog trees
+  scroll under the Include subfolders switch and above the Add folder button
+  (and the Catalog's progress card), and in Keywording only the Auto-keywords
+  chips scroll, under the keyword chips, the input and the group's title row.
 - **Scenes:** the toolbar's new **Edit | Grid | Scenes** switch (Scenes is also **View > Scenes**
   and Shift+S). Scenes shows the open folder as a vertical timeline of time
   blocks, grouped by day, each a row of scene cards: bursts grouped by capture

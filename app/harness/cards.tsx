@@ -28,7 +28,7 @@ document.body.style.margin = "0";
 const broken = q.get("break") === "1";
 const noReserve = q.get("break") === "reserve";
 if (q.get("dir")) document.documentElement.dir = q.get("dir")!;
-if (noReserve) document.head.insertAdjacentHTML("beforeend", "<style>.kw-auto-body{min-height:0!important}.kw-auto-head{height:auto!important}</style>");
+if (noReserve) document.head.insertAdjacentHTML("beforeend", "<style>.kw-auto-body{min-height:0!important}.kw-auto{min-height:0!important}.kw-auto-head{height:auto!important}</style>");
 if (q.get("break") === "undo") document.head.insertAdjacentHTML("beforeend", "<style>.kw-auto-head{height:auto!important}.kw-auto-state{flex-direction:column;white-space:normal!important}</style>");
 const W = Number(q.get("w") ?? 320);
 

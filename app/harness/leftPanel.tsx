@@ -4,7 +4,8 @@
 // Dev-only harness for the Library column's fixed height: the real `.left` aside, `.panel` cards, bodies and
 // styles.css with fixture content, driven by the real toggleLeftSet and headerKey. With ?test=1 it opens
 // combinations of cards and writes JSON into #shift-report (verify/left-panel-shift.test.mjs asserts it).
-//   ?h=700    the aside's height, ?break=1 puts the column's own scrolling back (negative control)
+//   ?h=700    the aside's height, ?break=1 puts the column's own scrolling back (negative control),
+//   ?break=2 puts each card's fixed controls back inside its scroller (negative control)
 import "./tauriShim";
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
@@ -23,6 +24,12 @@ if (q.get("break") === "1") {
   const st = document.createElement("style");
   st.textContent = `.left .panel { flex: none !important; min-height: 0 !important; }
     .left .panel > :is(.meta-body, .kw-body, .folders-body, .cat-body, .history-list) { overflow: visible !important; flex: none !important; }`;
+  document.head.append(st);
+}
+if (q.get("break") === "2") {
+  const st = document.createElement("style");
+  st.textContent = `.left .panel > :is(.folders-body, .cat-body, .kw-body) { display: block !important; overflow-y: auto !important; }
+    .left .folders-body > .ftree, .left .cat-body > .ftree, .left .kw-auto-body { overflow: visible !important; flex: none !important; }`;
   document.head.append(st);
 }
 const H = Number(q.get("h") ?? 700);
@@ -51,9 +58,22 @@ function Harness() {
       <div className="navigator"><div className="nav-head"><span>Navigator</span></div><div className="nav-image"><div className="nav-pic" style={{ width: 100, height: 60 }} /></div></div>
       {card("metadata", "metadata", <div className="meta-body"><div className="meta-grid">{rows(7)}</div><div style={{ height: 80 }}>location</div></div>)}
       {card("keywording", "keywording", <div className="kw-body">
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>{Array.from({ length: 60 }, (_, i) => <span key={i} style={{ padding: "2px 8px", background: "var(--inset)" }}>chip {i}</span>)}</div></div>)}
-      {card("folders", "folders-panel", <div className="folders-body">{rows(60)}</div>)}
-      {card("catalog", "catalog-panel", <div className="cat-body"><div style={{ height: 262 }}>index card</div>{rows(60)}</div>)}
+        <div className="kw-chips" data-own>{Array.from({ length: 3 }, (_, i) => <span key={i} className="kw-chip"><span className="kw-leaf">own {i}</span></span>)}</div>
+        <div className="kw-add"><input className="field" defaultValue="" /></div>
+        <div className="kw-auto" role="group">
+          <div className="kw-auto-head"><span className="kw-auto-name">Auto-keywords</span><span className="kw-auto-state">60</span><span className="kw-auto-menu"><button type="button" className="kw-auto-more">...</button></span></div>
+          <div className="kw-auto-body"><div className="kw-chips">{Array.from({ length: 60 }, (_, i) => <span key={i} className="kw-chip ai"><span className="kw-leaf">auto {i}</span></span>)}</div></div>
+        </div>
+        <div className="kw-label">Recent</div>
+        <div className="kw-recent">{["a", "b", "c"].map((k) => <button key={k}>{k}</button>)}</div></div>)}
+      {card("folders", "folders-panel", <div className="folders-body">
+        <label className="sub-toggle"><span>Include subfolders</span><input type="checkbox" className="switch" defaultChecked /></label>
+        <div className="ftree folders" role="tree">{Array.from({ length: 60 }, (_, i) => <div key={i} className="folder-row" style={{ height: 28 }}>folder {i}</div>)}</div>
+        <button className="folder add"><span>Add folder</span></button></div>)}
+      {card("catalog", "catalog-panel", <div className="cat-body">
+        <div className="ftree cat-list" role="tree">{Array.from({ length: 60 }, (_, i) => <div key={i} className="folder-row" style={{ height: 28 }}>source {i}</div>)}</div>
+        <button className="folder add"><span>Add folder</span></button>
+        <div className="cat-footer"><div className="cat-card" style={{ height: 62 }}>index card</div></div></div>)}
       {card("history", "history", <ol className="history-list">{Array.from({ length: 30 }, (_, i) => <li key={i} style={{ height: 28 }}>step {i}</li>)}</ol>)}
     </aside>
   );
@@ -79,17 +99,39 @@ async function run() {
     const a = aside();
     const bodies = set.map((id) => {
       const b = body(id)!, cs = getComputedStyle(b);
+      const inner = b.querySelector<HTMLElement>(".ftree, .kw-auto-body");
       const ht = head(id);
       return { id, clientHeight: b.clientHeight, scrollHeight: b.scrollHeight, overflowY: cs.overflowY,
-        headerTop: top(ht), scrolls: b.scrollHeight > b.clientHeight + 1 };
+        headerTop: top(ht), scrolls: b.scrollHeight > b.clientHeight + 1 || (!!inner && inner.scrollHeight > inner.clientHeight + 1) };
     });
     // a scrolled body keeps its header where it was
     const tall = set.find((id) => id === "folders" || id === "catalog" || id === "keywording");
     let headerStaysOnScroll = true;
-    if (tall) { const t0 = top(head(tall)); body(tall)!.scrollTop = 200; headerStaysOnScroll = top(head(tall)) === t0; }
+    if (tall) { const t0 = top(head(tall)); body(tall)!.scrollTop = 200; body(tall)!.querySelector<HTMLElement>(".ftree, .kw-auto-body")!.scrollTop = 200; headerStaysOnScroll = top(head(tall)) === t0; }
     combos.push({ set, columnScrollHeight: a.scrollHeight, columnClientHeight: a.clientHeight, bodies, headerStaysOnScroll });
   }
   out.combos = combos;
+  // fixed controls stay put while the one scrolling region scrolls (each card open alone, and all three open)
+  const fixedCase = async (open: Card[], id: Card) => {
+    setOpenFromTest(new Set(open)); await tick();
+    const card = document.querySelector<HTMLElement>(`[data-card=${id}]`)!, b = body(id)!;
+    const sels = id === "folders" ? [".sub-toggle", "button.folder.add"] : id === "catalog" ? ["button.folder.add", ".cat-footer"]
+      : ["[data-own]", ".kw-add", ".kw-auto-head", ".kw-recent"];
+    const scroller = b.querySelector<HTMLElement>(id === "keywording" ? ".kw-auto-body" : ".ftree")!;
+    const rel = () => sels.map((sel) => top(b.querySelector(sel)!) - top(card));
+    const before = rel();
+    scroller.scrollTop = scroller.scrollHeight; await tick(2);
+    const after = rel();
+    const last = b.querySelector(sels.at(-1)!)!.getBoundingClientRect();
+    return { id, open, scrolls: scroller.scrollHeight > scroller.clientHeight + 1, scrolled: scroller.scrollTop > 0,
+      bodyScrolls: b.scrollHeight > b.clientHeight + 1, bodyTop: b.scrollTop,
+      moved: Math.max(...before.map((t, i) => Math.abs(t - after[i]))), inCard: last.bottom <= card.getBoundingClientRect().bottom + 1,
+      scrollerHeight: scroller.clientHeight, bodyH: b.clientHeight, bodySH: b.scrollHeight, cardH: card.clientHeight, asideH: aside().clientHeight };
+  };
+  const fixedRuns = [];
+  for (const id of ["folders", "catalog", "keywording"] as Card[]) fixedRuns.push(await fixedCase([id], id));
+  for (const id of ["folders", "catalog", "keywording"] as Card[]) fixedRuns.push(await fixedCase(["keywording", "folders", "catalog"], id));
+  out.fixed = fixedRuns;
   // toggling a card moves no header above it while the column has room (cards above keep their size); when it is
   // full, cards above share the height and their sizes change, so only the Navigator and the first header are fixed
   let moves = 0;

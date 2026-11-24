@@ -767,6 +767,18 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .left .panel > .panel-title { flex: none; }
 .left .panel > :is(.meta-body, .kw-body, .folders-body, .cat-body, .history-list) { flex: 1 1 auto; min-height: 0; overflow-y: auto; max-height: none; }
 .left .navigator, .left .panel-head { flex: none; }
+/* inside a card only the content meant to scroll does: the Folders and Catalog trees scroll under their fixed
+   switch, Add folder button and footer; Keywording's Auto-keywords chips scroll under its fixed chips, input,
+   Recent and group header. A body only scrolls itself when its fixed parts alone exceed the card */
+.left .panel > :is(.folders-body, .cat-body, .kw-body) { display: flex; flex-direction: column; }
+.left .panel > :is(.folders-body, .cat-body, .kw-body) > * { flex: none; }
+.left .folders-body > .ftree, .left .cat-body > .ftree { flex: 0 1 auto; min-height: 56px; overflow-y: auto; }
+/* min-height: the group's border, padding and header (1 + 6 + 22), the body's margin (4) and its floor (52) */
+.left .kw-body > .kw-auto { flex: 0 1 auto; display: flex; flex-direction: column; min-height: 85px; }
+.left .kw-body > .kw-auto > .kw-auto-head { flex: none; }
+.left .kw-body > .kw-auto > .kw-auto-body { flex: 0 1 auto; overflow-y: auto; }
+/* the suggestion list hangs under the input: let it out of the body while it is open */
+.left .panel > .kw-body:has(.kw-suggest) { overflow: visible; }
 /* too short for every open card's floor: the Navigator keeps its header and zoom buttons only */
 @container left (max-height: 600px) { .navigator .nav-image { display: none; } .navigator .nav-head { margin-bottom: 0; } }
 .left .panel + .panel { margin-top: 6px; }
@@ -3444,7 +3456,7 @@ html[data-scheme="light"] .strip-slot.grid::before { background: color-mix(in sr
   position: relative; box-sizing: border-box; margin: 8px 8px 0; padding: 10px 12px; overflow: hidden;
   display: flex; flex-direction: column; gap: 8px; background: var(--inset); border-radius: var(--radius-card);
 }
-.cat-footer { position: sticky; bottom: 0; z-index: 2; background: var(--panel); padding-top: 4px; }
+.cat-footer { background: var(--panel); padding-top: 4px; }
 .cat-card.cat-offline { height: 118px; gap: 2px; }
 .cat-offline .cat-title, .cat-offline .cat-sub { flex: none; }
 .cat-offline .cat-acts { margin-top: auto; justify-content: flex-start; }

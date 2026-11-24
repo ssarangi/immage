@@ -69,8 +69,13 @@ over the photo; in the grid view Find is instead the right-hand panel.
 The panel is as tall as the window and never scrolls as a whole. Open cards
 share the height: a short card keeps its natural size and a long one (the
 trees, Keywording with many keywords, a long History) gives up room and
-scrolls inside its own body, under its title. Each open card keeps at least
-about two rows. A folded card is only its title. In a very short window the
+scrolls inside its own body, under its title. Only the part meant to scroll
+moves: the Folders and Catalog trees scroll under the **Include subfolders**
+switch and above the **Add folder** button (and the Catalog's progress card),
+and in Keywording only the Auto-keywords chips scroll, under the keyword chips,
+the input, the Recent keywords and the group's title row. Each open card keeps
+at least about two rows. In a card too short even for its fixed parts, the whole
+card body scrolls as a last resort. A folded card is only its title. In a very short window the
 Navigator shows just its title and zoom buttons so the open cards fit.
 
 Click a card's title to fold or unfold it. See [Library](library.md) and
