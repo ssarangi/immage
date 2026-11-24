@@ -26,6 +26,11 @@ the app's data folder, and `faces_delete_all` removes them and turns the switch 
 restart in faces.sqlite); with "catalog" the Catalog is scanned too. Crops reach the page as bytes
 (`faces_crop_bytes`), since the page cannot read file paths.
 
+## Network shares
+Faces never reads, stats or lists a path on a network share (judged from the mount table, `volumes::MountSnapshot`)
+unless the user allowed that source (`faces.network_sources`, `faces_network_source`) or asked for that folder with
+`allow_network`. The status poll does not ask network folders whether they answer and caches its answer for 30 s.
+
 ## Checks
 `cargo test faces_` (pure parts, store, clustering with synthetic embeddings). `python3 verify/faces-engine.py`
 (`IMMAGE_FACES_ROOT`, `IMMAGE_TEST_PHOTOS`, optional `IMMAGE_EYES_ROOT`): engine outputs against onnxruntime.

@@ -95,6 +95,37 @@ pub fn network_refusal(path: &Path) -> Option<String> {
     }
 }
 
+/// The mount table read once, to judge many paths without touching any of them. Used by the background
+/// analyses to keep off network shares: a path on one, or one under /mnt or /media whose file system the
+/// table does not tell, counts as a network path. Symlinks are not followed (that would stat the target).
+pub struct MountSnapshot {
+    table: Option<String>,
+}
+impl MountSnapshot {
+    pub fn take() -> Self {
+        #[cfg(target_os = "linux")]
+        {
+            MountSnapshot { table: std::fs::read_to_string("/proc/self/mounts").ok() }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            MountSnapshot { table: None }
+        }
+    }
+    #[cfg(test)]
+    pub fn from_table(table: &str) -> Self {
+        MountSnapshot { table: Some(table.to_string()) }
+    }
+    pub fn is_network(&self, path: &Path) -> bool {
+        #[cfg(any(target_os = "linux", test))]
+        if cfg!(any(target_os = "linux", test)) {
+            // an unreadable table cannot clear a path: it counts as a network one
+            return self.table.as_deref().is_none_or(|t| refusal_from(Some(t), path).is_some());
+        }
+        on_network(path)
+    }
+}
+
 fn resolve_for_mount(path: &Path) -> std::path::PathBuf {
     let abs = if path.is_absolute() { path.to_path_buf() } else { std::env::current_dir().unwrap_or_default().join(path) };
     let mut tail = Vec::new();

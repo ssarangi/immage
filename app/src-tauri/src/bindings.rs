@@ -74,6 +74,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::faces_cmds::faces_status,
         crate::faces_cmds::faces_scan_folder,
         crate::faces_cmds::faces_scan_folder_with,
+        crate::faces_cmds::faces_network_source,
         crate::faces_cmds::faces_unignore,
         crate::faces_cmds::faces_failed_photos,
         crate::faces_cmds::faces_crop_bytes,

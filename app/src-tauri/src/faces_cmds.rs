@@ -33,6 +33,8 @@ pub struct FacesStatus {
     pub folders_waiting: u32,
     /// Library folders that do not answer now (an unplugged drive, a share that is down).
     pub offline_folders: u32,
+    /// Library folders on a network share that Faces does not scan (not allowed for Faces).
+    pub skipped_network_sources: u32,
     /// Milliseconds of the last photo's detection and embedding, once measured.
     pub infer_ms: Option<u32>,
     /// "ok", "retrying" or "blocked", with the reason once not ok.
@@ -63,6 +65,7 @@ pub fn faces_status(ai: State<'_, AiState>) -> Result<FacesStatus, String> {
         pending: progress.pending,
         folders_waiting: progress.folder_pending,
         offline_folders,
+        skipped_network_sources: crate::faces_service::skipped_network_sources(&ai.faces_runtime, crate::volumes::MountSnapshot::take()),
         infer_ms,
         health: health.state.to_string(),
         failure: health.reason.map(str::to_string),
@@ -70,34 +73,86 @@ pub fn faces_status(ai: State<'_, AiState>) -> Result<FacesStatus, String> {
     })
 }
 
+/// Library folders that do not answer. Folders on a network share are not asked at all (the rule is
+/// to keep off shares unless told otherwise), and the answer is kept for 30 s so the status poll never
+/// waits on a slow drive more than once in that time.
 fn offline_count(runtime: &Path) -> u32 {
+    static LAST: std::sync::Mutex<Option<(std::time::Instant, u32)>> = std::sync::Mutex::new(None);
+    if let Some((at, n)) = *LAST.lock().unwrap() {
+        if at.elapsed() < std::time::Duration::from_secs(30) {
+            return n;
+        }
+    }
+    let n = offline_with(runtime, &crate::volumes::MountSnapshot::take(), &|p| crate::volumes::answering(p));
+    *LAST.lock().unwrap() = Some((std::time::Instant::now(), n));
+    n
+}
+
+fn offline_with(runtime: &Path, snapshot: &crate::volumes::MountSnapshot, answers: &dyn Fn(&Path) -> bool) -> u32 {
     let selection = crate::search_analysis::library_selection(runtime);
-    selection["folders"].as_array().into_iter().flatten().filter_map(|v| v.as_str()).filter(|f| !crate::volumes::answering(Path::new(f))).count() as u32
+    selection["folders"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.as_str())
+        .filter(|f| !snapshot.is_network(Path::new(f)) && !answers(Path::new(f)))
+        .count() as u32
 }
 
 /// Scans a folder and its subfolders once, whether or not it is in the Catalog. Needs the pack.
 #[tauri::command]
 #[specta::specta]
 pub fn faces_scan_folder(ai: State<'_, AiState>, path: String) -> Result<(), String> {
-    scan_folder(&ai, path, true)
+    scan_folder(&ai, path, true, false)
 }
 
-/// `faces_scan_folder` with the choice of subfolders: only that folder when `subfolders` is false.
+/// `faces_scan_folder` with the choice of subfolders (only that folder when `subfolders` is false) and of
+/// network shares: a folder on one is refused unless `allow_network` is true.
 #[tauri::command]
 #[specta::specta]
-pub fn faces_scan_folder_with(ai: State<'_, AiState>, path: String, subfolders: bool) -> Result<(), String> {
-    scan_folder(&ai, path, subfolders)
+pub fn faces_scan_folder_with(ai: State<'_, AiState>, path: String, subfolders: bool, allow_network: bool) -> Result<(), String> {
+    scan_folder(&ai, path, subfolders, allow_network)
 }
 
-fn scan_folder(ai: &AiState, path: String, subfolders: bool) -> Result<(), String> {
+fn refuse_network(folder: &Path, allow_network: bool, snapshot: &crate::volumes::MountSnapshot) -> Result<(), String> {
+    if !allow_network && snapshot.is_network(folder) {
+        return Err("That folder is on a network share. Faces does not read network shares unless you allow it for that folder.".into());
+    }
+    Ok(())
+}
+
+/// Allows (or stops allowing) Faces to scan a library source on a network share. Off for every source until then.
+#[tauri::command]
+#[specta::specta]
+pub fn faces_network_source(app: AppHandle, ai: State<'_, AiState>, settings: State<'_, Settings>, path: String, allowed: bool) -> Result<Vec<String>, String> {
+    let p = PathBuf::from(&path);
+    if !p.is_absolute() {
+        return Err("Choose a folder".into());
+    }
+    let mut list: Vec<String> = crate::faces_service::allowed_sources(&ai.faces_runtime).iter().filter_map(|p| p.to_str().map(str::to_string)).collect();
+    list.retain(|x| *x != path);
+    if allowed {
+        list.push(path);
+    }
+    settings.set(crate::faces_service::NETWORK_SOURCES_KEY, &serde_json::to_string(&list).map_err(|e| e.to_string())?)?;
+    changed(&app, &ai);
+    Ok(list)
+}
+
+fn scan_folder(ai: &AiState, path: String, subfolders: bool, allow_network: bool) -> Result<(), String> {
     if !ai.faces.installed() {
         return Err("Install the Faces model first".into());
     }
     let folder = PathBuf::from(path);
-    if !folder.is_absolute() || !folder.is_dir() {
+    if !folder.is_absolute() {
         return Err("Choose a folder".into());
     }
-    ai.faces_service.scan_folder(folder, subfolders);
+    // judged from the mount table before the folder is looked at: nothing on a share is touched
+    refuse_network(&folder, allow_network, &crate::volumes::MountSnapshot::take())?;
+    if !folder.is_dir() {
+        return Err("Choose a folder".into());
+    }
+    ai.faces_service.scan_folder(folder, subfolders, allow_network);
     Ok(())
 }
 
@@ -383,6 +438,30 @@ mod tests {
 
     fn row(x: f32, y: f32, w: f32, h: f32) -> FaceRow {
         FaceRow { id: 1, path: "/a.jpg".into(), x, y, w, h, score: 0.9, frontal: 0.9, person_id: None, state: "unreviewed".into(), suggested_person: None, suggested_sim: None, cluster_id: None }
+    }
+
+    const TABLE: &str = "/dev/sda2 / ext4 rw 0 0\n//nas/photos /mnt/synology cifs rw 0 0\n";
+
+    #[test]
+    fn a_network_folder_is_refused_without_allow_network() {
+        let snap = crate::volumes::MountSnapshot::from_table(TABLE);
+        let nas = Path::new("/mnt/synology/photos");
+        assert!(refuse_network(nas, false, &snap).unwrap_err().contains("network share"));
+        assert!(refuse_network(nas, true, &snap).is_ok());
+        assert!(refuse_network(Path::new("/home/me/pics"), false, &snap).is_ok());
+    }
+
+    #[test]
+    fn offline_folders_never_ask_a_network_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        Settings::load(dir.path()).set("immage.library", r#"{"folders":["/home/me/a","/home/me/gone","/mnt/synology/photos"]}"#).unwrap();
+        let asked = std::sync::Mutex::new(Vec::new());
+        let n = offline_with(dir.path(), &crate::volumes::MountSnapshot::from_table(TABLE), &|p| {
+            asked.lock().unwrap().push(p.to_path_buf());
+            !p.ends_with("gone")
+        });
+        assert_eq!(n, 1);
+        assert!(asked.lock().unwrap().iter().all(|p| !p.starts_with("/mnt/synology")), "{:?}", asked.lock().unwrap());
     }
 
     #[test]

@@ -137,8 +137,13 @@ export const commands = {
 	facesStatus: () => __TAURI_INVOKE<FacesStatus>("faces_status"),
 	/**  Scans a folder and its subfolders once, whether or not it is in the Catalog. Needs the pack. */
 	facesScanFolder: (path: string) => __TAURI_INVOKE<null>("faces_scan_folder", { path }),
-	/**  `faces_scan_folder` with the choice of subfolders: only that folder when `subfolders` is false. */
-	facesScanFolderWith: (path: string, subfolders: boolean) => __TAURI_INVOKE<null>("faces_scan_folder_with", { path, subfolders }),
+	/**
+	 *  `faces_scan_folder` with the choice of subfolders (only that folder when `subfolders` is false) and of
+	 *  network shares: a folder on one is refused unless `allow_network` is true.
+	 */
+	facesScanFolderWith: (path: string, subfolders: boolean, allowNetwork: boolean) => __TAURI_INVOKE<null>("faces_scan_folder_with", { path, subfolders, allowNetwork }),
+	/**  Allows (or stops allowing) Faces to scan a library source on a network share. Off for every source until then. */
+	facesNetworkSource: (path: string, allowed: boolean) => __TAURI_INVOKE<string[]>("faces_network_source", { path, allowed }),
 	/**  Takes faces back from "not a face". */
 	facesUnignore: (faces: number[]) => __TAURI_INVOKE<null>("faces_unignore", { faces }),
 	/**  The photos the scan could not read, for the strip's "Show". */
@@ -1260,6 +1265,8 @@ export type FacesStatus = {
 	folders_waiting: number,
 	/**  Library folders that do not answer now (an unplugged drive, a share that is down). */
 	offline_folders: number,
+	/**  Library folders on a network share that Faces does not scan (not allowed for Faces). */
+	skipped_network_sources: number,
 	/**  Milliseconds of the last photo's detection and embedding, once measured. */
 	infer_ms: number | null,
 	/**  "ok", "retrying" or "blocked", with the reason once not ok. */

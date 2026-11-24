@@ -21,6 +21,7 @@ use crate::{
     faces_detect as det,
     faces_models::{self as fm, Model, Models},
     faces_store::{FaceStore, NewFace},
+    volumes::MountSnapshot,
     frame_output::FrameOutput,
     search_analysis::{library_selection, now_ms, selected, AnalysisProgress, SHARE_QUIET},
     search_cache::SearchCache,
@@ -122,18 +123,64 @@ pub struct Control {
     health: Arc<Health>,
     ledger: Arc<Ledger>,
     dirty: Arc<AtomicBool>,
-    folders: Arc<Mutex<VecDeque<(PathBuf, bool)>>>,
+    folders: Arc<Mutex<VecDeque<Requested>>>,
     store: Arc<FaceStore>,
 }
+/// A folder asked for once: (folder, with subfolders, a network folder is allowed).
+pub type Requested = (PathBuf, bool, bool);
 const FOLDERS_KEY: &str = "folders";
+/// Settings key (a JSON list of folders): the network sources the user allowed Faces to scan. Default none.
+pub const NETWORK_SOURCES_KEY: &str = "faces.network_sources";
 
-fn persist_folders(store: &FaceStore, queue: &VecDeque<(PathBuf, bool)>) {
-    let list: Vec<(&str, bool)> = queue.iter().filter_map(|(p, s)| p.to_str().map(|p| (p, *s))).collect();
+/// Which paths the scan may touch: a path on a network share is off limits unless it is under a source the
+/// user allowed for Faces, or under a folder they asked for explicitly with the network allowed. Judged from the
+/// mount table alone: nothing on a share is read, stat'ed or listed to decide.
+pub struct NetPolicy {
+    snapshot: MountSnapshot,
+    allowed: Vec<PathBuf>,
+}
+impl NetPolicy {
+    pub fn new(snapshot: MountSnapshot, runtime: &Path, requested: &[Requested]) -> Self {
+        let mut allowed: Vec<PathBuf> = allowed_sources(runtime);
+        allowed.extend(requested.iter().filter(|r| r.2).map(|r| r.0.clone()));
+        NetPolicy { snapshot, allowed }
+    }
+    pub fn take(runtime: &Path, requested: &[Requested]) -> Self {
+        Self::new(MountSnapshot::take(), runtime, requested)
+    }
+    pub fn blocked(&self, path: &Path) -> bool {
+        self.snapshot.is_network(path) && !self.allowed.iter().any(|r| path.starts_with(r))
+    }
+}
+pub fn allowed_sources(runtime: &Path) -> Vec<PathBuf> {
+    crate::settings::read_key(runtime, NETWORK_SOURCES_KEY)
+        .and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .collect()
+}
+/// How many of the library's folders are on a network share the user has not allowed (not scanned).
+pub fn skipped_network_sources(runtime: &Path, snapshot: MountSnapshot) -> u32 {
+    let policy = NetPolicy::new(snapshot, runtime, &[]);
+    library_selection(runtime)["folders"].as_array().into_iter().flatten().filter_map(|v| v.as_str()).filter(|f| policy.blocked(Path::new(f))).count() as u32
+}
+
+fn persist_folders(store: &FaceStore, queue: &VecDeque<Requested>) {
+    let list: Vec<(&str, bool, bool)> = queue.iter().filter_map(|(p, s, n)| p.to_str().map(|p| (p, *s, *n))).collect();
     let _ = store.meta_set(FOLDERS_KEY, &serde_json::to_string(&list).unwrap_or_default());
 }
-fn load_folders(store: &FaceStore) -> VecDeque<(PathBuf, bool)> {
-    let list: Vec<(String, bool)> = store.meta_get(FOLDERS_KEY).ok().flatten().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-    list.into_iter().map(|(p, s)| (PathBuf::from(p), s)).filter(|(p, _)| p.is_absolute()).collect()
+fn load_folders(store: &FaceStore) -> VecDeque<Requested> {
+    // the older form had no network flag: it means not allowed
+    let list: Vec<serde_json::Value> = store.meta_get(FOLDERS_KEY).ok().flatten().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    list.iter()
+        .filter_map(|e| {
+            let e = e.as_array()?;
+            Some((PathBuf::from(e.first()?.as_str()?), e.get(1)?.as_bool()?, e.get(2).and_then(serde_json::Value::as_bool).unwrap_or(false)))
+        })
+        .filter(|(p, _, _)| p.is_absolute())
+        .collect()
 }
 
 /// Whether People scans only the folders it was given (the setting the page writes: "catalog" or "folder").
@@ -190,10 +237,10 @@ impl Control {
     }
     /// Scans one folder once (with its subfolders when asked), in addition to the Catalog, or instead of
     /// it when `faces.scope` is "folder". The request survives a restart.
-    pub fn scan_folder(&self, folder: PathBuf, subfolders: bool) {
+    pub fn scan_folder(&self, folder: PathBuf, subfolders: bool, allow_network: bool) {
         let mut q = self.folders.lock().unwrap();
-        if !q.iter().any(|(p, s)| *p == folder && *s == subfolders) {
-            q.push_back((folder, subfolders));
+        if !q.iter().any(|(p, s, n)| *p == folder && *s == subfolders && *n == allow_network) {
+            q.push_back((folder, subfolders, allow_network));
             persist_folders(&self.store, &q);
         }
     }
@@ -219,7 +266,7 @@ struct Service {
     health: Arc<Health>,
     ledger: Arc<Ledger>,
     dirty: Arc<AtomicBool>,
-    folders: Arc<Mutex<VecDeque<(PathBuf, bool)>>>,
+    folders: Arc<Mutex<VecDeque<Requested>>>,
     inflight: Mutex<HashSet<String>>,
     idle_since: Mutex<Option<Instant>>,
     loaded: AtomicBool,
@@ -309,7 +356,8 @@ fn is_photo(path: &Path) -> bool {
 }
 
 /// Every photo under a folder, in path order, up to a limit.
-pub fn photos_under(folder: &Path, limit: usize, recursive: bool) -> Vec<PathBuf> {
+/// `skip` is asked about every folder before it is listed (a network mount inside the folder is not entered).
+pub fn photos_under(folder: &Path, limit: usize, recursive: bool, skip: &dyn Fn(&Path) -> bool) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![folder.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -320,7 +368,9 @@ pub fn photos_under(folder: &Path, limit: usize, recursive: bool) -> Vec<PathBuf
             let p = e.path();
             let Ok(t) = e.file_type() else { continue };
             if t.is_dir() && recursive && !e.file_name().to_string_lossy().starts_with('.') {
-                stack.push(p);
+                if !skip(&p) {
+                    stack.push(p);
+                }
             } else if t.is_file() && is_photo(&p) {
                 out.push(p);
                 if out.len() >= limit {
@@ -447,6 +497,7 @@ impl Service {
         let selection = library_selection(&self.runtime);
         let now = now_ms();
         let (mut after, mut total) = (0i64, 0u32);
+        let policy = NetPolicy::take(&self.runtime, &[]);
         if let Some(cache) = self.cache.as_ref().filter(|_| !scope_is_folder(&self.runtime)) {
             loop {
                 if self.stop.load(Ordering::Acquire) {
@@ -458,6 +509,7 @@ impl Service {
                 for row in rows {
                     if self.models.enabled()
                         && selected(Path::new(&row.path), &selection)
+                        && !policy.blocked(Path::new(&row.path))
                         && !self.store.is_current(&row.path, &row.original_fingerprint, fm::MODEL_VERSION).ok()?
                         && !self.ledger.skipped(&row.path, &row.original_fingerprint, now)
                     {
@@ -503,13 +555,24 @@ impl Service {
         let quiet = self.engine.quiet_for();
         // an explicitly requested folder first
         let folder = self.folders.lock().unwrap().front().cloned();
-        if let Some((folder, recursive)) = folder {
+        if let Some((folder, recursive, network)) = folder {
+            let policy = NetPolicy::take(&self.runtime, &self.folders.lock().unwrap().iter().cloned().collect::<Vec<_>>());
+            // a share nobody allowed is dropped without being listed
+            if policy.blocked(&folder) {
+                let mut q = self.folders.lock().unwrap();
+                q.retain(|f| *f != (folder.clone(), recursive, network));
+                persist_folders(&self.store, &q);
+                return Ok(());
+            }
             let mut offered = false;
-            for p in photos_under(&folder, FOLDER_LIMIT, recursive) {
+            for p in photos_under(&folder, FOLDER_LIMIT, recursive, &|d| policy.blocked(d)) {
                 if job.cancelled() || self.stop.load(Ordering::Acquire) {
                     return Ok(());
                 }
                 let Some(path) = p.to_str().map(str::to_string) else { continue };
+                if policy.blocked(&p) {
+                    continue;
+                }
                 let Some(fp) = self.fingerprint_now(&path) else { continue };
                 if self.store.is_current(&path, &fp, fm::MODEL_VERSION)? || self.ledger.skipped(&path, &fp, now_ms()) {
                     continue;
@@ -522,7 +585,7 @@ impl Service {
             // done once nothing is left to offer and the photos handed to the worker are stored
             if !offered && self.inflight.lock().unwrap().is_empty() {
                 let mut q = self.folders.lock().unwrap();
-                q.retain(|f| *f != (folder.clone(), recursive));
+                q.retain(|f| *f != (folder.clone(), recursive, network));
                 persist_folders(&self.store, &q);
             }
             return Ok(());
@@ -534,6 +597,7 @@ impl Service {
         if !self.models.enabled() {
             return Ok(());
         }
+        let policy = NetPolicy::take(&self.runtime, &[]);
         let start = self.cursor.load(Ordering::Acquire);
         let (mut after, mut lead, mut leading) = (start, start, true);
         loop {
@@ -545,7 +609,8 @@ impl Service {
             for a in rows {
                 after = a.id;
                 let path = Path::new(&a.path);
-                let current = !selected(path, &selection) || self.store.is_current(&a.path, &a.original_fingerprint, fm::MODEL_VERSION)?;
+                // a network source nobody allowed is skipped on the path alone: nothing is stat'ed
+                let current = !selected(path, &selection) || policy.blocked(path) || self.store.is_current(&a.path, &a.original_fingerprint, fm::MODEL_VERSION)?;
                 if current || (quiet < SHARE_QUIET && crate::volumes::on_network(path)) {
                     if leading {
                         lead = a.id;
@@ -616,6 +681,11 @@ impl Service {
     fn analyze(&self, path: &str, fingerprint: &str, job: &Job) -> Result<(), Failure> {
         let explicit = !self.folders.lock().unwrap().is_empty();
         if job.cancelled() || self.stop.load(Ordering::Acquire) || !(self.models.enabled() || explicit) {
+            return Ok(());
+        }
+        // before anything touches the file: a network share nobody allowed is never read
+        let requested: Vec<Requested> = self.folders.lock().unwrap().iter().cloned().collect();
+        if NetPolicy::take(&self.runtime, &requested).blocked(Path::new(path)) {
             return Ok(());
         }
         if !explicit && !scope_is_folder(&self.runtime) && (!selected(Path::new(path), &library_selection(&self.runtime)) || self.deferred(path)) {
@@ -765,12 +835,14 @@ mod tests {
     fn requested_folders_survive_a_restart_and_the_scope_setting_is_read() {
         let store = FaceStore::from_connection(rusqlite::Connection::open_in_memory().unwrap()).unwrap();
         assert!(load_folders(&store).is_empty());
-        let q: VecDeque<(PathBuf, bool)> = [(PathBuf::from("/a"), true), (PathBuf::from("/b c"), false)].into();
+        let q: VecDeque<Requested> = [(PathBuf::from("/a"), true, false), (PathBuf::from("/b c"), false, true)].into();
         persist_folders(&store, &q);
         assert_eq!(load_folders(&store), q);
         store.meta_set(FOLDERS_KEY, "not json").unwrap();
         assert!(load_folders(&store).is_empty());
-        store.meta_set(FOLDERS_KEY, r#"[["relative",true]]"#).unwrap();
+        store.meta_set(FOLDERS_KEY, r#"[["/old",true]]"#).unwrap();
+        assert_eq!(load_folders(&store), VecDeque::from([(PathBuf::from("/old"), true, false)]), "an older entry means no network");
+        store.meta_set(FOLDERS_KEY, r#"[["relative",true,false]]"#).unwrap();
         assert!(load_folders(&store).is_empty(), "only absolute paths are scanned");
         let dir = tempfile::tempdir().unwrap();
         assert!(!scope_is_folder(dir.path()));
@@ -778,6 +850,58 @@ mod tests {
         assert!(scope_is_folder(dir.path()));
         crate::settings::Settings::load(dir.path()).set("faces.scope", "catalog").unwrap();
         assert!(!scope_is_folder(dir.path()));
+    }
+
+    const TABLE: &str = "/dev/sda2 / ext4 rw 0 0\n//nas/photos /mnt/synology cifs rw 0 0\n/dev/sdb1 /mnt/disk ext4 rw 0 0\nserver:/x /srv/nfs nfs4 rw 0 0\n";
+
+    #[test]
+    fn network_paths_are_blocked_unless_allowed_and_nothing_is_touched_to_decide() {
+        let dir = tempfile::tempdir().unwrap();
+        let none: Vec<Requested> = vec![];
+        let p = NetPolicy::new(MountSnapshot::from_table(TABLE), dir.path(), &none);
+        // none of these paths exists: the decision comes from the mount table alone
+        assert!(p.blocked(Path::new("/mnt/synology/photos/a.jpg")));
+        assert!(p.blocked(Path::new("/srv/nfs/a.jpg")));
+        assert!(!p.blocked(Path::new("/mnt/disk/a.jpg")), "a local disk under /mnt is fine");
+        assert!(!p.blocked(Path::new("/home/me/a.jpg")));
+        // an explicit request with the network allowed opens that folder only
+        let asked = vec![(PathBuf::from("/mnt/synology/trip"), true, true), (PathBuf::from("/srv/nfs"), true, false)];
+        let p = NetPolicy::new(MountSnapshot::from_table(TABLE), dir.path(), &asked);
+        assert!(!p.blocked(Path::new("/mnt/synology/trip/a.jpg")));
+        assert!(p.blocked(Path::new("/mnt/synology/other/a.jpg")));
+        assert!(p.blocked(Path::new("/srv/nfs/a.jpg")), "asked for without the network flag: still blocked");
+        // a source the user allowed in settings
+        crate::settings::Settings::load(dir.path()).set(NETWORK_SOURCES_KEY, r#"["/mnt/synology/photos","relative"]"#).unwrap();
+        let p = NetPolicy::new(MountSnapshot::from_table(TABLE), dir.path(), &none);
+        assert!(!p.blocked(Path::new("/mnt/synology/photos/2024/a.jpg")));
+        assert!(p.blocked(Path::new("/mnt/synology/video/a.mp4")));
+        // under /mnt with no table entry at all it may be a share: blocked
+        let p = NetPolicy::new(MountSnapshot::from_table("/dev/sda2 /home ext4 rw 0 0\n"), dir.path(), &none);
+        assert!(p.blocked(Path::new("/mnt/unknown/a.jpg")));
+        // an unreadable table clears nothing
+        let unreadable = MountSnapshot::take();
+        let _ = unreadable.is_network(Path::new("/"));
+    }
+
+    #[test]
+    fn skipped_network_sources_counts_library_folders_that_are_blocked() {
+        let dir = tempfile::tempdir().unwrap();
+        crate::settings::Settings::load(dir.path()).set("immage.library", r#"{"folders":["/home/me/pics","/mnt/synology/photos","/srv/nfs"]}"#).unwrap();
+        assert_eq!(skipped_network_sources(dir.path(), MountSnapshot::from_table(TABLE)), 2);
+        crate::settings::Settings::load(dir.path()).set(NETWORK_SOURCES_KEY, r#"["/srv/nfs"]"#).unwrap();
+        assert_eq!(skipped_network_sources(dir.path(), MountSnapshot::from_table(TABLE)), 1);
+    }
+
+    #[test]
+    fn a_folder_walk_does_not_enter_a_blocked_subfolder() {
+        let dir = tempfile::tempdir().unwrap();
+        for f in ["a.jpg", "net/b.jpg", "local/c.jpg"] {
+            let p = dir.path().join(f);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, b"x").unwrap();
+        }
+        let names: Vec<String> = photos_under(dir.path(), 100, true, &|d| d.ends_with("net")).iter().map(|p| p.strip_prefix(dir.path()).unwrap().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, ["a.jpg", "local/c.jpg"]);
     }
 
     #[test]
@@ -798,10 +922,10 @@ mod tests {
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(p, b"x").unwrap();
         }
-        let names: Vec<String> = photos_under(dir.path(), 100, true).iter().map(|p| p.strip_prefix(dir.path()).unwrap().to_string_lossy().into_owned()).collect();
+        let names: Vec<String> = photos_under(dir.path(), 100, true, &|_| false).iter().map(|p| p.strip_prefix(dir.path()).unwrap().to_string_lossy().into_owned()).collect();
         assert_eq!(names, ["a.CR3", "b.jpg", "sub/c.png", "sub/deep/e.tif"]);
-        assert_eq!(photos_under(dir.path(), 2, true).len(), 2);
-        let flat: Vec<_> = photos_under(dir.path(), 100, false).iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        assert_eq!(photos_under(dir.path(), 2, true, &|_| false).len(), 2);
+        let flat: Vec<_> = photos_under(dir.path(), 100, false, &|_| false).iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
         assert_eq!(flat, ["a.CR3", "b.jpg"], "without subfolders only the folder itself");
     }
 
@@ -827,7 +951,7 @@ mod tests {
         std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
         let engine = crate::engine::Engine::spawn(&wrapper, &runtime, &runtime).expect("start the isolated engine");
         let tagged = engine.tagged();
-        let mut files: Vec<PathBuf> = photos_under(&photos, 20000, true);
+        let mut files: Vec<PathBuf> = photos_under(&photos, 20000, true, &|_| false);
         // an even spread over the folder, not its first photos
         let step = (files.len() / limit.max(1)).max(1);
         files = files.into_iter().step_by(step).take(limit).collect();
