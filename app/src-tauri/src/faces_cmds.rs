@@ -195,6 +195,7 @@ pub fn faces_settings(ai: State<'_, AiState>) -> FacesSettings {
 pub fn faces_set_recognizer(app: AppHandle, ai: State<'_, AiState>, settings: State<'_, Settings>, kind: String) -> Result<FacesSettings, String> {
     ai.faces.choose_recognizer(&ai.faces_runtime, &settings, &kind)?;
     ai.faces_service.retry();
+    ai.faces_service.wake();
     changed(&app, &ai);
     Ok(faces_settings(ai))
 }
@@ -207,6 +208,7 @@ pub fn faces_set_detect_size(app: AppHandle, ai: State<'_, AiState>, settings: S
         return Err("Detection size is 1024, 1600 or 2048".into());
     }
     settings.set("faces.detect_size", &size.to_string())?;
+    ai.faces_service.wake();
     let _ = app.emit("faces-changed", ());
     Ok(faces_settings(ai))
 }
@@ -232,6 +234,7 @@ pub fn faces_reprocess(app: AppHandle, ai: State<'_, AiState>) -> Result<u32, St
     }
     let marked = ai.faces_store.mark_all_stale()?;
     ai.faces_service.retry();
+    ai.faces_service.wake();
     let _ = app.emit("faces-changed", ());
     Ok(marked)
 }

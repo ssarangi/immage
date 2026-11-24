@@ -127,6 +127,7 @@ pub struct Control {
     urgent: Arc<AtomicBool>,
     folders: Arc<Mutex<VecDeque<Requested>>>,
     store: Arc<FaceStore>,
+    wake: Arc<AtomicBool>,
 }
 /// A folder asked for once: (folder, with subfolders, a network folder is allowed).
 pub type Requested = (PathBuf, bool, bool);
@@ -170,12 +171,47 @@ pub fn skipped_network_sources(runtime: &Path, snapshot: MountSnapshot) -> u32 {
 }
 
 fn persist_folders(store: &FaceStore, queue: &VecDeque<Requested>) {
+    persist_list(store, FOLDERS_KEY, queue);
+}
+/// Folders ever asked for (kept after their scan finished): a change of model or detection size scans them again.
+const KNOWN_KEY: &str = "folders_known";
+fn remember_folder(store: &FaceStore, entry: &Requested) {
+    let mut known = known_folders(store);
+    if !known.contains(entry) {
+        known.push_back(entry.clone());
+        persist_list(store, KNOWN_KEY, &known);
+    }
+}
+fn known_folders(store: &FaceStore) -> VecDeque<Requested> {
+    load_list(store, KNOWN_KEY)
+}
+/// Puts every known folder back in the queue (those already there stay once). Returns how many were added.
+pub fn requeue_known(store: &FaceStore, queue: &mut VecDeque<Requested>) -> usize {
+    let before = queue.len();
+    let mut known = known_folders(store);
+    if known.is_empty() {
+        // folders scanned before they were recorded: where the scanned photos are (never a network share, as asked before)
+        known = store.scanned_roots().unwrap_or_default().into_iter().map(|p| (PathBuf::from(p), true, false)).filter(|(p, _, _)| p.is_absolute()).collect();
+    }
+    for k in known {
+        if !queue.contains(&k) {
+            queue.push_back(k);
+        }
+    }
+    persist_folders(store, queue);
+    queue.len() - before
+}
+fn persist_list(store: &FaceStore, key: &str, queue: &VecDeque<Requested>) {
     let list: Vec<(&str, bool, bool)> = queue.iter().filter_map(|(p, s, n)| p.to_str().map(|p| (p, *s, *n))).collect();
-    let _ = store.meta_set(FOLDERS_KEY, &serde_json::to_string(&list).unwrap_or_default());
+    let _ = store.meta_set(key, &serde_json::to_string(&list).unwrap_or_default());
 }
 fn load_folders(store: &FaceStore) -> VecDeque<Requested> {
+    load_list(store, FOLDERS_KEY)
+}
+
+fn load_list(store: &FaceStore, key: &str) -> VecDeque<Requested> {
     // the older form had no network flag: it means not allowed
-    let list: Vec<serde_json::Value> = store.meta_get(FOLDERS_KEY).ok().flatten().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    let list: Vec<serde_json::Value> = store.meta_get(key).ok().flatten().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
     list.iter()
         .filter_map(|e| {
             let e = e.as_array()?;
@@ -233,6 +269,13 @@ impl Control {
         self.health.retry();
         self.ledger.reset();
     }
+    /// The model or the detection size changed (or the user asked to reprocess): look for photos to scan now instead of
+    /// at the next pass. The folders asked for earlier go back in the queue, the Catalog scan starts from its beginning,
+    /// and the pending count and progress are refreshed at once. Nothing is wiped.
+    pub fn wake(&self) {
+        requeue_known(&self.store, &mut self.folders.lock().unwrap());
+        self.wake.store(true, Ordering::Release);
+    }
     /// The names and groups are out of date (a review decision, a merge): recompute them soon.
     pub fn request_analysis(&self) {
         self.urgent.store(true, Ordering::Release);
@@ -242,6 +285,7 @@ impl Control {
     /// it when `faces.scope` is "folder". The request survives a restart.
     pub fn scan_folder(&self, folder: PathBuf, subfolders: bool, allow_network: bool) {
         let mut q = self.folders.lock().unwrap();
+        remember_folder(&self.store, &(folder.clone(), subfolders, allow_network));
         if !q.iter().any(|(p, s, n)| *p == folder && *s == subfolders && *n == allow_network) {
             q.push_back((folder, subfolders, allow_network));
             persist_folders(&self.store, &q);
@@ -270,6 +314,9 @@ struct Service {
     ledger: Arc<Ledger>,
     dirty: Arc<AtomicBool>,
     urgent: Arc<AtomicBool>,
+    wake: Arc<AtomicBool>,
+    /// Where the pass over stale stored photos stopped (a path).
+    stale_cursor: Mutex<String>,
     folders: Arc<Mutex<VecDeque<Requested>>>,
     inflight: Mutex<HashSet<String>>,
     idle_since: Mutex<Option<Instant>>,
@@ -294,6 +341,7 @@ pub fn start(
     let ledger = Arc::new(Ledger::default());
     let dirty = Arc::new(AtomicBool::new(true));
     let urgent = Arc::new(AtomicBool::new(false));
+    let wake = Arc::new(AtomicBool::new(false));
     let folders = Arc::new(Mutex::new(load_folders(&store)));
     let service = Arc::new(Service {
         cache,
@@ -311,6 +359,8 @@ pub fn start(
         ledger: ledger.clone(),
         dirty: dirty.clone(),
         urgent: urgent.clone(),
+        wake: wake.clone(),
+        stale_cursor: Mutex::new(String::new()),
         folders: folders.clone(),
         inflight: Mutex::default(),
         idle_since: Mutex::new(None),
@@ -318,7 +368,7 @@ pub fn start(
         emit,
     });
     std::thread::spawn(move || service.run());
-    Control { stop, progress, health, ledger, dirty, urgent, folders, store }
+    Control { stop, progress, health, ledger, dirty, urgent, folders, store, wake }
 }
 
 /// Maps the face worker's own words to what the worker does about them.
@@ -425,6 +475,13 @@ impl Service {
             let installed = self.models.installed();
             let enabled = self.models.enabled();
             let explicit = !self.folders.lock().unwrap().is_empty();
+            let woken = self.wake.swap(false, Ordering::AcqRel);
+            if woken {
+                self.cursor.store(0, Ordering::Release);
+                self.stale_cursor.lock().unwrap().clear();
+                last_scan = None;
+                last_count = None;
+            }
             p.installed.store(installed, Ordering::Release);
             p.enabled.store(enabled, Ordering::Release);
             if installed && (enabled || explicit) {
@@ -439,7 +496,7 @@ impl Service {
                         }
                     });
                 }
-                if p.count_requested() && last_count.is_none_or(|t| t.elapsed() >= COUNT_EVERY) {
+                if (woken || p.count_requested()) && last_count.is_none_or(|t| t.elapsed() >= COUNT_EVERY) {
                     last_count = Some(Instant::now());
                     if let Some(n) = self.count_backlog() {
                         p.pending.store(n as i64, Ordering::Release);
@@ -468,7 +525,7 @@ impl Service {
                 }
             }
             self.maybe_unload(installed && (enabled || explicit));
-            if last_emit.elapsed() >= Duration::from_secs(2) && (p.running.load(Ordering::Acquire) > 0 || p.count_requested()) {
+            if woken || (last_emit.elapsed() >= Duration::from_secs(2) && (p.running.load(Ordering::Acquire) > 0 || p.count_requested())) {
                 last_emit = Instant::now();
                 (self.emit)(FacesEvent::Progress(FacesProgress {
                     scanned: p.scanned.load(Ordering::Acquire),
@@ -524,6 +581,7 @@ impl Service {
                         && selected(Path::new(&row.path), &selection)
                         && !policy.blocked(Path::new(&row.path))
                         && !self.store.is_current(&row.path, &row.original_fingerprint, &self.model_version()).ok()?
+                        && !self.store.knows(&row.path).ok()?
                         && !self.ledger.skipped(&row.path, &row.original_fingerprint, now)
                     {
                         total = total.saturating_add(1);
@@ -534,6 +592,10 @@ impl Service {
                 }
             }
         }
+        let version = self.model_version();
+        // stored photos to scan again are counted from the store (the Catalog loop above leaves out the ones it knows)
+        total = total.saturating_add(self.store.stale_total(&version).ok()?);
+        // a folder still to be looked at counts one: its new photos are only found by walking it (its stale ones are counted above)
         total = total.saturating_add(self.folders.lock().unwrap().len() as u32);
         Some(total)
     }
@@ -566,6 +628,35 @@ impl Service {
     fn scan(self: &Arc<Self>, job: &Job) -> Result<(), String> {
         let selection = library_selection(&self.runtime);
         let quiet = self.engine.quiet_for();
+        // photos the store already has that are stale (another model or detection size, or marked by a reprocess), straight
+        // from its rows: independent of the scope, the folders asked for and the Catalog. A share nobody allowed is left alone.
+        {
+            let version = self.model_version();
+            let requested: Vec<Requested> = self.folders.lock().unwrap().iter().cloned().collect();
+            let policy = NetPolicy::take(&self.runtime, &requested);
+            let mut after = self.stale_cursor.lock().unwrap().clone();
+            let batch = self.store.stale_after(&after, &version, 64)?;
+            if batch.is_empty() {
+                after.clear();
+            }
+            for path in &batch {
+                if job.cancelled() || self.stop.load(Ordering::Acquire) {
+                    return Ok(());
+                }
+                after = path.clone();
+                if policy.blocked(Path::new(path)) {
+                    continue;
+                }
+                // a file that is gone is skipped (and stays stale), the rest is offered
+                let Some(fp) = self.fingerprint_now(path) else { continue };
+                if !self.offer(path.clone(), fp) {
+                    // the worker is full: come back to this one
+                    *self.stale_cursor.lock().unwrap() = after.clone();
+                    return Ok(());
+                }
+            }
+            *self.stale_cursor.lock().unwrap() = after;
+        }
         // an explicitly requested folder first
         let folder = self.folders.lock().unwrap().front().cloned();
         if let Some((folder, recursive, network)) = folder {
@@ -598,6 +689,7 @@ impl Service {
             // done once nothing is left to offer and the photos handed to the worker are stored
             if !offered && self.inflight.lock().unwrap().is_empty() {
                 let mut q = self.folders.lock().unwrap();
+                remember_folder(&self.store, &(folder.clone(), recursive, network));
                 q.retain(|f| *f != (folder.clone(), recursive, network));
                 persist_folders(&self.store, &q);
             }
@@ -704,7 +796,7 @@ impl Service {
         if NetPolicy::take(&self.runtime, &requested).blocked(Path::new(path)) {
             return Ok(());
         }
-        if !explicit && !scope_is_folder(&self.runtime) && (!selected(Path::new(path), &library_selection(&self.runtime)) || self.deferred(path)) {
+        if !explicit && !scope_is_folder(&self.runtime) && !self.store.knows(path).unwrap_or(false) && (!selected(Path::new(path), &library_selection(&self.runtime)) || self.deferred(path)) {
             return Ok(());
         }
         if self.fingerprint_now(path).as_deref() != Some(fingerprint) || !matches!(self.health.gate(now_ms()), Gate::Go) {
@@ -1062,6 +1154,69 @@ mod tests {
         let apart = analysis(&[], &unnamed, &th, &Params::default(), &Decisions { joined: vec![], apart: vec![(5, 7)] }).1;
         assert!(apart.iter().all(|g| !(g.1.contains(&5) && g.1.contains(&7))), "{apart:?}");
         assert_eq!(sizes(&apart), [2, 2, 2, 2], "the four alike faces fall into the two pairs");
+    }
+
+    #[test]
+    fn a_switch_puts_the_known_folders_back_and_counts_the_stale_photos() {
+        let store = FaceStore::from_connection(rusqlite::Connection::open_in_memory().unwrap()).unwrap();
+        let face = |x: f32| crate::faces_store::NewFace { x, y: 0.1, w: 0.1, h: 0.1, score: 0.9, lm: [0.0; 10], frontal: 0.9, roll: 0.0, aligned: true, emb: vec![1.0; 4] };
+        let old = fm::version_for(Path::new("/nonexistent"), fm::Recognizer::Sface);
+        for p in ["/pics/a/1.jpg", "/pics/a/2.jpg", "/pics/a/sub/3.jpg", "/pics/b/4.jpg", "/other/5.jpg"] {
+            store.put_scan(p, "fp", &old, 100, 100, &[face(0.1)], None).unwrap();
+        }
+        let new = fm::model_version(fm::Recognizer::Arcface);
+        // nothing was recorded about folders: they are where the scanned photos are
+        assert_eq!(store.scanned_roots().unwrap(), ["/other", "/pics/a", "/pics/b"]);
+        let mut queue = VecDeque::new();
+        assert_eq!(requeue_known(&store, &mut queue), 3);
+        assert_eq!(requeue_known(&store, &mut queue), 0, "a folder already queued is not queued twice");
+        assert!(queue.iter().all(|(_, recursive, network)| *recursive && !*network));
+        // after the switch every photo of those folders is stale
+        assert_eq!(store.stale_under("/pics/a", new).unwrap(), 3);
+        assert_eq!(store.stale_under("/pics", new).unwrap(), 4);
+        assert_eq!(store.stale_under("/pics/a", &old).unwrap(), 0, "the same version is not stale");
+        assert_eq!(store.stale_under("/pic", new).unwrap(), 0, "a folder name is not a prefix match");
+        store.mark_all_stale().unwrap();
+        assert_eq!(store.stale_under("/pics/a", &old).unwrap(), 3, "a marked photo is stale at any version");
+        // folders asked for are remembered once their scan is done
+        let mut q2 = VecDeque::new();
+        let store2 = FaceStore::from_connection(rusqlite::Connection::open_in_memory().unwrap()).unwrap();
+        remember_folder(&store2, &(PathBuf::from("/x"), false, true));
+        remember_folder(&store2, &(PathBuf::from("/x"), false, true));
+        assert_eq!(requeue_known(&store2, &mut q2), 1);
+        assert_eq!(q2[0], (PathBuf::from("/x"), false, true));
+        assert_eq!(load_folders(&store2).len(), 1, "and the queue is kept across a restart");
+    }
+
+    #[test]
+    fn stale_stored_photos_are_queued_from_their_rows_whatever_the_folders() {
+        let store = FaceStore::from_connection(rusqlite::Connection::open_in_memory().unwrap()).unwrap();
+        let face = |x: f32| crate::faces_store::NewFace { x, y: 0.1, w: 0.1, h: 0.1, score: 0.9, lm: [0.0; 10], frontal: 0.9, roll: 0.0, aligned: true, emb: vec![1.0; 4] };
+        let rt = Path::new("/nonexistent");
+        let sface = fm::version_for(rt, fm::Recognizer::Sface);
+        let arc = fm::model_version(fm::Recognizer::Arcface);
+        for i in 0..7 {
+            store.put_scan(&format!("/p/{i}.jpg"), "fp", &sface, 100, 100, &[face(0.1)], None).unwrap();
+        }
+        store.meta_set(FOLDERS_KEY, "[]").unwrap();
+        assert!(load_folders(&store).is_empty(), "the folders asked for are empty, as in the owner's store");
+        assert_eq!(store.stale_total(&sface).unwrap(), 0);
+        assert!(store.stale_after("", &sface, 100).unwrap().is_empty(), "nothing is stale at the version they were made with");
+        // after a recognizer switch every stored photo is stale: 7 queued, by path, in pages
+        assert_eq!(store.stale_total(&arc).unwrap(), 7);
+        let first = store.stale_after("", &arc, 4).unwrap();
+        let second = store.stale_after(first.last().unwrap(), &arc, 4).unwrap();
+        assert_eq!((first.len(), second.len()), (4, 3));
+        assert_eq!(first.iter().chain(&second).cloned().collect::<Vec<_>>(), (0..7).map(|i| format!("/p/{i}.jpg")).collect::<Vec<_>>());
+        assert!(store.stale_after("/p/6.jpg", &arc, 4).unwrap().is_empty(), "the pass ends and starts over");
+        // a marked photo is stale at any version, and known photos are known
+        store.mark_all_stale().unwrap();
+        assert_eq!(store.stale_total(&sface).unwrap(), 7);
+        assert!(store.knows("/p/3.jpg").unwrap() && !store.knows("/p/99.jpg").unwrap());
+        // and a switch also puts the scanned roots in the folders list that is saved
+        let mut q = VecDeque::new();
+        assert_eq!(requeue_known(&store, &mut q), 1);
+        assert_eq!(load_folders(&store), q, "meta.folders now holds the folders that were scanned");
     }
 
     #[test]

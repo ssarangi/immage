@@ -620,6 +620,54 @@ impl FaceStore {
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
 
+    /// The smallest set of folders that hold every scanned photo (a folder that is under another one is left out): where a
+    /// scan of folders happened, for a store that did not record the folders it was asked for.
+    pub fn scanned_roots(&self) -> Result<Vec<String>, String> {
+        let db = self.db()?;
+        let mut q = db.prepare("SELECT DISTINCT path FROM photos").map_err(|e| e.to_string())?;
+        let paths: Vec<String> = q.query_map([], |r| r.get(0)).map_err(|e| e.to_string())?.collect::<Result<_, _>>().map_err(|e| e.to_string())?;
+        let mut dirs: Vec<String> = paths.iter().filter_map(|p| Path::new(p).parent().and_then(|d| d.to_str()).map(str::to_string)).collect();
+        dirs.sort();
+        dirs.dedup();
+        let mut roots: Vec<String> = Vec::new();
+        for d in dirs {
+            if !roots.iter().any(|r| d == *r || d.starts_with(&format!("{}/", r.trim_end_matches('/')))) {
+                roots.push(d);
+            }
+        }
+        Ok(roots)
+    }
+
+    /// Stored photos that need scanning again (another model version, or marked stale), in path order after `after`:
+    /// work that comes from the store's own rows, whatever the scope or the folders asked for.
+    pub fn stale_after(&self, after: &str, model: &str, limit: u32) -> Result<Vec<String>, String> {
+        let db = self.db()?;
+        let mut q = db
+            .prepare("SELECT path FROM photos WHERE path>?1 AND (model<>?2 OR fingerprint='') ORDER BY path LIMIT ?3")
+            .map_err(|e| e.to_string())?;
+        let rows = q.query_map(params![after, model, limit], |r| r.get(0)).map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+    pub fn stale_total(&self, model: &str) -> Result<u32, String> {
+        self.db()?.query_row("SELECT COUNT(*) FROM photos WHERE model<>?1 OR fingerprint=''", [model], |r| r.get(0)).map_err(|e| e.to_string())
+    }
+    /// Whether the photo has a row (it was scanned, or given up on).
+    pub fn knows(&self, path: &str) -> Result<bool, String> {
+        self.db()?.query_row("SELECT 1 FROM photos WHERE path=?1", [path], |_| Ok(())).optional().map(|r| r.is_some()).map_err(|e| e.to_string())
+    }
+
+    /// Photos under a folder that need scanning again: made by another model version, or marked stale.
+    pub fn stale_under(&self, folder: &str, model: &str) -> Result<u32, String> {
+        let like = format!("{}/%", folder.trim_end_matches('/').replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+        self.db()?
+            .query_row(
+                "SELECT COUNT(*) FROM photos WHERE path LIKE ?1 ESCAPE '\\' AND (model<>?2 OR fingerprint='')",
+                params![like, model],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())
+    }
+
     /// Marks every scanned photo stale (its file fingerprint is cleared), so the scan reads them all again. People,
     /// review decisions, covers and pair answers stay: a re-scan matches new faces to old ones by where they are in the
     /// photo. Returns how many photos were marked.
