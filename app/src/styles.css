@@ -3462,7 +3462,10 @@ html[data-scheme="light"] .strip-slot.grid::before { background: color-mix(in sr
   position: relative; box-sizing: border-box; margin: 8px 8px 0; padding: 10px 12px; overflow: hidden;
   display: flex; flex-direction: column; gap: 8px; background: var(--inset); border-radius: var(--radius-card);
 }
-.cat-footer { background: var(--panel); padding-top: 4px; }
+/* part of the Catalog card, not a second surface: no background of its own (a darker one showed as a band behind the card), and
+   the same side margins as the Add folder button above it */
+.cat-footer { background: transparent; padding-top: 4px; }
+.cat-footer .cat-card { margin: 4px 12px 0; }
 .cat-card.cat-offline { height: 118px; gap: 2px; }
 .cat-offline .cat-title, .cat-offline .cat-sub { flex: none; }
 .cat-offline .cat-acts { margin-top: auto; justify-content: flex-start; }
