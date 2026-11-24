@@ -33,7 +33,7 @@ after(() => { server?.kill(); if (profile) rmSync(profile, { recursive: true, fo
 
 function report(query, size) {
   const r = spawnSync(CHROME, ['--headless=new', '--no-sandbox', '--disable-gpu', `--user-data-dir=${profile}`, `--window-size=${size}`,
-    '--virtual-time-budget=60000', '--dump-dom', `http://127.0.0.1:${PORT}/harness/prefs.html?test=1&${query}`],
+    '--virtual-time-budget=60000', '--dump-dom', `http://127.0.0.1:${PORT}/harness/prefs.html?test=1&faces=1&${query}`],
     { encoding: 'utf8', maxBuffer: 64 << 20, timeout: 170000 });
   assert.equal(r.status, 0, r.stderr);
   const m = /<pre id="prefs-report"[^>]*>([\s\S]*?)<\/pre>/.exec(r.stdout);
@@ -48,6 +48,8 @@ for (const [label, size, extra] of [['1100x720', '1100,720', ''], ['800x600 (ico
     assert.deepEqual(r.fail, []);
     assert.equal(r.moved, 0);
     assert.equal(r.ok, true);
+    // the Faces page was exercised: its numbers changed with nothing moving, Delete asked first and said what goes
+    assert.ok(r.faces && r.faces.deleted === 0, 'the Faces page was not tested');
   });
 }
 

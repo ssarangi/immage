@@ -7913,7 +7913,7 @@ export default function App() {
     })()}
     <AgxPresetLoader ready={!!current} onPick={(v) => change(controlById.get("profile")!, v)} />
     {prefsOpen && (
-      <PreferencesDialog openGenerated={openGenerated} onOpenGenerated={(on) => { storeOpenGenerated(on); setOpenGenerated(on); }} loupe={loupeEnabled} onLoupe={(on) => { storeLoupe(on); setLoupeEnabled(on); loupeEnabledRef.current = on; setLoupePicking(false); setLoupeShown(false); if (on && !gridRef.current) session.current?.requestLoupe(); }} presets={[...BUILTIN_PRESETS, ...presets]} newPhotos={newPhotos}
+      <PreferencesDialog onOpenPeople={() => { setScenesOn(false); setPeopleOn(true); setGrid(true); }} openGenerated={openGenerated} onOpenGenerated={(on) => { storeOpenGenerated(on); setOpenGenerated(on); }} loupe={loupeEnabled} onLoupe={(on) => { storeLoupe(on); setLoupeEnabled(on); loupeEnabledRef.current = on; setLoupePicking(false); setLoupeShown(false); if (on && !gridRef.current) session.current?.requestLoupe(); }} presets={[...BUILTIN_PRESETS, ...presets]} newPhotos={newPhotos}
                          onNewPhotos={(id) => { setNewPhotos(id); storeNewPhotosPreset(id); }}
                          onSaveCurrent={current ? () => setNewPreset("newPhotos") : null}
                          focus={prefsOpen === true ? undefined : prefsOpen} card={prefsCard}

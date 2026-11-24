@@ -40,6 +40,10 @@ Improvements
   on the open photo, following zoom and pan, with the name on hover; click a face to name it,
   reassign it or mark it **Not Maya** or **Not a face**. A **People** card in the Library column
   lists the photo's faces as chips.
+- **Preferences > Faces:** a Faces tab with the People switch, the model card, what the recognizer and
+  closed-eye detection are, how many network folders are left out, the numbers the face store holds
+  (photos, faces, people, groups, unreadable photos, database and picture-cache sizes) and **Delete all
+  face data**. Face counts now count photos once, however many files a shot has.
 - **Person page:** double-click a person in People to open their page: their photos in the
   app's grid (with **Open in Grid**, which sets Find's People filter), and their faces to
   confirm, reject (**Not Maya**, **Not a face**) or choose as cover.

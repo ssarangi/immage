@@ -841,6 +841,24 @@ Defaults for [Auto cull](library.md#auto-cull), the options of
   type and today's date, never photo names, paths or catalog contents. See
   [Library](library.md#ai-critique-and-natural-language-search).
 
+## Faces
+
+Preferences > Faces (between Culling and Plugins) holds everything about [People](people.md) that is not naming people.
+
+- **People** switch: off stops scanning and keeps the data. Turning it on for the first time opens the People view, whose
+  card asks what to scan and for your consent; turning it on again later asks once and uses what you kept. It is disabled
+  until the model is installed. Below it: the face recognizer in use (SFace; an ArcFace test build is named only when
+  one is installed locally, and there is no switch for it), whether closed-eye detection is available (it needs an
+  optional model file that is not included while its licence is pending), and how many network folders are left out of
+  the scan. **Open People** goes to the view.
+- **Model**: the Faces model's own card, with the same download (and its consent), check and remove states as under AI models.
+- **Data**: photos scanned, faces, people, groups to review, photos that could not be read (**Show** lists them), the size of
+  the face database and of the face picture cache, refreshed while the page is open. **Delete all face data...** says how
+  many people and faces and how much space, then removes every person, face, group and face picture, turns Faces off, and
+  leaves your photos alone.
+
+The scan speed and how strictly two faces count as one person are fixed for now.
+
 ## Plugins
 
 Applications a photo can be sent to with right-click › **Edit In**. See

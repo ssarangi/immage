@@ -126,7 +126,7 @@ const wait = <T,>(v: T) => Promise.resolve(v);
 const liveGroups = (): ClusterRow[] => {
   const by = new Map<number, number[]>();
   for (const f of db.faces) if (f.state === "unreviewed" && f.person === null && f.cluster !== null) by.set(f.cluster, [...(by.get(f.cluster) ?? []), f.id]);
-  return [...by].filter(([, ids]) => ids.length >= 2).map(([id, ids]): ClusterRow => ({ id, rep_face_id: ids[0], size: ids.length, members: ids.slice(0, 4) }));
+  return [...by].filter(([, ids]) => ids.length >= 2).map(([id, ids]): ClusterRow => ({ id, rep_face_id: ids[0], size: ids.length, photos: ids.length, members: ids.slice(0, 4) }));
 };
 let ghosts: ClusterRow[] = [];
 let suggestGroup = -1;   // the group the test wants to look like someone: one that is on screen
@@ -208,6 +208,13 @@ const fake: PeopleApi = {
     if (ps[1] && ps[2] && !notSamePairs.has(pairKey("person", ps[1].id, ps[2].id))) out.push({ kind: "people", a: ps[1].id, b: ps[2].id, similarity: 0.5, confidence: "medium" });
     if (others[2] && others[3]) out.push({ kind: "groups", a: others[2].id, b: others[3].id, similarity: 0.46, confidence: "low" });
     return wait(out);
+  },
+  stats: () => {
+    const t = status().totals;
+    return wait({ store: { files: db.faces.length, photos: t.photos, faces: t.faces, people: t.people, ignored_people: t.ignored_people, groups: t.groups, unassigned: t.unknown,
+                           rejected: t.ignored_faces, failed: t.failed_photos, db_bytes: 4_200_000 + db.faces.length * 700, models: [] },
+                  crops_bytes: db.faces.length * 3000, crops_files: db.faces.length, recognizer: "sface", model_version: "sface-2021dec", pack_installed: scan.installed,
+                  eyes_available: false, arcface_available: false });
   },
   mergeGroups: (from, into) => { mutate(`mergeGroups:${from}:${into}`, () => { for (const f of db.faces) if (f.cluster === from) f.cluster = into; }); return wait(undefined); },
   notSame: (a: Side, b: Side) => { mutate(`notSame:${a.kind}:${a.id}:${b.id}`, () => { notSamePairs.add(pairKey(a.kind, a.id, b.id)); }); return wait(undefined); },

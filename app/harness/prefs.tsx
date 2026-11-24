@@ -20,6 +20,10 @@ import "../src/styles.css";
 import { BUILTIN_THEMES, THEME_TOKENS } from "../src/themes";
 import { PreferencesDialog, type PrefsTab } from "../src/Preferences";
 import { runPrefsTest } from "./prefsTest";
+import { peopleApi, resetPeople, setPeopleApi, setPeople, type PeopleApi } from "../src/peopleStore";
+import type { FacesStats, FacesStatus } from "../src/bindings";
+
+
 
 const q = new URLSearchParams(location.search);
 const theme = BUILTIN_THEMES.find((x) => x.id === (q.get("theme") ?? "dark")) ?? BUILTIN_THEMES[0];
@@ -39,6 +43,31 @@ if (bad === "1") {   // the structure before the fix: the pane scrolls, flush to
   document.head.insertAdjacentHTML("beforeend", `<style>.prefs-well { flex: none !important; } .prefs-scroll { position: static !important; }</style>`);
 }
 const noop = () => {};
+
+// the Faces page on a fake face store whose numbers change (window.__faces.bump), in a plain browser
+let bumped = 0;
+const stat = (): FacesStats => ({
+  store: { files: 4210 + bumped * 1000, photos: 4100 + bumped * 1000, faces: 9120 + bumped * 5000, people: 14 + bumped, ignored_people: 1, groups: 37 + bumped * 100, unassigned: 1820, rejected: 3,
+           failed: 34, db_bytes: 38_000_000 + bumped * 4_000_000, models: [] },
+  crops_bytes: 120_000_000 + bumped * 60_000_000, crops_files: 9000, recognizer: "sface", model_version: "sface-2021dec", pack_installed: true, eyes_available: false, arcface_available: false,
+});
+const status = (): FacesStatus => ({
+  enabled: true, recognizer: "sface", installed: true, eyes_available: false,
+  totals: { photos: stat().store.photos, faces: stat().store.faces, people: stat().store.people, unreviewed: 40, groups: 37, suggestions: 3, unknown: 1820, ignored_faces: 3, ignored_people: 1, failed_photos: 34 },
+  scanned: 0, faces_found: 0, pending: 0, folders_waiting: 0, offline_folders: 0, skipped_network_sources: 2, infer_ms: null, health: "ok", failure: null, undo: null,
+});
+const fakes: Partial<PeopleApi> = {
+  status: () => Promise.resolve(status()), paused: () => Promise.resolve(false), stats: () => Promise.resolve(stat()), people: () => Promise.resolve([]), groups: () => Promise.resolve([]),
+  list: () => Promise.resolve([]), mergeSuggestions: () => Promise.resolve([]), failedPhotos: (n) => Promise.resolve(Array.from({ length: Math.min(n, 34) }, (_, i) => `/synthetic/broken_${i}.jpg`)),
+  deleteAll: () => { (window as unknown as { __faces: { deleted: number } }).__faces.deleted++; return Promise.resolve(); }, setEnabled: () => Promise.resolve(),
+  subscribe: () => () => {},
+};
+if (q.get("faces") === "1") {
+  setPeopleApi(fakes as PeopleApi);
+  (window as unknown as { __faces: unknown }).__faces = { bump: () => { bumped++; setPeople({ tick: Math.random() }); }, deleted: 0, api: peopleApi };
+  resetPeople({ on: false });
+  void fakes.status!().then((s) => setPeople({ status: s, loaded: true }));
+}
 
 function Harness() {
   useEffect(() => {

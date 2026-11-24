@@ -3680,3 +3680,15 @@ html[data-scheme="light"] .strip-slot.grid::before { background: color-mix(in sr
 .faces-head-note { margin-inline-start: auto; margin-inline-end: 8px; color: var(--text-2); font-weight: 400; font-size: var(--fs-small); }
 /* the People card is the sixth card of the column: a lower floor than the others, so all six still fit a 1600x1000 window */
 .left .panel.faces-panel:has(> .faces-body) { min-height: 56px; }
+
+/* Preferences > Faces: every row has the height it keeps when its numbers arrive */
+.faces-line { margin: 0; min-height: 18px; padding: 0 2px 6px; color: var(--text-2); font-size: var(--fs-small); line-height: 18px; }
+.faces-quiet { color: var(--text-3); }
+.faces-val { color: var(--text); font-size: var(--fs-body); text-align: end; }
+.faces-wrap { max-width: 280px; }
+.faces-act { display: flex; gap: 8px; padding: 6px 2px 0; }
+.faces-stats { display: grid; grid-template-columns: 1fr auto; margin: 0; row-gap: 0; font-size: var(--fs-body); }
+.faces-stats dt, .faces-stats dd { margin: 0; height: 28px; line-height: 28px; border-block-end: 1px solid var(--inset); }
+.faces-stats dt { color: var(--text-2); }
+.faces-stats dd { min-width: 12ch; text-align: end; font-variant-numeric: tabular-nums; }
+.faces-show { margin-inline-start: 10px; }

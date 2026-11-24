@@ -8,7 +8,7 @@
 // backend only through `PeopleApi`, so the harness runs the real view on fixtures.
 import { useSyncExternalStore } from "react";
 import { commands } from "./commands";
-import type { ClusterRow, FaceFilter, FaceRow, FacesStatus, MergeSuggestion, PersonRow, Side } from "./bindings";
+import type { ClusterRow, FaceFilter, FaceRow, FacesStats, FacesStatus, MergeSuggestion, PersonRow, Side } from "./bindings";
 import { settings } from "./settings";
 import { fromBackend } from "./faceOverlayModel";
 import { dropFaceSets, setFaceSource, type FaceFilter as PeopleQuery } from "./facesFilter";
@@ -46,6 +46,7 @@ export type PeopleApi = {
   unignore(faces: number[]): Promise<void>;
   failedPhotos(limit: number): Promise<string[]>;
   mergeSuggestions(): Promise<MergeSuggestion[]>;
+  stats(): Promise<FacesStats>;
   mergeGroups(from: number, into: number): Promise<void>;
   notSame(a: Side, b: Side): Promise<void>;
   undo(): Promise<string | null>;
@@ -80,6 +81,7 @@ const real: PeopleApi = {
   unignore: async (faces) => { await commands.facesUnignore(faces); },
   failedPhotos: (limit) => commands.facesFailedPhotos(limit),
   mergeSuggestions: () => commands.facesMergeSuggestions(),
+  stats: () => commands.facesStats(),
   mergeGroups: async (from, into) => { await commands.facesMergeGroups(from, into); },
   notSame: async (a, b) => { await commands.facesNotSame(a, b); },
   undo: () => commands.facesUndo(),
@@ -462,12 +464,16 @@ export async function turnOn(scope: Scope, folder: string | null) {
   } catch (e) { setPeople({ error: String(e) }); }
   finally { setPeople({ busy: false }); }
 }
+// People turned on again after having been off (its consent is already recorded; the first time is the People view's card)
+export async function resumePeople() {
+  try { await api.setEnabled(true); await refreshAll(true); } catch (e) { setPeople({ error: String(e) }); }
+}
 export async function turnOff() {
   try { await api.setEnabled(false); await refreshAll(true); } catch (e) { setPeople({ error: String(e) }); }
 }
 export async function deleteAllFaceData() {
   settled.clear(); joined.clear();
-  try { await api.deleteAll(); resetPeople({ on: true }); await refreshAll(true); } catch (e) { setPeople({ error: String(e) }); }
+  try { await api.deleteAll(); resetPeople({ on: state.on }); await refreshAll(true); } catch (e) { setPeople({ error: String(e) }); }
 }
 export async function togglePause() {
   try { await api.pause(!state.paused); await refreshStatus(); } catch (e) { setPeople({ error: String(e) }); }

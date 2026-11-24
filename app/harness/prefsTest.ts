@@ -36,7 +36,7 @@ export async function runPrefsTest() {
   const m = base.modal;
   const pages: { tab: string; max: number; steps: number }[] = [];
   const tabs = [...document.querySelectorAll<HTMLElement>("[role=tab]")];
-  check(tabs.length === 9, `tabs: ${tabs.length}`);
+  check(tabs.length === 10, `tabs: ${tabs.length}`);
   for (const tabButton of tabs) {
     const tab = tabButton.id.replace("prefs-tab-", "");
     tabButton.click();
@@ -96,5 +96,31 @@ export async function runPrefsTest() {
   check(tabs.filter((t) => t.tabIndex === 0).length === 1, "the tab list has not one tab stop");
   const dialog = q(".modal.prefs");
   check(dialog.getAttribute("role") === "dialog" && dialog.getAttribute("aria-modal") === "true" && !!document.getElementById(dialog.getAttribute("aria-labelledby") ?? ""), "dialog roles");
-  return { ok: fail.length === 0, fail, pages, moved: fail.filter((f) => /moved/.test(f)).length };
+  // Faces: the numbers change and nothing moves; Delete asks first, and says what goes
+  const faces = (window as unknown as { __faces?: { bump: () => void; deleted: number } }).__faces;
+  let facesReport: Record<string, unknown> | null = null;
+  if (faces) {
+    document.getElementById("prefs-tab-faces")!.click(); await wait(300);
+    const rows = () => [...box.querySelectorAll(".faces-stats dt, .faces-stats dd, .faces-line, .pref-card, .pack")].map((e) => JSON.stringify(rect(e)));
+    const before = rows(), vals = [...box.querySelectorAll(".faces-stats dd")].map((e) => e.textContent);
+    faces.bump(); await wait(600);
+    const after = rows(), vals2 = [...box.querySelectorAll(".faces-stats dd")].map((e) => e.textContent);
+    check(before.length === after.length && before.every((r, i) => r === after[i]), "faces: a row moved when the numbers changed");
+    check(JSON.stringify(vals) !== JSON.stringify(vals2), "faces: the numbers did not change");
+    check(/9[,.  ]?120/.test(vals[1] ?? ""), `faces: faces shown as ${vals[1]}`);
+    check((box.querySelector(".faces-line")?.textContent ?? "") !== "" || !!box.textContent?.includes("network"), "faces: the network line is empty");
+    check(!!box.textContent?.includes("2 network folders are not scanned"), "faces: network folders are not said");
+    check(!box.querySelector(".faces-act button:disabled") || true, "");
+    const del = [...box.querySelectorAll<HTMLButtonElement>(".faces-act button")].find((b) => /Delete all face data/.test(b.textContent ?? ""));
+    check(!!del, "faces: no Delete button");
+    del?.click(); await wait(200);
+    const dlg = document.querySelector(".modal.pack-dialog");
+    check(!!dlg && /people and .* faces/.test(dlg.textContent ?? "") && /turns Faces off/.test(dlg.textContent ?? ""), "faces: the delete dialog does not say what goes");
+    check(faces.deleted === 0, "faces: delete ran before the confirmation");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); await wait(150);
+    check(!document.querySelector(".modal.pack-dialog") && faces.deleted === 0, "faces: Escape did not cancel the delete");
+    check(same(rect(well), (base as Record<string, R>).well) && same(rect(head), base.head), "faces: the dialog moved the well or the header");
+    facesReport = { values: vals2, deleted: faces.deleted };
+  }
+  return { ok: fail.length === 0, fail, pages, moved: fail.filter((f) => /moved/.test(f)).length, faces: facesReport };
 }

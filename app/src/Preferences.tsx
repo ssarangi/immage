@@ -1,3 +1,4 @@
+import { FacesPrefs } from "./FacesPrefs";
 import { useAgxProfiles } from "./agxProfiles";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
@@ -427,7 +428,7 @@ export function storeAccel(v: AccelChoice) {
   try { settings.set(ACCEL_KEY, JSON.stringify(v)); } catch { /* not kept */ }
 }
 
-export type PrefsTab = "photos" | "modules" | "immich" | "morfphoto" | "culling" | "plugins" | "general" | "performance" | "about";
+export type PrefsTab = "photos" | "modules" | "immich" | "morfphoto" | "culling" | "faces" | "plugins" | "general" | "performance" | "about";
 type Tab = PrefsTab;
 
 const svg = (body: React.ReactNode) => (
@@ -446,6 +447,7 @@ const TABS: [Tab, string, React.ReactNode][] = [
   ["morfphoto", t("prefs.tab.morfphoto"), svg(<><rect x="4" y="4" width="16" height="7" rx="1.5" />
     <rect x="4" y="13" width="16" height="7" rx="1.5" /><path d="M7.5 7.5h.1M7.5 16.5h.1M12 7.5h4.5M12 16.5h4.5" /></>)],
   ["culling", t("prefs.tab.culling"), svg(<><rect x="4" y="5" width="16" height="14" rx="2" /><path d="m8 13 2.5 2.5L16 9.5" /></>)],
+  ["faces", t("prefs.tab.faces"), svg(<><circle cx="12" cy="10" r="3.2" /><path d="M6.5 19c.5-3 2.6-4.8 5.500-4.800s5 1.800 5.500 4.800" /><path d="M3.500 8V4.500H7M17 4.500h3.500V8M3.500 16v3.500H7M17 19.500h3.500V16" /></>)],
   ["plugins", t("prefs.tab.plugins"), svg(<path d="M9.5 4.5a2 2 0 0 1 4 0V6H17a1 1 0 0 1 1 1v3.5h-1.5a2 2 0 0 0 0 4H18V18a1 1 0 0 1-1 1h-3.5v-1.5a2 2 0 0 0-4 0V19H6a1 1 0 0 1-1-1v-3.5h1.5a2 2 0 0 0 0-4H5V7a1 1 0 0 1 1-1h3.5z" />)],
   ["about", t("prefs.tab.about"), svg(<><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5.5M12 7.6v.2" /></>)],
 ];
@@ -508,7 +510,7 @@ function rendererName(active: string): string {
 
 export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurrent, focus, card, canvas, onCanvas, overlayColor, onOverlayColor, guideColor, onGuideColor,
                                     openGenerated, onOpenGenerated, loupe, onLoupe, focusMode, onFocusMode, editMode, onEditMode, autoHide, onAutoHide, stackPairs, onStackPairs,
-                                    accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onGpuCheck, onTune, onRelaunch, onClose }: {
+                                    accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onGpuCheck, onTune, onRelaunch, onClose, onOpenPeople }: {
   presets: Preset[];
   focus?: Tab;                           // a tab to open at
   card?: string;                         // a card (data-pref-card) to scroll to once it is open
@@ -543,6 +545,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   onGpuCheck: (() => void) | null;      // null with no photo open
   onRelaunch: () => Promise<void>;       // the edit saved, then Immage started again
   onClose: () => void;
+  onOpenPeople?: () => void;             // the People view, where Faces is first turned on
 }) {
   useAgxProfiles();
   const [tab, setTab] = useState<Tab>(focus ?? "general");
@@ -858,6 +861,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
             {tab === "immich" && <ImmichPrefs />}
             {tab === "morfphoto" && <MorfPhotoPrefs />}
             {tab === "culling" && <CullingPrefs onGoTo={goTo} />}
+            {tab === "faces" && <FacesPrefs onOpenPeople={onOpenPeople ? () => { onClose(); onOpenPeople(); } : undefined} />}
             {tab === "plugins" && <PluginPrefs plugins={plugins} onPlugins={onPlugins} />}
             {tab === "general" && (
               <>

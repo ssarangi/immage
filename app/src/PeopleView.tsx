@@ -39,7 +39,7 @@ export type Dialog =
   | { kind: "failed"; paths: string[] }
   | { kind: "off" };
 
-function Modal({ title, onClose, children, foot }: { title: string; onClose: () => void; children: React.ReactNode; foot: React.ReactNode }) {
+export function Modal({ title, onClose, children, foot }: { title: string; onClose: () => void; children: React.ReactNode; foot: React.ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     box.current?.querySelector<HTMLButtonElement>("button[data-first]")?.focus();
