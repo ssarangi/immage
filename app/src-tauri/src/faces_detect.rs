@@ -299,6 +299,20 @@ pub fn embedding_input(img: &RgbImage, f: &Face) -> (Vec<f32>, bool) {
     (out, used)
 }
 
+/// The ArcFace input from the aligned 112 px face of `embedding_input` (BGR, 0..255): RGB planes,
+/// (v - 127.5) / 127.5, which is how InsightFace feeds w600k_r50 (a swapped-channel run separated
+/// the same person from others slightly worse on the owner's photos).
+pub fn arcface_input(bgr_0_255: &[f32]) -> Vec<f32> {
+    let plane = (EMBED_EDGE * EMBED_EDGE) as usize;
+    let mut out = vec![0f32; 3 * plane];
+    for c in 0..3 {
+        for i in 0..plane {
+            out[c * plane + i] = (bgr_0_255[(2 - c) * plane + i] - 127.5) / 127.5;
+        }
+    }
+    out
+}
+
 pub fn l2_normalise(v: &mut [f32]) -> bool {
     let n: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
     if !n.is_finite() || n < 1e-9 {
@@ -543,6 +557,17 @@ mod tests {
         g.lm[4].1 = 1.2;
         let (t, aligned) = embedding_input(&img, &g);
         assert!(!aligned && t.len() == 3 * 112 * 112 && (t[5] - 9.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn arcface_input_is_rgb_and_scaled() {
+        let plane = 112 * 112;
+        let mut bgr = vec![0f32; 3 * plane];
+        bgr[0] = 255.0; // blue of pixel 0
+        bgr[plane] = 127.5; // green
+        bgr[2 * plane] = 0.0; // red
+        let t = arcface_input(&bgr);
+        assert_eq!((t[0], t[plane], t[2 * plane]), (-1.0, 0.0, 1.0), "R, G, B planes in (v - 127.5) / 127.5");
     }
 
     #[test]

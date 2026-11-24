@@ -163,6 +163,11 @@ export const commands = {
 	/**  Names faces after a person: the bulk assign and the confirm of a suggestion. */
 	facesAssign: (person: number, faces: number[]) => __TAURI_INVOKE<null>("faces_assign", { person, faces }),
 	facesUnassign: (faces: number[]) => __TAURI_INVOKE<null>("faces_unassign", { faces }),
+	/**
+	 *  Pairs the page may offer to join: groups that look like one person, a group that looks like a named
+	 *  person (using all their confirmed faces), two people that look alike. Strongest first; only a suggestion.
+	 */
+	facesMergeSuggestions: () => __TAURI_INVOKE<MergeSuggestion[]>("faces_merge_suggestions"),
 	/**  "Not this person": rejects a suggestion or a naming, for good. */
 	facesNotPerson: (person: number, faces: number[]) => __TAURI_INVOKE<null>("faces_not_person", { person, faces }),
 	/**  "Not a face": a false detection. */
@@ -1252,6 +1257,8 @@ export type FaceTotals = {
 export type FacesStatus = {
 	/**  The Faces switch (Preferences > AI models). */
 	enabled: boolean,
+	/**  The embedding network in use: "sface" (default) or "arcface" (hidden setting `faces.recognizer`, local file only). */
+	recognizer: string,
 	/**  The YuNet and SFace pack is installed. */
 	installed: boolean,
 	/**  The user has supplied the eye-state model (optional, never downloaded). */
@@ -1784,6 +1791,19 @@ export type MemoryBudget = {
 	budgetMb: number,
 	frameCacheMb: number,
 	thumbMemoryMb: number,
+};
+
+/**  A pair the page may offer to join: two groups, two people, or a group and a person. */
+export type MergeSuggestion = {
+	/**  "groups", "group_person" (a group that looks like a named person) or "people" */
+	kind: string,
+	/**  The first side: a group id, or a person id for "people". For "group_person" it is the group. */
+	a: number,
+	/**  The second side: a group id, or a person id. */
+	b: number,
+	similarity: number | null,
+	/**  "high" (at the merge threshold), "medium" or "low" */
+	confidence: string,
 };
 
 /**  How many photos of each state a catalog (or one source) holds. */

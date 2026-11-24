@@ -21,6 +21,51 @@ use std::sync::{Arc, Mutex};
 pub const REVISION: &str = "47534e27c9851bb1128ccc0102f1145e27f23f98";
 /// Recorded with every stored face: a new model makes stored faces stale.
 pub const MODEL_VERSION: &str = "yunet-2023mar+sface-2021dec";
+/// Which network makes the embeddings. SFace is the default and the only one that ships; ArcFace
+/// (InsightFace w600k_r50, non-commercial weights) is for local testing, used only when `faces.recognizer`
+/// is "arcface" AND the user put the exact file in `<data>/faces-arcface/models/`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Recognizer {
+    Sface,
+    Arcface,
+}
+pub const ARCFACE_FILE: &str = "w600k_r50.onnx";
+/// SHA-256 of the InsightFace buffalo_l w600k_r50.onnx (174383860 bytes), as the old app's installed manifest recorded it.
+pub const ARCFACE_SHA256: &str = "4c06341c33c2ca1f86781dab0e829f88ad5b64be9fba56e56bc9ebdefc619e43";
+pub const ARCFACE_DIMS: usize = 512;
+const ARCFACE_ID: &str = "immage-arcface";
+
+/// The stored model version of faces made by this recognizer: a change makes stored faces stale.
+pub fn model_version(r: Recognizer) -> &'static str {
+    match r {
+        Recognizer::Sface => MODEL_VERSION,
+        Recognizer::Arcface => "yunet-2023mar+arcface-w600k_r50",
+    }
+}
+/// The hidden setting `faces.recognizer`: "sface" (default) or "arcface".
+pub fn wanted_recognizer(runtime: &Path) -> Recognizer {
+    match crate::settings::read_key(runtime, "faces.recognizer").as_deref() {
+        Some("arcface") => Recognizer::Arcface,
+        _ => Recognizer::Sface,
+    }
+}
+/// The thresholds that go with a recognizer. SFace's are the old app's (suggest 0.45, edge 0.48) plus the
+/// attach and merge values derived from the owner's data; ArcFace's cosines sit lower (other people
+/// 95th percentile 0.13 in a 60 photo sample, the same person's median 0.72), so its values are lower.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Thresholds {
+    pub suggest: f32,
+    pub cluster: f32,
+    pub attach: f32,
+    pub merge: f32,
+}
+pub fn thresholds(r: Recognizer) -> Thresholds {
+    match r {
+        Recognizer::Sface => Thresholds { suggest: 0.45, cluster: 0.48, attach: 0.42, merge: 0.60 },
+        Recognizer::Arcface => Thresholds { suggest: 0.40, cluster: 0.35, attach: 0.30, merge: 0.55 },
+    }
+}
+
 pub const DETECTOR_FILE: &str = "face_detection_yunet/face_detection_yunet_2023mar.onnx";
 pub const RECOGNIZER_FILE: &str = "face_recognition_sface/face_recognition_sface_2021dec.onnx";
 const ASSETS: &[PackFile] = &[
@@ -93,6 +138,7 @@ pub enum Model {
     Detector,
     Recognizer,
     Eyes,
+    Arcface,
 }
 impl Model {
     fn id_file(self) -> (&'static str, &'static str) {
@@ -100,6 +146,7 @@ impl Model {
             Model::Detector => (DETECTOR_ID, DETECTOR_FILE),
             Model::Recognizer => (RECOGNIZER_ID, RECOGNIZER_FILE),
             Model::Eyes => (EYES_ID, EYES_FILE),
+            Model::Arcface => (ARCFACE_ID, ARCFACE_FILE),
         }
     }
 }
@@ -109,8 +156,10 @@ pub struct Models {
     store: Arc<PackStore>,
     enabled: Arc<AtomicBool>,
     eyes_root: PathBuf,
+    arcface_root: PathBuf,
     prepared: Mutex<Option<Stamp>>,
     eyes_ok: Mutex<Option<(u64, std::time::SystemTime, bool)>>,
+    arcface_ok: Mutex<Option<(u64, std::time::SystemTime, bool)>>,
 }
 
 fn stamps(root: &Path) -> Result<Stamp, String> {
@@ -128,12 +177,15 @@ fn stamps(root: &Path) -> Result<Stamp, String> {
 
 impl Models {
     pub fn new(root: PathBuf, eyes_root: PathBuf) -> Self {
+        let arcface_root = eyes_root.with_file_name("faces-arcface");
         Self {
             store: Arc::new(PackStore::new(&SPEC, root)),
             enabled: Arc::new(AtomicBool::new(false)),
             eyes_root,
+            arcface_root,
             prepared: Mutex::new(None),
             eyes_ok: Mutex::new(None),
+            arcface_ok: Mutex::new(None),
         }
     }
     pub fn store(&self) -> Arc<PackStore> {
@@ -182,6 +234,29 @@ impl Models {
             *ok = Some((stamp.0, stamp.1, good));
         }
         ok.as_ref().is_some_and(|o| o.2).then(|| self.eyes_root.clone())
+    }
+    /// The ArcFace folder, when it holds the exact w600k_r50 file (never downloaded, never in a pack).
+    pub fn arcface(&self) -> Option<PathBuf> {
+        let file = self.arcface_root.join("models").join(ARCFACE_FILE);
+        let m = std::fs::metadata(&file).ok().filter(|m| m.is_file())?;
+        let stamp = (m.len(), m.modified().ok()?);
+        let mut ok = self.arcface_ok.lock().unwrap();
+        if ok.as_ref().is_none_or(|o| (o.0, o.1) != stamp) {
+            let good = sha256_file(&file).ok().as_deref() == Some(ARCFACE_SHA256);
+            if good && write_manifests(&self.arcface_root, &[("arcface", ARCFACE_ID)]).is_err() {
+                return None;
+            }
+            *ok = Some((stamp.0, stamp.1, good));
+        }
+        ok.as_ref().is_some_and(|o| o.2).then(|| self.arcface_root.clone())
+    }
+    /// The recognizer to use now: the setting, but ArcFace only while its file is there.
+    pub fn recognizer(&self, runtime: &Path) -> Recognizer {
+        if wanted_recognizer(runtime) == Recognizer::Arcface && self.arcface().is_some() {
+            Recognizer::Arcface
+        } else {
+            Recognizer::Sface
+        }
     }
     pub fn eyes_root(&self) -> &Path {
         &self.eyes_root
@@ -306,6 +381,25 @@ pub fn detector_outputs(outputs: &[Tensor]) -> Result<crate::faces_detect::DetOu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arcface_is_used_only_when_asked_for_and_its_exact_file_is_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = dir.path().join("rt");
+        std::fs::create_dir_all(&runtime).unwrap();
+        let models = Models::new(runtime.join("faces-models"), runtime.join("faces-eyes"));
+        assert_eq!(models.recognizer(&runtime), Recognizer::Sface);
+        crate::settings::Settings::load(&runtime).set("faces.recognizer", "arcface").unwrap();
+        assert_eq!(wanted_recognizer(&runtime), Recognizer::Arcface);
+        assert_eq!(models.recognizer(&runtime), Recognizer::Sface, "no file, no ArcFace");
+        std::fs::create_dir_all(runtime.join("faces-arcface/models")).unwrap();
+        std::fs::write(runtime.join("faces-arcface/models").join(ARCFACE_FILE), b"another file").unwrap();
+        assert_eq!(models.recognizer(&runtime), Recognizer::Sface, "a file with another hash is refused");
+        assert_ne!(model_version(Recognizer::Sface), model_version(Recognizer::Arcface));
+        assert!(thresholds(Recognizer::Arcface).suggest < thresholds(Recognizer::Sface).suggest);
+        assert!(!ASSETS.iter().any(|a| a.path.contains("w600k")), "ArcFace is in no pack");
+    }
+
 
     #[test]
     fn the_pin_lists_two_files_with_known_sizes_and_both_licences() {

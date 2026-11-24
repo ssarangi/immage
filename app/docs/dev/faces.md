@@ -26,6 +26,14 @@ the app's data folder, and `faces_delete_all` removes them and turns the switch 
 restart in faces.sqlite); with "catalog" the Catalog is scanned too. Crops reach the page as bytes
 (`faces_crop_bytes`), since the page cannot read file paths.
 
+## Grouping
+Unnamed faces are suggested for a person first (best confirmed face, >= suggest). The rest are grouped by
+`faces_cluster::group_faces`: quality faces seed groups (average link), the others attach to the best group or stay
+loose, then groups whose centroids agree are merged. A group has no size cap below 2000. `faces_merge_suggestions`
+offers the pairs below the merge threshold. A review decision triggers the analysis at once. `faces.recognizer`
+("sface" default, "arcface" only with the local non-commercial file in `<data>/faces-arcface/models/`) picks the embedding;
+thresholds per recognizer are in `faces_models::thresholds`. `cargo test opt_in_regroup_store -- --ignored` regroups a copy of a faces.sqlite and prints counts.
+
 ## Network shares
 Faces never reads, stats or lists a path on a network share (judged from the mount table, `volumes::MountSnapshot`)
 unless the user allowed that source (`faces.network_sources`, `faces_network_source`) or asked for that folder with

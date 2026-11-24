@@ -31,9 +31,12 @@ pub struct Params {
 }
 impl Default for Params {
     fn default() -> Self {
-        Params { threshold: CLUSTER_SFACE, min_size: 2, max_size: 200, exact_limit: 2500, component_cap: 2000 }
+        Params { threshold: CLUSTER_SFACE, min_size: 2, max_size: 2000, exact_limit: 2500, component_cap: 3000 }
     }
 }
+
+// A cap of 200 once split one person with 277 photos into two groups (the owner's data: centroid cosine
+// 0.91 between the halves), so a group may now hold as many faces as one dense component does.
 
 /// The person whose best exemplar is closest to `face`, if that is at or above `min`. `exemplars` is
 /// (person id, embedding) over the confirmed faces of every active person; `skip` excludes people the
@@ -316,6 +319,187 @@ fn components_at_subset(members: &[usize], edges: &[(u32, u32, f32)], t: f32) ->
     by_root.into_values().collect()
 }
 
+fn mean_vec(embs: &[&[f32]], members: &[usize]) -> Vec<f32> {
+    let mut v = vec![0f32; embs[0].len()];
+    for &i in members {
+        for (a, b) in v.iter_mut().zip(embs[i]) {
+            *a += b;
+        }
+    }
+    let n: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-9);
+    v.iter_mut().for_each(|x| *x /= n);
+    v
+}
+
+/// The score of a face against a group: the better of its cosine to the group's centroid and the mean
+/// of its three closest members (a person in another pose is close to some of their faces, not to the mean).
+fn group_score(face: &[f32], embs: &[&[f32]], members: &[usize], centroid: &[f32]) -> f32 {
+    let mut sims: Vec<f32> = members.iter().map(|&m| cosine(face, embs[m])).collect();
+    sims.sort_by(|a, b| b.total_cmp(a));
+    let k = sims.len().min(3).max(1);
+    let top: f32 = sims.iter().take(k).sum::<f32>() / k as f32;
+    top.max(cosine(face, centroid))
+}
+
+/// Joins groups whose centroids agree (cosine at or above `threshold`), most alike first, until none do.
+pub fn merge_groups(embs: &[&[f32]], groups: Vec<Vec<usize>>, threshold: f32) -> Vec<Vec<usize>> {
+    // the merge pass is a matrix over the groups: only the biggest few thousand take part
+    const LIMIT: usize = 3000;
+    let mut groups = groups;
+    groups.sort_by_key(|g| std::cmp::Reverse(g.len()));
+    let rest = if groups.len() > LIMIT { groups.split_off(LIMIT) } else { Vec::new() };
+    let k = groups.len();
+    let mut cents: Vec<Vec<f32>> = groups.iter().map(|g| mean_vec(embs, g)).collect();
+    let mut alive = vec![true; k];
+    let mut sim = vec![f32::NEG_INFINITY; k * k];
+    for a in 0..k {
+        for b in a + 1..k {
+            let s = cosine(&cents[a], &cents[b]);
+            sim[a * k + b] = s;
+            sim[b * k + a] = s;
+        }
+    }
+    let best_of = |sim: &[f32], alive: &[bool], i: usize| -> (usize, f32) {
+        let mut best = (usize::MAX, f32::NEG_INFINITY);
+        for j in 0..k {
+            if j != i && alive[j] && sim[i * k + j] > best.1 {
+                best = (j, sim[i * k + j]);
+            }
+        }
+        best
+    };
+    let mut best: Vec<(usize, f32)> = (0..k).map(|i| best_of(&sim, &alive, i)).collect();
+    loop {
+        let (mut a, mut top) = (usize::MAX, threshold);
+        for i in 0..k {
+            if alive[i] && best[i].0 != usize::MAX && best[i].1 >= top {
+                a = i;
+                top = best[i].1;
+            }
+        }
+        if a == usize::MAX {
+            break;
+        }
+        let b = best[a].0;
+        let moved = std::mem::take(&mut groups[b]);
+        groups[a].extend(moved);
+        alive[b] = false;
+        cents[a] = mean_vec(embs, &groups[a]);
+        for c in 0..k {
+            if alive[c] && c != a {
+                let s = cosine(&cents[a], &cents[c]);
+                sim[a * k + c] = s;
+                sim[c * k + a] = s;
+            }
+        }
+        best[a] = best_of(&sim, &alive, a);
+        for c in 0..k {
+            if alive[c] && c != a {
+                if best[c].0 == a || best[c].0 == b {
+                    best[c] = best_of(&sim, &alive, c);
+                } else if sim[c * k + a] > best[c].1 {
+                    best[c] = (a, sim[c * k + a]);
+                }
+            }
+        }
+    }
+    let mut out: Vec<Vec<usize>> = (0..k).filter(|&i| alive[i]).map(|i| std::mem::take(&mut groups[i])).collect();
+    out.extend(rest);
+    for g in out.iter_mut() {
+        g.sort_unstable();
+    }
+    out.sort_by_key(|g| g[0]);
+    out
+}
+
+/// Groups unnamed faces the way the page needs them: seeds first, the rest attached, then a merge pass.
+///
+/// 1. Only `seed` faces (big enough, sharp enough, facing the camera enough) are clustered, by average link
+///    at `th.cluster`, so a blurry or tiny face cannot pull two people together or start a group of its own.
+/// 2. Every other face joins the group it matches best (`group_score` at or above `th.attach`) when that group
+///    beats the second best by 0.04; otherwise it stays loose.
+/// 3. Groups whose centroids reach `th.merge` are joined.
+/// Returns the groups as indices into `embs`, each of at least `min_size` faces.
+pub fn group_faces(embs: &[&[f32]], seed: &[bool], th: &crate::faces_models::Thresholds, params: &Params) -> Vec<Vec<usize>> {
+    let seeds: Vec<usize> = (0..embs.len()).filter(|&i| seed[i]).collect();
+    let seed_embs: Vec<&[f32]> = seeds.iter().map(|&i| embs[i]).collect();
+    let mut groups: Vec<Vec<usize>> = cluster(&seed_embs, &Params { threshold: th.cluster, ..*params }).into_iter().map(|g| g.into_iter().map(|k| seeds[k]).collect()).collect();
+    let cents: Vec<Vec<f32>> = groups.iter().map(|g| mean_vec(embs, g)).collect();
+    let mut joined: Vec<Vec<usize>> = vec![Vec::new(); groups.len()];
+    for i in (0..embs.len()).filter(|&i| !seed[i]) {
+        let mut scores: Vec<(f32, usize)> = groups.iter().enumerate().map(|(g, m)| (group_score(embs[i], embs, m, &cents[g]), g)).collect();
+        scores.sort_by(|a, b| b.0.total_cmp(&a.0));
+        if let Some(&(best, g)) = scores.first() {
+            let second = scores.get(1).map_or(f32::NEG_INFINITY, |s| s.0);
+            if best >= th.attach && best - second >= 0.04 {
+                joined[g].push(i);
+            }
+        }
+    }
+    for (g, extra) in joined.into_iter().enumerate() {
+        groups[g].extend(extra);
+    }
+    let merged = if groups.len() > 1 { merge_groups(embs, groups, th.merge) } else { groups };
+    merged.into_iter().filter(|g| g.len() >= params.min_size).collect()
+}
+
+/// A pair the page may offer to join: two groups, two people, or a group and a person.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
+pub struct MergeSuggestion {
+    /// "groups", "group_person" (a group that looks like a named person) or "people"
+    pub kind: String,
+    /// The first side: a group id, or a person id for "people". For "group_person" it is the group.
+    pub a: i64,
+    /// The second side: a group id, or a person id.
+    pub b: i64,
+    pub similarity: f32,
+    /// "high" (at the merge threshold), "medium" or "low"
+    pub confidence: String,
+}
+
+/// Pairs worth showing, strongest first, at most `limit`. `groups` and `people` are (id, member embeddings); a person's
+/// members are all their confirmed faces, so a group is compared with every one of them.
+pub fn merge_suggestions(groups: &[(i64, Vec<&[f32]>)], people: &[(i64, Vec<&[f32]>)], th: &crate::faces_models::Thresholds, limit: usize) -> Vec<MergeSuggestion> {
+    let centroid = |m: &[&[f32]]| -> Vec<f32> {
+        let idx: Vec<usize> = (0..m.len()).collect();
+        mean_vec(m, &idx)
+    };
+    let confidence = |s: f32| if s >= th.merge { "high" } else if s >= (th.merge + th.suggest) / 2.0 { "medium" } else { "low" }.to_string();
+    let gc: Vec<Vec<f32>> = groups.iter().map(|g| centroid(&g.1)).collect();
+    let pc: Vec<Vec<f32>> = people.iter().map(|p| centroid(&p.1)).collect();
+    let mut out = Vec::new();
+    for a in 0..groups.len() {
+        for b in a + 1..groups.len() {
+            let s = cosine(&gc[a], &gc[b]);
+            if s >= th.suggest {
+                out.push(MergeSuggestion { kind: "groups".into(), a: groups[a].0, b: groups[b].0, similarity: s, confidence: confidence(s) });
+            }
+        }
+        for (p, person) in people.iter().enumerate() {
+            // the person's closest faces to the group's centroid, or their centroid: whichever agrees more
+            let mut sims: Vec<f32> = person.1.iter().map(|e| cosine(e, &gc[a])).collect();
+            sims.sort_by(|x, y| y.total_cmp(x));
+            let k = sims.len().min(3).max(1);
+            let top = sims.iter().take(k).sum::<f32>() / k as f32;
+            let s = top.max(cosine(&pc[p], &gc[a]));
+            if s >= th.suggest {
+                out.push(MergeSuggestion { kind: "group_person".into(), a: groups[a].0, b: person.0, similarity: s, confidence: confidence(s) });
+            }
+        }
+    }
+    for a in 0..people.len() {
+        for b in a + 1..people.len() {
+            let s = cosine(&pc[a], &pc[b]);
+            if s >= th.suggest {
+                out.push(MergeSuggestion { kind: "people".into(), a: people[a].0, b: people[b].0, similarity: s, confidence: confidence(s) });
+            }
+        }
+    }
+    out.sort_by(|x, y| y.similarity.total_cmp(&x.similarity));
+    out.truncate(limit);
+    out
+}
+
 /// The face of a cluster closest to the others on average (what the page shows for the group).
 pub fn medoid(embs: &[&[f32]], cluster: &[usize]) -> usize {
     let mut best = (cluster[0], f32::NEG_INFINITY);
@@ -472,6 +656,101 @@ mod tests {
         let clusters = cluster(&refs(&faces), &p);
         assert!(clusters.iter().all(|c| c.len() <= 80));
         assert_eq!(clusters.iter().map(Vec::len).sum::<usize>(), 300);
+    }
+
+    fn sface() -> crate::faces_models::Thresholds {
+        crate::faces_models::thresholds(crate::faces_models::Recognizer::Sface)
+    }
+
+    #[test]
+    fn a_person_with_hundreds_of_faces_is_one_group_not_two() {
+        let mut rng = Rng(31);
+        let c = random_unit(&mut rng, 128);
+        let faces = identity(&mut rng, &c, 260, 0.6);
+        let clusters = cluster(&refs(&faces), &Params::default());
+        assert_eq!(clusters.len(), 1, "{:?}", clusters.iter().map(Vec::len).collect::<Vec<_>>());
+        assert_eq!(clusters[0].len(), 260);
+    }
+
+    #[test]
+    fn only_quality_faces_seed_groups_and_the_rest_attach_or_stay_loose() {
+        let mut rng = Rng(41);
+        let (ca, cb, stranger) = (random_unit(&mut rng, 128), random_unit(&mut rng, 128), random_unit(&mut rng, 128));
+        let mut faces = identity(&mut rng, &ca, 12, 0.6);
+        faces.extend(identity(&mut rng, &cb, 10, 0.6));
+        let mut seed = vec![true; 22];
+        // six poor faces of A (heavier noise), four of a person with no seed group, one lone poor face
+        faces.extend(identity(&mut rng, &ca, 6, 1.0));
+        faces.extend(identity(&mut rng, &stranger, 4, 0.3));
+        faces.push(random_unit(&mut rng, 128));
+        seed.extend(std::iter::repeat_n(false, 11));
+        let groups = group_faces(&refs(&faces), &seed, &sface(), &Params::default());
+        assert_eq!(groups.len(), 2, "{:?}", groups.iter().map(Vec::len).collect::<Vec<_>>());
+        let a = groups.iter().find(|g| g.contains(&0)).unwrap();
+        let attached = (22..28).filter(|i| a.contains(i)).count();
+        assert!(attached >= 4, "the poor faces of A joined A's group: {attached} of 6");
+        assert!(groups.iter().all(|g| g.iter().all(|&i| !(28..33).contains(&i))), "poor faces of nobody start no group and join none");
+        assert!(!a.iter().any(|i| (10..22).contains(i) && *i >= 12), "B's faces are not in A's group");
+    }
+
+    #[test]
+    fn the_merge_pass_joins_pieces_of_one_person_and_leaves_two_people_apart() {
+        let mut rng = Rng(51);
+        let (ca, cb) = (random_unit(&mut rng, 128), random_unit(&mut rng, 128));
+        let mut faces = identity(&mut rng, &ca, 30, 0.6);
+        faces.extend(identity(&mut rng, &cb, 30, 0.6));
+        let r = refs(&faces);
+        // forced into small pieces by a tiny size cap
+        let pieces = cluster(&r, &Params { max_size: 8, ..Params::default() });
+        assert!(pieces.len() >= 6, "{}", pieces.len());
+        let merged = merge_groups(&r, pieces, sface().merge);
+        assert_eq!(merged.len(), 2, "{:?}", merged.iter().map(Vec::len).collect::<Vec<_>>());
+        assert!(merged.iter().all(|g| g.len() == 30 && (g[0] < 30) == g.iter().all(|&i| i < 30)));
+        // two different people: the best centroid cosine is far below the merge threshold
+        let two = vec![(0..30).collect::<Vec<_>>(), (30..60).collect::<Vec<_>>()];
+        assert_eq!(merge_groups(&r, two, sface().merge).len(), 2);
+    }
+
+    #[test]
+    fn pose_like_noise_splits_a_person_into_seeds_that_the_merge_pass_rejoins() {
+        // frontal faces and 'profile' faces of one person: the profile ones share a pose offset, so they
+        // are close to each other (0.7) and only moderately close to the frontal ones (0.5)
+        let mut rng = Rng(61);
+        let c = random_unit(&mut rng, 128);
+        let pose = random_unit(&mut rng, 128);
+        let profile_center = unit(c.iter().zip(&pose).map(|(a, b)| a + 0.9 * b).collect());
+        let mut faces = identity(&mut rng, &c, 15, 0.4);
+        faces.extend(identity(&mut rng, &profile_center, 15, 0.4));
+        let other = random_unit(&mut rng, 128);
+        faces.extend(identity(&mut rng, &other, 15, 0.4));
+        let seed = vec![true; faces.len()];
+        let groups = group_faces(&refs(&faces), &seed, &sface(), &Params::default());
+        let of_person = |g: &Vec<usize>| g.iter().all(|&i| i < 30);
+        let person_groups: Vec<_> = groups.iter().filter(|g| of_person(g)).collect();
+        assert!(groups.iter().all(|g| of_person(g) || g.iter().all(|&i| i >= 30)), "no group mixes the two people");
+        assert_eq!(person_groups.len(), 1, "frontal and profile faces of the person are one group: {:?}", groups.iter().map(Vec::len).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn suggestions_pair_alike_groups_and_name_a_group_after_a_person() {
+        let mut rng = Rng(71);
+        let (ca, cb, cc) = (random_unit(&mut rng, 128), random_unit(&mut rng, 128), random_unit(&mut rng, 128));
+        let a1 = identity(&mut rng, &ca, 8, 0.5);
+        let a2 = identity(&mut rng, &ca, 8, 0.5);
+        let b = identity(&mut rng, &cb, 8, 0.5);
+        let named = identity(&mut rng, &cc, 10, 0.5);
+        let c_group = identity(&mut rng, &cc, 5, 0.5);
+        let groups = vec![(1, refs(&a1)), (2, refs(&a2)), (3, refs(&b)), (4, refs(&c_group))];
+        let people = vec![(9, refs(&named))];
+        let s = merge_suggestions(&groups, &people, &sface(), 50);
+        let find = |kind: &str, a: i64, b: i64| s.iter().find(|x| x.kind == kind && x.a == a && x.b == b);
+        assert!(find("groups", 1, 2).is_some(), "{s:?}");
+        assert_eq!(find("groups", 1, 2).unwrap().confidence, "high");
+        assert!(find("group_person", 4, 9).is_some(), "the group looks like the named person");
+        assert!(find("groups", 1, 3).is_none() && find("group_person", 3, 9).is_none() && find("group_person", 1, 9).is_none());
+        assert!(s.windows(2).all(|w| w[0].similarity >= w[1].similarity), "strongest first");
+        assert_eq!(merge_suggestions(&groups, &people, &sface(), 1).len(), 1);
+        assert!(merge_suggestions(&[], &[], &sface(), 5).is_empty());
     }
 
     #[test]

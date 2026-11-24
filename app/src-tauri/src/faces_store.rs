@@ -153,6 +153,18 @@ pub struct FaceTotals {
     pub failed_photos: u32,
 }
 
+/// An unnamed face with what the grouping judges it by: size in pixels of the analysed picture, detector confidence, how frontal.
+#[derive(Debug, Clone)]
+pub struct Unnamed {
+    pub id: i64,
+    pub emb: Vec<f32>,
+    /// People the user said this face is not.
+    pub skip: Vec<i64>,
+    pub px: f32,
+    pub score: f32,
+    pub frontal: f32,
+}
+
 /// Where a list of faces comes from.
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -581,21 +593,28 @@ impl FaceStore {
         })
     }
 
-    /// Every confirmed face of an active person: what new faces are compared with.
-    pub fn exemplars(&self) -> Result<Vec<(i64, i64, Vec<f32>)>, String> {
+    /// Every confirmed face of an active person made by this model: what new faces are compared with.
+    pub fn exemplars(&self, model: &str) -> Result<Vec<(i64, i64, Vec<f32>)>, String> {
         let db = self.db()?;
         let mut q = db
-            .prepare("SELECT f.person_id,f.id,f.emb FROM faces f JOIN people p ON p.id=f.person_id WHERE f.state='confirmed' AND p.state='active' ORDER BY f.id")
+            .prepare("SELECT f.person_id,f.id,f.emb FROM faces f JOIN people p ON p.id=f.person_id WHERE f.state='confirmed' AND p.state='active' AND f.model=?1 ORDER BY f.id")
             .map_err(|e| e.to_string())?;
-        let rows = q.query_map([], |r| Ok((r.get(0)?, r.get(1)?, emb_from(&r.get::<_, Vec<u8>>(2)?)))).map_err(|e| e.to_string())?;
+        let rows = q.query_map([model], |r| Ok((r.get(0)?, r.get(1)?, emb_from(&r.get::<_, Vec<u8>>(2)?)))).map_err(|e| e.to_string())?;
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
-    /// The unreviewed faces nobody is named for: (id, embedding, people already ruled out for it).
-    pub fn unnamed(&self) -> Result<Vec<(i64, Vec<f32>, Vec<i64>)>, String> {
+    /// The unreviewed faces nobody is named for (made by this model), with what the grouping needs to judge them.
+    pub fn unnamed(&self, model: &str) -> Result<Vec<Unnamed>, String> {
         let db = self.db()?;
-        let mut q = db.prepare("SELECT id,emb FROM faces WHERE state='unreviewed' AND person_id IS NULL ORDER BY id").map_err(|e| e.to_string())?;
-        let faces: Vec<(i64, Vec<f32>)> = q
-            .query_map([], |r| Ok((r.get(0)?, emb_from(&r.get::<_, Vec<u8>>(1)?))))
+        let mut q = db
+            .prepare(
+                "SELECT f.id,f.emb,MAX(f.w*p.width, f.h*p.height),f.score,f.frontal FROM faces f JOIN photos p ON p.path=f.path
+                 WHERE f.state='unreviewed' AND f.person_id IS NULL AND f.model=?1 ORDER BY f.id",
+            )
+            .map_err(|e| e.to_string())?;
+        let faces: Vec<Unnamed> = q
+            .query_map([model], |r| {
+                Ok(Unnamed { id: r.get(0)?, emb: emb_from(&r.get::<_, Vec<u8>>(1)?), skip: Vec::new(), px: r.get::<_, f64>(2)? as f32, score: r.get::<_, f64>(3)? as f32, frontal: r.get::<_, f64>(4)? as f32 })
+            })
             .map_err(|e| e.to_string())?
             .collect::<Result<_, _>>()
             .map_err(|e| e.to_string())?;
@@ -605,7 +624,34 @@ impl FaceStore {
             let (f, p) = row.map_err(|e| e.to_string())?;
             rej.entry(f).or_default().push(p);
         }
-        Ok(faces.into_iter().map(|(id, e)| (id, e, rej.remove(&id).unwrap_or_default())).collect())
+        Ok(faces.into_iter().map(|mut u| { u.skip = rej.remove(&u.id).unwrap_or_default(); u }).collect())
+    }
+    /// The embeddings of each group (made by this model), for comparing groups with each other and with people.
+    pub fn group_members(&self, model: &str) -> Result<Vec<(i64, Vec<Vec<f32>>)>, String> {
+        let db = self.db()?;
+        let mut q = db
+            .prepare("SELECT cluster_id,emb FROM faces WHERE cluster_id IS NOT NULL AND state='unreviewed' AND person_id IS NULL AND model=?1 ORDER BY cluster_id,id")
+            .map_err(|e| e.to_string())?;
+        let mut out: Vec<(i64, Vec<Vec<f32>>)> = Vec::new();
+        for row in q.query_map([model], |r| Ok((r.get::<_, i64>(0)?, emb_from(&r.get::<_, Vec<u8>>(1)?)))).map_err(|e| e.to_string())? {
+            let (c, e) = row.map_err(|e| e.to_string())?;
+            match out.last_mut() {
+                Some(l) if l.0 == c => l.1.push(e),
+                _ => out.push((c, vec![e])),
+            }
+        }
+        Ok(out)
+    }
+    /// The confirmed faces of each active person (made by this model).
+    pub fn people_members(&self, model: &str) -> Result<Vec<(i64, Vec<Vec<f32>>)>, String> {
+        let mut out: Vec<(i64, Vec<Vec<f32>>)> = Vec::new();
+        for (p, _, e) in self.exemplars(model)? {
+            match out.iter_mut().find(|x| x.0 == p) {
+                Some(l) => l.1.push(e),
+                None => out.push((p, vec![e])),
+            }
+        }
+        Ok(out)
     }
 
     /// Replaces every suggestion and group of the unreviewed faces: `suggestions` is (face, person, cosine),
@@ -1115,7 +1161,7 @@ mod tests {
         s.set_ignored(a, true).unwrap();
         assert!(s.list_people(false).unwrap().is_empty());
         assert_eq!(s.list_people(true).unwrap().len(), 1);
-        assert!(s.exemplars().unwrap().is_empty(), "an ignored person is nobody's exemplar");
+        assert!(s.exemplars("m1").unwrap().is_empty(), "an ignored person is nobody's exemplar");
         assert!(s.face(ids[1]).unwrap().unwrap().suggested_person.is_none());
         let again = s.create_person("Ann", &[]).unwrap(); // the name is free while they are removed
         assert!(s.set_ignored(a, false).is_err(), "restoring would duplicate a name");
@@ -1133,16 +1179,16 @@ mod tests {
         s.reject_for_person(a, &[ids[1]]).unwrap();
         let f = s.face(ids[1]).unwrap().unwrap();
         assert_eq!((f.person_id, f.state.as_str()), (None, "unreviewed"));
-        let unnamed = s.unnamed().unwrap();
-        assert_eq!(unnamed.iter().find(|u| u.0 == ids[1]).unwrap().2, vec![a], "the analysis is told who it must not suggest");
+        let unnamed = s.unnamed("m1").unwrap();
+        assert_eq!(unnamed.iter().find(|u| u.id == ids[1]).unwrap().skip, vec![a], "the analysis is told who it must not suggest");
         s.undo_last().unwrap();
-        assert!(s.unnamed().unwrap().iter().all(|u| u.0 != ids[1]));
+        assert!(s.unnamed("m1").unwrap().iter().all(|u| u.id != ids[1]));
         assert_eq!(s.face(ids[1]).unwrap().unwrap().person_id, Some(a));
         // naming the face after them again clears the rejection
         s.reject_for_person(a, &[ids[1]]).unwrap();
         s.assign(a, &[ids[1]]).unwrap();
         s.unassign(&[ids[1]]).unwrap();
-        assert!(s.unnamed().unwrap().iter().find(|u| u.0 == ids[1]).unwrap().2.is_empty());
+        assert!(s.unnamed("m1").unwrap().iter().find(|u| u.id == ids[1]).unwrap().skip.is_empty());
     }
 
     #[test]
@@ -1154,7 +1200,7 @@ mod tests {
         scan(&s, "/a.jpg", &[nf(0.1, 1.0), nf(0.5, 0.2)]);
         let faces = s.faces_of_photo("/a.jpg").unwrap();
         assert_eq!(faces.len(), 1, "the same box is still rejected after the photo is scanned again");
-        assert!(s.unnamed().unwrap().len() == 1);
+        assert!(s.unnamed("m1").unwrap().len() == 1);
     }
 
     #[test]
@@ -1257,6 +1303,23 @@ mod tests {
         assert_eq!(s.face(ids[5]).unwrap().unwrap().state, "unreviewed");
         s.undo_last().unwrap();
         assert_eq!(s.face(ids[5]).unwrap().unwrap().state, "rejected");
+    }
+
+    #[test]
+    fn unnamed_faces_carry_quality_and_only_this_models_faces_are_compared() {
+        let s = store();
+        // picture 1000 x 800: a face of w 0.2, h 0.25 is max(200, 200) = 200 px
+        let ids = scan(&s, "/a.jpg", &[nf(0.1, 1.0), nf(0.5, 0.2)]);
+        s.put_scan("/b.jpg", "fp", "m2", 1000, 800, &[nf(0.1, 0.5)], None).unwrap();
+        let u = s.unnamed("m1").unwrap();
+        assert_eq!(u.len(), 2);
+        assert!((u[0].px - 200.0).abs() < 0.5 && (u[0].score - 0.9).abs() < 1e-6 && (u[0].frontal - 0.8).abs() < 1e-6);
+        assert_eq!(s.unnamed("m2").unwrap().len(), 1);
+        let p = s.create_person("Ann", &[ids[0]]).unwrap();
+        assert_eq!(s.exemplars("m2").unwrap().len(), 0, "another model's faces are not exemplars");
+        s.set_analysis(&[], &[(ids[1], vec![ids[1]])]).unwrap();
+        assert_eq!(s.group_members("m1").unwrap().len(), 1);
+        assert_eq!(s.people_members("m1").unwrap()[0].0, p);
     }
 
     #[test]

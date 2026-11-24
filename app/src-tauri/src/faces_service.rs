@@ -20,7 +20,7 @@ use crate::{
     faces_cluster::{self, Params, SUGGEST_SFACE},
     faces_detect as det,
     faces_models::{self as fm, Model, Models},
-    faces_store::{FaceStore, NewFace},
+    faces_store::{FaceStore, NewFace, Unnamed},
     volumes::MountSnapshot,
     frame_output::FrameOutput,
     search_analysis::{library_selection, now_ms, selected, AnalysisProgress, SHARE_QUIET},
@@ -123,6 +123,8 @@ pub struct Control {
     health: Arc<Health>,
     ledger: Arc<Ledger>,
     dirty: Arc<AtomicBool>,
+    /// A review decision asked for the analysis: it does not wait for a scan in progress.
+    urgent: Arc<AtomicBool>,
     folders: Arc<Mutex<VecDeque<Requested>>>,
     store: Arc<FaceStore>,
 }
@@ -233,6 +235,7 @@ impl Control {
     }
     /// The names and groups are out of date (a review decision, a merge): recompute them soon.
     pub fn request_analysis(&self) {
+        self.urgent.store(true, Ordering::Release);
         self.dirty.store(true, Ordering::Release);
     }
     /// Scans one folder once (with its subfolders when asked), in addition to the Catalog, or instead of
@@ -266,6 +269,7 @@ struct Service {
     health: Arc<Health>,
     ledger: Arc<Ledger>,
     dirty: Arc<AtomicBool>,
+    urgent: Arc<AtomicBool>,
     folders: Arc<Mutex<VecDeque<Requested>>>,
     inflight: Mutex<HashSet<String>>,
     idle_since: Mutex<Option<Instant>>,
@@ -289,6 +293,7 @@ pub fn start(
     let health = Arc::new(Health::default());
     let ledger = Arc::new(Ledger::default());
     let dirty = Arc::new(AtomicBool::new(true));
+    let urgent = Arc::new(AtomicBool::new(false));
     let folders = Arc::new(Mutex::new(load_folders(&store)));
     let service = Arc::new(Service {
         cache,
@@ -305,6 +310,7 @@ pub fn start(
         health: health.clone(),
         ledger: ledger.clone(),
         dirty: dirty.clone(),
+        urgent: urgent.clone(),
         folders: folders.clone(),
         inflight: Mutex::default(),
         idle_since: Mutex::new(None),
@@ -312,7 +318,7 @@ pub fn start(
         emit,
     });
     std::thread::spawn(move || service.run());
-    Control { stop, progress, health, ledger, dirty, folders, store }
+    Control { stop, progress, health, ledger, dirty, urgent, folders, store }
 }
 
 /// Maps the face worker's own words to what the worker does about them.
@@ -384,6 +390,11 @@ pub fn photos_under(folder: &Path, limit: usize, recursive: bool, skip: &dyn Fn(
 }
 
 impl Service {
+    /// The stored model version of the recognizer in use now (the setting, while its file is there).
+    fn model_version(&self) -> &'static str {
+        fm::model_version(self.models.recognizer(&self.runtime))
+    }
+
     fn failed(&self, path: &str, version: &str, generation: u64, f: Failure) {
         match f.kind {
             Kind::Transient => {}
@@ -398,7 +409,7 @@ impl Service {
                 let tries = self.ledger.fail(path, version, now_ms());
                 if tries >= MAX_PHOTO_TRIES {
                     // remembered, so the photo is not offered again until its file or the model changes
-                    let _ = self.store.put_failure(path, version, fm::MODEL_VERSION, "failed", &f.msg);
+                    let _ = self.store.put_failure(path, version, self.model_version(), "failed", &f.msg);
                     eprintln!("faces {path}: given up: {}", f.msg);
                 }
             }
@@ -440,8 +451,10 @@ impl Service {
                 last_count = None;
             }
             // names and groups follow the faces once nothing is being scanned, and after a review decision
-            if self.dirty.load(Ordering::Acquire) && self.inflight.lock().unwrap().is_empty() && p.running.load(Ordering::Acquire) == 0 {
+            let idle = self.inflight.lock().unwrap().is_empty() && p.running.load(Ordering::Acquire) == 0;
+            if self.dirty.load(Ordering::Acquire) && (idle || self.urgent.load(Ordering::Acquire)) {
                 self.dirty.store(false, Ordering::Release);
+                self.urgent.store(false, Ordering::Release);
                 let next = self.clone();
                 if !self.queue.submit("faces:analyze".into(), move |job| {
                     if !job.cancelled() {
@@ -510,7 +523,7 @@ impl Service {
                     if self.models.enabled()
                         && selected(Path::new(&row.path), &selection)
                         && !policy.blocked(Path::new(&row.path))
-                        && !self.store.is_current(&row.path, &row.original_fingerprint, fm::MODEL_VERSION).ok()?
+                        && !self.store.is_current(&row.path, &row.original_fingerprint, self.model_version()).ok()?
                         && !self.ledger.skipped(&row.path, &row.original_fingerprint, now)
                     {
                         total = total.saturating_add(1);
@@ -574,7 +587,7 @@ impl Service {
                     continue;
                 }
                 let Some(fp) = self.fingerprint_now(&path) else { continue };
-                if self.store.is_current(&path, &fp, fm::MODEL_VERSION)? || self.ledger.skipped(&path, &fp, now_ms()) {
+                if self.store.is_current(&path, &fp, self.model_version())? || self.ledger.skipped(&path, &fp, now_ms()) {
                     continue;
                 }
                 offered = true;
@@ -610,7 +623,7 @@ impl Service {
                 after = a.id;
                 let path = Path::new(&a.path);
                 // a network source nobody allowed is skipped on the path alone: nothing is stat'ed
-                let current = !selected(path, &selection) || policy.blocked(path) || self.store.is_current(&a.path, &a.original_fingerprint, fm::MODEL_VERSION)?;
+                let current = !selected(path, &selection) || policy.blocked(path) || self.store.is_current(&a.path, &a.original_fingerprint, self.model_version())?;
                 if current || (quiet < SHARE_QUIET && crate::volumes::on_network(path)) {
                     if leading {
                         lead = a.id;
@@ -672,7 +685,8 @@ impl Service {
     }
 
     fn faces_in(&self, root: &Path, img: &image::RgbImage) -> Result<Vec<NewFace>, String> {
-        let (faces, ms) = detect_and_embed(&self.engine, &self.runtime, root, img)?;
+        let arcface = (self.models.recognizer(&self.runtime) == fm::Recognizer::Arcface).then(|| self.models.arcface()).flatten();
+        let (faces, ms) = detect_and_embed(&self.engine, &self.runtime, root, arcface.as_deref(), img)?;
         self.loaded.store(true, Ordering::Release);
         self.progress.last_ms.store(ms.round() as u64, Ordering::Release);
         Ok(faces)
@@ -701,7 +715,7 @@ impl Service {
             return Ok(());
         }
         // a RAW and its JPG are one picture: the second file takes the first's faces
-        let companion = self.store.companion(path, rgb.width(), rgb.height(), fm::MODEL_VERSION)?;
+        let companion = self.store.companion(path, rgb.width(), rgb.height(), self.model_version())?;
         let faces = match &companion {
             Some(primary) => {
                 self.progress.mirrored.fetch_add(1, Ordering::AcqRel);
@@ -716,7 +730,7 @@ impl Service {
             return Ok(());
         }
         let n = faces.len() as u64;
-        match job.commit(|| self.store.put_scan(path, fingerprint, fm::MODEL_VERSION, rgb.width(), rgb.height(), &faces, companion.as_deref())) {
+        match job.commit(|| self.store.put_scan(path, fingerprint, self.model_version(), rgb.width(), rgb.height(), &faces, companion.as_deref())) {
             Some(r) => r.map(|_| ())?,
             None => return Ok(()),
         }
@@ -733,22 +747,34 @@ impl Service {
 
     /// Suggests a person for each unnamed face that resembles one, then groups the rest.
     fn reanalyze(&self) -> Result<(), String> {
-        let (suggestions, groups) = analysis(&self.store.exemplars()?, &self.store.unnamed()?, &Params::default());
+        let r = self.models.recognizer(&self.runtime);
+        let model = fm::model_version(r);
+        let (suggestions, groups) = analysis(&self.store.exemplars(model)?, &self.store.unnamed(model)?, &fm::thresholds(r), &Params::default());
         self.store.set_analysis(&suggestions, &groups)
     }
 }
 
-/// YuNet, then SFace for each face found; also the milliseconds the engine spent.
-pub fn detect_and_embed(engine: &Tagged, runtime: &Path, root: &Path, img: &image::RgbImage) -> Result<(Vec<NewFace>, f64), String> {
+/// YuNet, then the recognizer for each face found (SFace, or ArcFace from `arcface`'s folder); also the
+/// milliseconds the engine spent.
+pub fn detect_and_embed(engine: &Tagged, runtime: &Path, root: &Path, arcface: Option<&Path>, img: &image::RgbImage) -> Result<(Vec<NewFace>, f64), String> {
     let (input, lb) = det::detector_input(img);
     let (tensors, mut total_ms) = fm::run(engine, runtime, root, Model::Detector, &[1, 3, 640, 640], &input)?;
     let found = det::faces_from_outputs(&fm::detector_outputs(&tensors)?, &lb, img.width(), img.height());
     let mut out = Vec::with_capacity(found.len());
     for f in found {
         let (tensor, aligned) = det::embedding_input(img, &f);
-        let (outputs, ms) = fm::run(engine, runtime, root, Model::Recognizer, &[1, 3, 112, 112], &tensor)?;
+        let (outputs, ms, dims) = match arcface {
+            Some(arc_root) => {
+                let (o, ms) = fm::run(engine, runtime, arc_root, Model::Arcface, &[1, 3, 112, 112], &det::arcface_input(&tensor))?;
+                (o, ms, fm::ARCFACE_DIMS)
+            }
+            None => {
+                let (o, ms) = fm::run(engine, runtime, root, Model::Recognizer, &[1, 3, 112, 112], &tensor)?;
+                (o, ms, det::EMBED_DIMS)
+            }
+        };
         total_ms += ms;
-        let mut emb = outputs.first().map(|t| t.data.clone()).filter(|d| d.len() == det::EMBED_DIMS).ok_or("The recognizer returned the wrong size of embedding")?;
+        let mut emb = outputs.first().map(|t| t.data.clone()).filter(|d| d.len() == dims).ok_or("The recognizer returned the wrong size of embedding")?;
         if !det::l2_normalise(&mut emb) {
             return Err("invalid face embedding".into());
         }
@@ -773,22 +799,33 @@ pub fn detect_and_embed(engine: &Tagged, runtime: &Path, root: &Path, img: &imag
     Ok((out, total_ms))
 }
 
+/// A face may start a group when it is big enough to be told apart, sharp enough for the detector to be sure
+/// and turned enough toward the camera. Others only join a group that exists (faces_cluster::group_faces).
+pub const SEED_MIN_PX: f32 = 48.0;
+pub const SEED_MIN_SCORE: f32 = 0.75;
+pub const SEED_MIN_FRONTAL: f32 = 0.35;
+pub fn is_seed(f: &Unnamed) -> bool {
+    f.px >= SEED_MIN_PX && f.score >= SEED_MIN_SCORE && f.frontal >= SEED_MIN_FRONTAL
+}
+
 /// The pure part of `reanalyze`: (suggestions, groups) for the unnamed faces given every confirmed face.
-pub fn analysis(exemplars: &[(i64, i64, Vec<f32>)], unnamed: &[(i64, Vec<f32>, Vec<i64>)], params: &Params) -> (Vec<(i64, i64, f32)>, Vec<(i64, Vec<i64>)>) {
+/// A suggestion is never a decision: the page shows it for the user to confirm or reject.
+pub fn analysis(exemplars: &[(i64, i64, Vec<f32>)], unnamed: &[Unnamed], th: &fm::Thresholds, params: &Params) -> (Vec<(i64, i64, f32)>, Vec<(i64, Vec<i64>)>) {
     let ex: Vec<(i64, &[f32])> = exemplars.iter().map(|(p, _, e)| (*p, e.as_slice())).collect();
     let mut suggestions = Vec::new();
     let mut rest: Vec<usize> = Vec::new();
-    for (i, (id, emb, skip)) in unnamed.iter().enumerate() {
-        match faces_cluster::suggest(emb, &ex, SUGGEST_SFACE, skip) {
-            Some((person, sim)) => suggestions.push((*id, person, sim)),
+    for (i, f) in unnamed.iter().enumerate() {
+        match faces_cluster::suggest(&f.emb, &ex, th.suggest, &f.skip) {
+            Some((person, sim)) => suggestions.push((f.id, person, sim)),
             None => rest.push(i),
         }
     }
-    let embs: Vec<&[f32]> = rest.iter().map(|&i| unnamed[i].1.as_slice()).collect();
+    let embs: Vec<&[f32]> = rest.iter().map(|&i| unnamed[i].emb.as_slice()).collect();
+    let seed: Vec<bool> = rest.iter().map(|&i| is_seed(&unnamed[i])).collect();
     let mut groups = Vec::new();
-    for c in faces_cluster::cluster(&embs, params) {
+    for c in faces_cluster::group_faces(&embs, &seed, th, params) {
         let rep = rest[faces_cluster::medoid(&embs, &c)];
-        groups.push((unnamed[rep].0, c.iter().map(|&k| unnamed[rest[k]].0).collect()));
+        groups.push((unnamed[rep].id, c.iter().map(|&k| unnamed[rest[k]].id).collect()));
     }
     (suggestions, groups)
 }
@@ -811,16 +848,17 @@ mod tests {
     #[test]
     fn analysis_names_faces_like_a_person_and_groups_the_rest() {
         let exemplars = vec![(7, 100, at(0.0)), (8, 101, at(1.6))];
+        let u = |id: i64, emb: Vec<f32>, skip: Vec<i64>| Unnamed { id, emb, skip, px: 120.0, score: 0.9, frontal: 0.9 };
         let unnamed = vec![
-            (1, at(0.1), vec![]),   // like person 7
-            (2, at(1.5), vec![]),   // like person 8
-            (3, at(0.15), vec![7]), // like 7, but the user said it is not 7: not suggested for them
-            (4, at(3.0), vec![]),   // a group with 5, 6
-            (5, at(3.02), vec![]),
-            (6, at(3.04), vec![]),
-            (9, at(4.5), vec![]), // alone
+            u(1, at(0.1), vec![]),   // like person 7
+            u(2, at(1.5), vec![]),   // like person 8
+            u(3, at(0.15), vec![7]), // like 7, but the user said it is not 7: not suggested for them
+            u(4, at(3.0), vec![]),   // a group with 5, 6
+            u(5, at(3.02), vec![]),
+            u(6, at(3.04), vec![]),
+            u(9, at(4.5), vec![]), // alone
         ];
-        let (sug, groups) = analysis(&exemplars, &unnamed, &Params::default());
+        let (sug, groups) = analysis(&exemplars, &unnamed, &fm::thresholds(fm::Recognizer::Sface), &Params::default());
         let by: std::collections::HashMap<i64, i64> = sug.iter().map(|s| (s.0, s.1)).collect();
         assert_eq!((by[&1], by[&2]), (7, 8));
         assert!(!by.contains_key(&3) || by[&3] != 7);
@@ -905,6 +943,30 @@ mod tests {
     }
 
     #[test]
+    fn only_big_sharp_frontal_faces_seed_a_group() {
+        let f = |px: f32, score: f32, frontal: f32| Unnamed { id: 1, emb: vec![], skip: vec![], px, score, frontal };
+        assert!(is_seed(&f(95.0, 0.93, 0.88)));
+        assert!(!is_seed(&f(30.0, 0.93, 0.88)), "too small");
+        assert!(!is_seed(&f(95.0, 0.6, 0.88)), "the detector is unsure");
+        assert!(!is_seed(&f(95.0, 0.93, 0.1)), "turned away");
+    }
+
+    #[test]
+    fn naming_a_face_names_the_alike_faces_and_leaves_poor_unknown_faces_loose() {
+        // person 7 was just confirmed on one face: the faces that look like them are suggested at once
+        let exemplars = vec![(7, 100, at(0.0))];
+        let u = |id: i64, a: f32, px: f32| Unnamed { id, emb: at(a), skip: vec![], px, score: 0.9, frontal: 0.9 };
+        let unnamed = vec![u(1, 0.2, 100.0), u(2, 0.25, 30.0), u(3, 2.0, 100.0), u(4, 2.05, 100.0), u(5, 2.1, 20.0), u(6, 4.0, 20.0)];
+        let (sug, groups) = analysis(&exemplars, &unnamed, &fm::thresholds(fm::Recognizer::Sface), &Params::default());
+        let named: Vec<i64> = sug.iter().map(|s| s.0).collect();
+        assert_eq!(named, [1, 2], "alike faces are suggested whatever their size");
+        assert_eq!(groups.len(), 1);
+        let mut m = groups[0].1.clone();
+        m.sort();
+        assert_eq!(m, [3, 4, 5], "the small face joins the group; the lone small face starts none");
+    }
+
+    #[test]
     fn faces_failures_are_classified_for_the_worker() {
         assert_eq!(classify("face worker is full or stopping"), Kind::Transient);
         assert!(matches!(classify("face model is unavailable; verify the Faces model pack"), Kind::Systemic(Reason::Model)));
@@ -951,6 +1013,10 @@ mod tests {
         std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
         let engine = crate::engine::Engine::spawn(&wrapper, &runtime, &runtime).expect("start the isolated engine");
         let tagged = engine.tagged();
+        let arcface = std::env::var_os("IMMAGE_ARCFACE_ROOT").map(PathBuf::from);
+        if let Some(a) = &arcface {
+            fm::write_manifests(a, &[("arcface", "immage-arcface")]).unwrap();
+        }
         let mut files: Vec<PathBuf> = photos_under(&photos, 20000, true, &|_| false);
         // an even spread over the folder, not its first photos
         let step = (files.len() / limit.max(1)).max(1);
@@ -961,7 +1027,7 @@ mod tests {
         for (i, p) in files.iter().enumerate() {
             let t0 = Instant::now();
             let Some(pic) = analysis_image::picture(p) else { continue };
-            let (faces, ms) = detect_and_embed(&tagged, &runtime, &root, &pic.rgb).expect("faces");
+            let (faces, ms) = detect_and_embed(&tagged, &runtime, &root, arcface.as_deref(), &pic.rgb).expect("faces");
             let wall = t0.elapsed().as_secs_f64() * 1000.0;
             if i > 0 {
                 per_photo_wall.push(wall);
@@ -974,7 +1040,8 @@ mod tests {
             assert!(faces.iter().all(|f| (f.emb.iter().map(|x| x * x).sum::<f32>() - 1.0).abs() < 1e-3 && f.x >= 0.0 && f.x + f.w <= 1.0001));
             store.put_scan(&format!("/synthetic/{i}.jpg"), "fp", fm::MODEL_VERSION, pic.rgb.width(), pic.rgb.height(), &faces, None).unwrap();
         }
-        let (sug, groups) = analysis(&[], &store.unnamed().unwrap(), &Params::default());
+        let recognizer = if arcface.is_some() { fm::Recognizer::Arcface } else { fm::Recognizer::Sface };
+        let (sug, groups) = analysis(&[], &store.unnamed(fm::MODEL_VERSION).unwrap(), &fm::thresholds(recognizer), &Params::default());
         let sizes: Vec<usize> = { let mut s: Vec<usize> = groups.iter().map(|g| g.1.len()).collect(); s.sort_unstable_by(|a, b| b.cmp(a)); s };
         let grouped: usize = sizes.iter().sum();
         per_photo_wall.sort_by(|a, b| a.total_cmp(b));
@@ -983,5 +1050,36 @@ mod tests {
         println!("faces real: wall per photo mean {:.0} ms, median {median:.0} ms (picture decode included), engine inference mean {:.0} ms", wall_ms / f64::from(photos_done.max(1)), engine_ms / f64::from(photos_done.max(1)));
         println!("faces real: groups {}, faces in groups {grouped}, singletons {} ({:.0} %), largest groups {:?}, suggestions {}", groups.len(), faces_total as usize - grouped, 100.0 * (faces_total as usize - grouped) as f64 / f64::from(faces_total.max(1)), &sizes[..sizes.len().min(8)], sug.len());
         assert!(photos_done > 0);
+    }
+
+    /// Regroups a COPY of a faces.sqlite with the current pipeline, ignoring names (as a fresh scan would),
+    /// and prints counts only: IMMAGE_FACES_DB=<copy of faces.sqlite>
+    ///   cargo test opt_in_regroup_store -- --ignored --nocapture
+    #[test]
+    #[ignore = "needs a copy of a faces.sqlite"]
+    fn opt_in_regroup_store() {
+        let path = std::env::var("IMMAGE_FACES_DB").expect("set IMMAGE_FACES_DB");
+        let db = rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        let mut q = db
+            .prepare("SELECT f.id,f.emb,MAX(f.w*p.width,f.h*p.height),f.score,f.frontal,f.person_id FROM faces f JOIN photos p ON p.path=f.path WHERE f.state<>'rejected' ORDER BY f.id")
+            .unwrap();
+        let rows: Vec<(Unnamed, bool)> = q
+            .query_map([], |r| {
+                Ok((Unnamed { id: r.get(0)?, emb: crate::faces_store::emb_from(&r.get::<_, Vec<u8>>(1)?), skip: vec![], px: r.get::<_, f64>(2)? as f32, score: r.get::<_, f64>(3)? as f32, frontal: r.get::<_, f64>(4)? as f32 }, r.get::<_, Option<i64>>(5)?.is_some()))
+            })
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        let named: std::collections::HashSet<i64> = rows.iter().filter(|r| r.1).map(|r| r.0.id).collect();
+        let unnamed: Vec<Unnamed> = rows.into_iter().map(|r| r.0).collect();
+        let started = Instant::now();
+        let (_, groups) = analysis(&[], &unnamed, &fm::thresholds(fm::Recognizer::Sface), &Params::default());
+        let sizes: Vec<usize> = { let mut s: Vec<usize> = groups.iter().map(|g| g.1.len()).collect(); s.sort_unstable_by(|a, b| b.cmp(a)); s };
+        let grouped: usize = sizes.iter().sum();
+        println!("regroup: faces {}, groups {} {:?}, loose {}, took {} ms", unnamed.len(), groups.len(), sizes, unnamed.len() - grouped, started.elapsed().as_millis());
+        // the owner's own naming (one person, 88 faces confirmed) as a reference: how the named faces fall into groups
+        let mut in_group: Vec<usize> = groups.iter().map(|g| g.1.iter().filter(|f| named.contains(f)).count()).filter(|n| *n > 0).collect();
+        in_group.sort_unstable_by(|a, b| b.cmp(a));
+        println!("regroup: the {} confirmed faces of the one named person fall into groups of {:?}", named.len(), in_group);
     }
 }

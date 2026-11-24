@@ -20,6 +20,8 @@ use tauri::{AppHandle, Emitter, State};
 pub struct FacesStatus {
     /// The Faces switch (Preferences > AI models).
     pub enabled: bool,
+    /// The embedding network in use: "sface" (default) or "arcface" (hidden setting `faces.recognizer`, local file only).
+    pub recognizer: String,
     /// The YuNet and SFace pack is installed.
     pub installed: bool,
     /// The user has supplied the eye-state model (optional, never downloaded).
@@ -57,6 +59,7 @@ pub fn faces_status(ai: State<'_, AiState>) -> Result<FacesStatus, String> {
     let offline_folders = if ai.faces.enabled() { offline_count(&ai.faces_runtime) } else { 0 };
     Ok(FacesStatus {
         enabled: ai.faces.enabled(),
+        recognizer: if ai.faces.recognizer(&ai.faces_runtime) == fm::Recognizer::Arcface { "arcface" } else { "sface" }.to_string(),
         installed: ai.faces.installed(),
         eyes_available: ai.faces.eyes().is_some(),
         totals: ai.faces_store.totals()?,
@@ -270,6 +273,28 @@ pub fn faces_unignore(app: AppHandle, ai: State<'_, AiState>, faces: Vec<i64>) -
 #[specta::specta]
 pub fn faces_failed_photos(ai: State<'_, AiState>, limit: u32) -> Result<Vec<String>, String> {
     ai.faces_store.failed_photos(limit.clamp(1, 1000))
+}
+
+/// Pairs the page may offer to join: groups that look like one person, a group that looks like a named
+/// person (using all their confirmed faces), two people that look alike. Strongest first; only a suggestion.
+#[tauri::command]
+#[specta::specta]
+pub async fn faces_merge_suggestions(ai: State<'_, AiState>) -> Result<Vec<crate::faces_cluster::MergeSuggestion>, String> {
+    let r = ai.faces.recognizer(&ai.faces_runtime);
+    let (store, th) = (ai.faces_store.clone(), fm::thresholds(r));
+    tauri::async_runtime::spawn_blocking(move || {
+        let model = fm::model_version(r);
+        let mut groups = store.group_members(model)?;
+        // the matrix is over the groups: the biggest 1500 are compared
+        groups.sort_by_key(|g| std::cmp::Reverse(g.1.len()));
+        groups.truncate(1500);
+        let people = store.people_members(model)?;
+        let g: Vec<(i64, Vec<&[f32]>)> = groups.iter().map(|(i, m)| (*i, m.iter().map(Vec::as_slice).collect())).collect();
+        let p: Vec<(i64, Vec<&[f32]>)> = people.iter().map(|(i, m)| (*i, m.iter().map(Vec::as_slice).collect())).collect();
+        Ok(crate::faces_cluster::merge_suggestions(&g, &p, &th, 200))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Reverses the latest change; returns what it was.
