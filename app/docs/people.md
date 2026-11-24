@@ -125,8 +125,8 @@ people: each becomes a chip, and the chip's button flips it between *include* an
 them. **No people** keeps photos without faces, **Unnamed faces** photos with a face still to name. The
 row counts as one filter, is cleared by Clear all, and is kept in saved filters.
 
-Preferences > Faces ([Preferences](preferences.md#faces)) has the same switch and deletion, the model, and the numbers the face
-store holds.
+Preferences > Faces ([Preferences](preferences.md#faces)) has the same switch and deletion, how strictly faces are grouped
+as one person, how thoroughly photos are scanned, Reprocess all faces, the model, and the numbers the face store holds.
 
 ## Turning off and deleting
 

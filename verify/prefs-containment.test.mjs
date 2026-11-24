@@ -50,6 +50,7 @@ for (const [label, size, extra] of [['1100x720', '1100,720', ''], ['800x600 (ico
     assert.equal(r.ok, true);
     // the Faces page was exercised: its numbers changed with nothing moving, Delete asked first and said what goes
     assert.ok(r.faces && r.faces.deleted === 0, 'the Faces page was not tested');
+    assert.deepEqual(r.faces.calls, ['strictness:strict', 'detect:1600', 'reprocess']);
   });
 }
 

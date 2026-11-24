@@ -851,13 +851,19 @@ Preferences > Faces (between Culling and Plugins) holds everything about [People
   one is installed locally, and there is no switch for it), whether closed-eye detection is available (it needs an
   optional model file that is not included while its licence is pending), and how many network folders are left out of
   the scan. **Open People** goes to the view.
+- **Recognition**:
+  - **Same person strictness** (Looser groups, Balanced, Stricter groups): looser puts more faces under one person (and may mix
+    people), stricter keeps people apart (and may split one person). It applies at once and nothing is re-scanned.
+  - **Scan thoroughness** (Balanced, the default, or Thorough): Thorough also looks for small faces, as in group photos, and is
+    roughly four times slower. Changing it says that your photos are re-scanned in the background, with the names and groups you
+    made kept, and waits for you to confirm.
+  - **Reprocess all faces...** re-scans every photo with the current settings after a confirmation: names are kept where the same
+    face is found again, and a face the scan no longer finds loses its name. The scan strip in People shows the progress.
 - **Model**: the Faces model's own card, with the same download (and its consent), check and remove states as under AI models.
 - **Data**: photos scanned, faces, people, groups to review, photos that could not be read (**Show** lists them), the size of
   the face database and of the face picture cache, refreshed while the page is open. **Delete all face data...** says how
   many people and faces and how much space, then removes every person, face, group and face picture, turns Faces off, and
   leaves your photos alone.
-
-The scan speed and how strictly two faces count as one person are fixed for now.
 
 ## Plugins
 

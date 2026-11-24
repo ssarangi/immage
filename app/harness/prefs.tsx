@@ -21,7 +21,7 @@ import { BUILTIN_THEMES, THEME_TOKENS } from "../src/themes";
 import { PreferencesDialog, type PrefsTab } from "../src/Preferences";
 import { runPrefsTest } from "./prefsTest";
 import { peopleApi, resetPeople, setPeopleApi, setPeople, type PeopleApi } from "../src/peopleStore";
-import type { FacesStats, FacesStatus } from "../src/bindings";
+import type { FacesSettings, FacesStats, FacesStatus } from "../src/bindings";
 
 
 
@@ -56,7 +56,13 @@ const status = (): FacesStatus => ({
   totals: { photos: stat().store.photos, faces: stat().store.faces, people: stat().store.people, unreviewed: 40, groups: 37, suggestions: 3, unknown: 1820, ignored_faces: 3, ignored_people: 1, failed_photos: 34 },
   scanned: 0, faces_found: 0, pending: 0, folders_waiting: 0, offline_folders: 0, skipped_network_sources: 2, infer_ms: null, health: "ok", failure: null, undo: null,
 });
+let cfg: FacesSettings = { enabled: true, scope: "folder", strictness: "balanced", recognizer: "sface", detect_size: 1024 };
+const calls: string[] = [];
 const fakes: Partial<PeopleApi> = {
+  settings: () => Promise.resolve({ ...cfg }),
+  setStrictness: (level) => { calls.push(`strictness:${level}`); cfg = { ...cfg, strictness: level }; return Promise.resolve({ ...cfg }); },
+  setDetectSize: (size) => { calls.push(`detect:${size}`); cfg = { ...cfg, detect_size: size }; return Promise.resolve({ ...cfg }); },
+  reprocess: () => { calls.push("reprocess"); return Promise.resolve(4100); },
   status: () => Promise.resolve(status()), paused: () => Promise.resolve(false), stats: () => Promise.resolve(stat()), people: () => Promise.resolve([]), groups: () => Promise.resolve([]),
   list: () => Promise.resolve([]), mergeSuggestions: () => Promise.resolve([]), failedPhotos: (n) => Promise.resolve(Array.from({ length: Math.min(n, 34) }, (_, i) => `/synthetic/broken_${i}.jpg`)),
   deleteAll: () => { (window as unknown as { __faces: { deleted: number } }).__faces.deleted++; return Promise.resolve(); }, setEnabled: () => Promise.resolve(),
@@ -64,7 +70,7 @@ const fakes: Partial<PeopleApi> = {
 };
 if (q.get("faces") === "1") {
   setPeopleApi(fakes as PeopleApi);
-  (window as unknown as { __faces: unknown }).__faces = { bump: () => { bumped++; setPeople({ tick: Math.random() }); }, deleted: 0, api: peopleApi };
+  (window as unknown as { __faces: unknown }).__faces = { bump: () => { bumped++; setPeople({ tick: Math.random() }); }, deleted: 0, calls, api: peopleApi };
   resetPeople({ on: false });
   void fakes.status!().then((s) => setPeople({ status: s, loaded: true }));
 }

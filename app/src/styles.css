@@ -3692,3 +3692,6 @@ html[data-scheme="light"] .strip-slot.grid::before { background: color-mix(in sr
 .faces-stats dt { color: var(--text-2); }
 .faces-stats dd { min-width: 12ch; text-align: end; font-variant-numeric: tabular-nums; }
 .faces-show { margin-inline-start: 10px; }
+
+.faces-confirm { display: flex; align-items: center; gap: 8px; height: 56px; overflow: hidden; padding: 0 2px 6px; font-size: var(--fs-small); color: var(--text-2); }
+.faces-confirm span { flex: 1 1 auto; min-width: 0; }

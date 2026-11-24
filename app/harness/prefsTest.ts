@@ -97,7 +97,7 @@ export async function runPrefsTest() {
   const dialog = q(".modal.prefs");
   check(dialog.getAttribute("role") === "dialog" && dialog.getAttribute("aria-modal") === "true" && !!document.getElementById(dialog.getAttribute("aria-labelledby") ?? ""), "dialog roles");
   // Faces: the numbers change and nothing moves; Delete asks first, and says what goes
-  const faces = (window as unknown as { __faces?: { bump: () => void; deleted: number } }).__faces;
+  const faces = (window as unknown as { __faces?: { bump: () => void; deleted: number; calls: string[] } }).__faces;
   let facesReport: Record<string, unknown> | null = null;
   if (faces) {
     document.getElementById("prefs-tab-faces")!.click(); await wait(300);
@@ -120,7 +120,33 @@ export async function runPrefsTest() {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); await wait(150);
     check(!document.querySelector(".modal.pack-dialog") && faces.deleted === 0, "faces: Escape did not cancel the delete");
     check(same(rect(well), (base as Record<string, R>).well) && same(rect(head), base.head), "faces: the dialog moved the well or the header");
-    facesReport = { values: vals2, deleted: faces.deleted };
+    // the recognition settings: a change shows at once, the thoroughness change asks first, Reprocess asks first; nothing moves
+    const btn = (label: string) => [...box.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === label);
+    const lay = () => [...box.querySelectorAll(".pref-card, .pref-row, .faces-confirm, .faces-line")].map((e) => JSON.stringify(rect(e)));
+    const l0 = lay();
+    btn("Stricter groups")?.click(); await wait(200);
+    check(faces.calls.includes("strictness:strict") && btn("Stricter groups")?.getAttribute("aria-pressed") === "true", "faces: strictness did not apply");
+    check(btn("Balanced") !== undefined, "faces: no Balanced choice");
+    btn("Thorough")?.click(); await wait(150);
+    check(!!box.querySelector(".faces-confirm button") && /re-scans your photos/.test(box.querySelector(".faces-confirm")?.textContent ?? ""), "faces: no re-scan note for Thorough");
+    check(!faces.calls.some((c) => c.startsWith("detect:")), "faces: thoroughness applied without the confirmation");
+    check(JSON.stringify(lay()) === JSON.stringify(l0), "faces: the layout moved when the note came up");
+    [...box.querySelectorAll<HTMLButtonElement>(".faces-confirm button")].find((b) => b.textContent === "Cancel")?.click(); await wait(120);
+    check(!faces.calls.some((c) => c.startsWith("detect:")), "faces: Cancel applied the change");
+    check(JSON.stringify(lay()) === JSON.stringify(l0), "faces: the layout moved when the note went");
+    btn("Thorough")?.click(); await wait(120);
+    [...box.querySelectorAll<HTMLButtonElement>(".faces-confirm button")].find((b) => b.textContent === "Change")?.click(); await wait(200);
+    check(faces.calls.includes("detect:1600"), "faces: Change did not set 1600");
+    check(!faces.calls.includes("detect:2048"), "faces: 2048 was offered");
+    const rp = btn("Reprocess all faces...");
+    rp?.click(); await wait(200);
+    check(!!document.querySelector(".modal.pack-dialog") && /Names you gave are kept/.test(document.querySelector(".modal.pack-dialog")?.textContent ?? ""), "faces: no reprocess dialog");
+    check(!faces.calls.includes("reprocess"), "faces: reprocess ran before the confirmation");
+    [...document.querySelectorAll<HTMLButtonElement>(".modal.pack-dialog button")].find((b) => b.textContent === "Reprocess")?.click(); await wait(300);
+    check(faces.calls.includes("reprocess"), "faces: Reprocess did not run");
+    check(/photos will be scanned again/.test(box.textContent ?? ""), "faces: no reprocess note");
+    check(same(rect(well), (base as Record<string, R>).well) && same(rect(head), base.head), "faces: the settings moved the well or the header");
+    facesReport = { values: vals2, deleted: faces.deleted, calls: faces.calls };
   }
   return { ok: fail.length === 0, fail, pages, moved: fail.filter((f) => /moved/.test(f)).length, faces: facesReport };
 }

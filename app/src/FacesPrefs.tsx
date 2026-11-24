@@ -7,7 +7,7 @@
 // will have when its numbers arrive, so a refresh of the numbers moves nothing.
 import "./people.css";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { FacesStats } from "./bindings";
+import type { FacesSettings, FacesStats } from "./bindings";
 import { commands } from "./commands";
 import { packView, uiFmt } from "./aiPacks";
 import { usePacks } from "./aiPacks";
@@ -18,13 +18,13 @@ import { Modal } from "./PeopleView";
 import { PrefCard, PrefRow, PrefSwitch } from "./PrefsUI";
 import { settings } from "./settings";
 import { scanNotes } from "./peopleModel";
-import { CONSENT_KEY, deleteAllFaceData, failedPhotos, peopleApi, resumePeople, turnOff, usePeople } from "./peopleStore";
+import { CONSENT_KEY, deleteAllFaceData, failedPhotos, peopleApi, refreshStatus, resumePeople, turnOff, usePeople } from "./peopleStore";
 
 const MB = 1e6;
 const size = (bytes: number) => bytes >= 1e9 ? `${formatNumber(bytes / 1e9, { maximumFractionDigits: 1, minimumFractionDigits: 1 })} GB`
   : bytes >= MB ? `${formatNumber(Math.round(bytes / MB))} MB` : `${formatNumber(Math.round(bytes / 1000))} KB`;
 
-type Dialog = { kind: "resume" } | { kind: "delete" } | { kind: "failed"; paths: string[] } | null;
+type Dialog = { kind: "resume" } | { kind: "delete" } | { kind: "reprocess" } | { kind: "failed"; paths: string[] } | null;
 
 export function FacesPrefs({ onOpenPeople }: { onOpenPeople?: () => void }) {
   const s = usePeople();
@@ -37,19 +37,33 @@ export function FacesPrefs({ onOpenPeople }: { onOpenPeople?: () => void }) {
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  // what the recognition settings are now (re-read after each change), a thoroughness change waiting for its confirmation, and the note after a reprocess
+  const [cfg, setCfg] = useState<FacesSettings | null>(null);
+  const [pendingSize, setPendingSize] = useState<number | null>(null);
+  const [note, setNote] = useState("");
   const alive = useRef(true);
 
   // the numbers: read when the page opens, every few seconds while it is open, and when the faces change
   const read = useCallback(() => {
     peopleApi().stats().then((x) => { if (alive.current) setStats(x); }, () => {});
   }, []);
+  const readCfg = useCallback(() => { peopleApi().settings().then((x) => { if (alive.current) setCfg(x); }, () => {}); }, []);
   useEffect(() => {
     alive.current = true;
     read();
+    readCfg();
     const timer = setInterval(read, 5000);
     return () => { alive.current = false; clearInterval(timer); };
-  }, [read, s.tick]);
+  }, [read, readCfg, s.tick]);
 
+  const strict = cfg?.strictness ?? "balanced", detail = cfg?.detect_size === 1600 ? 1600 : 1024;
+  const setStrict = (level: string) => { if (level !== strict) void peopleApi().setStrictness(level).then((x) => setCfg(x), () => readCfg()); };
+  const askDetail = (size: number) => setPendingSize(size === detail ? null : size);
+  const applyDetail = () => {
+    const size = pendingSize;
+    setPendingSize(null);
+    if (size !== null) void peopleApi().setDetectSize(size).then((x) => setCfg(x), () => readCfg());
+  };
   const run = async (job: () => Promise<unknown>) => {
     setBusy(true);
     try { await job(); } catch { /* the pack's own line shows the failure */ } finally { setBusy(false); void refresh(); read(); }
@@ -96,6 +110,34 @@ export function FacesPrefs({ onOpenPeople }: { onOpenPeople?: () => void }) {
         {onOpenPeople && <div className="faces-act"><button type="button" className="btn small" onClick={onOpenPeople}>{t("prefs.faces.open")}</button></div>}
       </PrefCard>
 
+      <PrefCard title={t("prefs.faces.recognition")} card="faces/recognition">
+        <PrefRow id="Same person strictness" label={t("prefs.faces.strictness")} hint={t("prefs.faces.strictnessHint")}>
+          <div className="segmented small" role="group" aria-label={t("prefs.faces.strictness")}>
+            {(["loose", "balanced", "strict"] as const).map((v) => (
+              <button key={v} className={strict === v ? "active" : ""} aria-pressed={strict === v} disabled={!cfg} onClick={() => setStrict(v)}>{t(`prefs.faces.strict.${v}`)}</button>
+            ))}
+          </div>
+        </PrefRow>
+        <PrefRow id="Scan thoroughness" label={t("prefs.faces.detail")} hint={t("prefs.faces.detailHint")}>
+          <div className="segmented small" role="group" aria-label={t("prefs.faces.detail")}>
+            {([1024, 1600] as const).map((v) => (
+              <button key={v} className={detail === v ? "active" : ""} aria-pressed={detail === v} disabled={!cfg} onClick={() => askDetail(v)}>{t(v === 1024 ? "prefs.faces.detail.balanced" : "prefs.faces.detail.thorough")}</button>
+            ))}
+          </div>
+        </PrefRow>
+        <div className="faces-confirm" role="status">
+          {pendingSize !== null && <>
+            <span>{t("prefs.faces.rescanNote")}</span>
+            <button type="button" className="btn small primary" onClick={applyDetail}>{t("prefs.faces.change")}</button>
+            <button type="button" className="btn small" onClick={() => setPendingSize(null)}>{t("aimodels.act.cancel")}</button>
+          </>}
+        </div>
+        <p className="faces-line" role="status">{note}</p>
+        <div className="faces-act">
+          <button type="button" className="btn small" disabled={busy || !enabled || !installed} onClick={() => setDialog({ kind: "reprocess" })}>{t("prefs.faces.reprocess")}</button>
+        </div>
+      </PrefCard>
+
       <PrefCard title={t("prefs.faces.model")} card="faces/model">
         {pack && view ? (
           <PackCard info={pack} view={view} name={t("aimodels.faces.name")} does={t("aimodels.faces.does")} photos={t("aimodels.faces.photos")} card="faces/pack"
@@ -129,6 +171,20 @@ export function FacesPrefs({ onOpenPeople }: { onOpenPeople?: () => void }) {
                foot={<><button type="button" className="btn" data-first onClick={() => setDialog(null)}>{t("aimodels.act.cancel")}</button>
                  <button type="button" className="btn primary" onClick={() => { setDialog(null); void run(() => resumePeople()); }}>{t("prefs.faces.resume")}</button></>}>
           <p className="pack-lead">{t("prefs.faces.resumeBody")}</p>
+        </Modal>
+      )}
+      {dialog?.kind === "reprocess" && (
+        <Modal title={t("prefs.faces.reprocessTitle")} onClose={() => setDialog(null)}
+               foot={<><button type="button" className="btn" data-first onClick={() => setDialog(null)}>{t("aimodels.act.cancel")}</button>
+                 <button type="button" className="btn primary" onClick={() => {
+                   setDialog(null);
+                   void run(async () => {
+                     const n = await peopleApi().reprocess();
+                     setNote(t("prefs.faces.reprocessing", { n, count: formatNumber(n) }));
+                     await refreshStatus();
+                   });
+                 }}>{t("prefs.faces.reprocessGo")}</button></>}>
+          <p className="pack-lead">{t("prefs.faces.reprocessBody")}</p>
         </Modal>
       )}
       {dialog?.kind === "delete" && (

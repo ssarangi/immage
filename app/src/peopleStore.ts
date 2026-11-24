@@ -8,7 +8,7 @@
 // backend only through `PeopleApi`, so the harness runs the real view on fixtures.
 import { useSyncExternalStore } from "react";
 import { commands } from "./commands";
-import type { ClusterRow, FaceFilter, FaceRow, FacesStats, FacesStatus, MergeSuggestion, PersonRow, Side } from "./bindings";
+import type { ClusterRow, FaceFilter, FaceRow, FacesSettings, FacesStats, FacesStatus, MergeSuggestion, PersonRow, Side } from "./bindings";
 import { settings } from "./settings";
 import { fromBackend } from "./faceOverlayModel";
 import { dropFaceSets, setFaceSource, type FaceFilter as PeopleQuery } from "./facesFilter";
@@ -47,6 +47,10 @@ export type PeopleApi = {
   failedPhotos(limit: number): Promise<string[]>;
   mergeSuggestions(): Promise<MergeSuggestion[]>;
   stats(): Promise<FacesStats>;
+  settings(): Promise<FacesSettings>;
+  setStrictness(level: string): Promise<FacesSettings>;
+  setDetectSize(size: number): Promise<FacesSettings>;
+  reprocess(): Promise<number>;
   mergeGroups(from: number, into: number): Promise<void>;
   notSame(a: Side, b: Side): Promise<void>;
   undo(): Promise<string | null>;
@@ -82,6 +86,10 @@ const real: PeopleApi = {
   failedPhotos: (limit) => commands.facesFailedPhotos(limit),
   mergeSuggestions: () => commands.facesMergeSuggestions(),
   stats: () => commands.facesStats(),
+  settings: () => commands.facesSettings(),
+  setStrictness: (level) => commands.facesSetStrictness(level),
+  setDetectSize: (size) => commands.facesSetDetectSize(size),
+  reprocess: () => commands.facesReprocess(),
   mergeGroups: async (from, into) => { await commands.facesMergeGroups(from, into); },
   notSame: async (a, b) => { await commands.facesNotSame(a, b); },
   undo: () => commands.facesUndo(),
