@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { commands, type BackupComponent as Component, type BackupSummary as Summary } from "./commands";
 import { settings } from "./settings";
+import { COMPONENT_KEY, initialChoice } from "./backupChoice";
 import { formatDate, formatNumber, t } from "./i18n";
 
 export type BackupMode = "create" | "restore";
@@ -16,8 +17,7 @@ const size = (n: number) => n < 1024 ? `${n} B` : n < 1 << 20 ? `${(n / 1024).to
 const detail = (c: { bytes: number; files: number; id: string }) =>
   c.id === "looks" ? t("dialogs.backup.looksDetail", { count: formatNumber(c.files), size: size(c.bytes) }) : size(c.bytes);
 const componentLabel = (id: string, fallback: string) => {
-  const key: Record<string, string> = { settings: "settings", presets: "presets", export_presets: "exportPresets", looks: "looks", plugins: "plugins", darktable: "darktable" };
-  return key[id] ? t(`dialogs.backup.component.${key[id]}`) : fallback;
+  return COMPONENT_KEY[id] ? t(`dialogs.backup.component.${COMPONENT_KEY[id]}`) : fallback;
 };
 
 export function BackupDialog({ mode, onClose }: { mode: BackupMode; onClose: () => void }) {
@@ -29,7 +29,7 @@ export function BackupDialog({ mode, onClose }: { mode: BackupMode; onClose: () 
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
 
-  const pick = (list: Omit<Component, "available">[]) => { setItems(list); setChosen(new Set(list.map((c) => c.id))); };
+  const pick = (list: Omit<Component, "available">[]) => { setItems(list); setChosen(initialChoice(list.map((c) => c.id))); };
 
   useEffect(() => {
     if (mode !== "create") return;
@@ -92,10 +92,13 @@ export function BackupDialog({ mode, onClose }: { mode: BackupMode; onClose: () 
         {busy && !items && mode === "create" && <p role="status">{t("dialogs.common.looking")}</p>}
         {nothing && mode === "create" && <p>{t("dialogs.backup.nothingToBackUp")}</p>}
         {items && items.length > 0 && <div role="group" aria-label={t("dialogs.backup.items")}>
-          {items.map((c) => <label key={c.id} className="row check">
-            <input type="checkbox" checked={chosen.has(c.id)} disabled={busy || !!done} onChange={() => toggle(c.id)} />
-            <span>{componentLabel(c.id, c.label)}</span><span className="note-plain" style={{ marginLeft: "auto" }}>{detail(c)}</span>
-          </label>)}
+          {items.map((c) => <div key={c.id}>
+            <label className="row check">
+              <input type="checkbox" checked={chosen.has(c.id)} disabled={busy || !!done} onChange={() => toggle(c.id)} />
+              <span>{componentLabel(c.id, c.label)}</span><span className="note-plain" style={{ marginLeft: "auto" }}>{detail(c)}</span>
+            </label>
+            {c.id === "faces" && <p className="note-plain warn backup-faces-note">{t("dialogs.backup.facesNote")}{mode === "restore" ? ` ${t("dialogs.backup.facesRestoreNote")}` : ""}</p>}
+          </div>)}
         </div>}
         {mode === "restore" && summary && !done && <p className="note-plain warn">{t("dialogs.backup.restoreWarning")}</p>}
         {error && <p role="alert">{error}</p>}

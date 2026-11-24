@@ -52,6 +52,9 @@ Improvements
   count photos once, however many files a shot has.
 - **Statistics > People:** with People on, Statistics has a People section listing the named people
   with the most photos (a bar each); clicking a person opens their page.
+- **Backup of People:** **People & face data** is an optional item in Back Up and Restore. It is never
+  ticked for you, says that it holds names and biometric face data, and a restore checks the file and keeps
+  a copy of what it replaced.
 - **Person page:** double-click a person in People to open their page: their photos in the
   app's grid (with **Open in Grid**, which sets Find's People filter), and their faces to
   confirm, reject (**Not Maya**, **Not a face**) or choose as cover.

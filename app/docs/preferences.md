@@ -336,6 +336,11 @@ parts that exist are offered:
 - **Edit In plugins**: your plugin list.
 - **Keywords & darktable data**: keywords, saved Advanced module presets,
   and other darktable library data.
+- **People & face data**: the names you gave people and the face data (biometric), copied consistently while Immage runs. It is
+  **never ticked for you**, in Back Up or in Restore, and only appears when there is face data. A backup file that holds it
+  needs the same care as your photos. Restoring it checks the file first (it must be a face database this Immage understands,
+  not a newer one), and keeps what it replaced in the backups folder under `faces`. The face pictures are not included; they
+  are made again as needed.
 
 The file is named **Immage Backup YYYY-MM-DD.zip** by default. Photos and their
 XMP sidecars are never included: they are your files, so back them up with your
