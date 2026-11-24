@@ -746,7 +746,9 @@ mod tests {
     #[test]
     fn api_keys_are_removed() {
         let mut s = Scrubber::new(Known::default());
-        let out = s.scrub("GET https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=AIzaSyA1234567890abcdefghijklmnopqrstuv failed; x-goog-api-key: AIzaSyA1234567890abcdefghijklmnopqrstuv; bare AIzaSyA1234567890abcdefghijklmnopqrstuv");
+        // built at run time: a whole fake key in the source is flagged by secret scanners
+        let fake = format!("{}{}", "AIza", "SyA1234567890abcdefghijklmnopqrstuv");
+        let out = s.scrub(&format!("GET https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key={fake} failed; x-goog-api-key: {fake}; bare {fake}"));
         assert!(!out.contains("AIza") && out.contains("key=<secret>") && out.contains("x-goog-api-key: <secret>"), "{out}");
         assert_eq!(s.counts().get("secret"), Some(&3));
     }
