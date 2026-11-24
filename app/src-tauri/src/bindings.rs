@@ -83,6 +83,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::faces_cmds::faces_set_strictness,
         crate::faces_cmds::faces_reprocess,
         crate::faces_cmds::faces_set_detect_size,
+        crate::faces_cmds::faces_set_recognizer,
         crate::faces_cmds::faces_people,
         crate::faces_cmds::faces_groups,
         crate::faces_cmds::faces_list,

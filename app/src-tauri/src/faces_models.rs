@@ -215,6 +215,8 @@ pub struct Models {
     prepared: Mutex<Option<Stamp>>,
     eyes_ok: Mutex<Option<(u64, std::time::SystemTime, bool)>>,
     arcface_ok: Mutex<Option<(u64, std::time::SystemTime, bool)>>,
+    /// The hash the ArcFace file must have (a test can name another, so it need not hold the real 174 MB model).
+    arcface_digest: &'static str,
 }
 
 fn stamps(root: &Path) -> Result<Stamp, String> {
@@ -241,6 +243,7 @@ impl Models {
             prepared: Mutex::new(None),
             eyes_ok: Mutex::new(None),
             arcface_ok: Mutex::new(None),
+            arcface_digest: ARCFACE_SHA256,
         }
     }
     pub fn store(&self) -> Arc<PackStore> {
@@ -297,13 +300,34 @@ impl Models {
         let stamp = (m.len(), m.modified().ok()?);
         let mut ok = self.arcface_ok.lock().unwrap();
         if ok.as_ref().is_none_or(|o| (o.0, o.1) != stamp) {
-            let good = sha256_file(&file).ok().as_deref() == Some(ARCFACE_SHA256);
+            let good = sha256_file(&file).ok().as_deref() == Some(self.arcface_digest);
             if good && write_manifests(&self.arcface_root, &[("arcface", ARCFACE_ID)]).is_err() {
                 return None;
             }
             *ok = Some((stamp.0, stamp.1, good));
         }
         ok.as_ref().is_some_and(|o| o.2).then(|| self.arcface_root.clone())
+    }
+    /// Chooses the embedding network (`faces.recognizer`). ArcFace is refused with a clear reason unless its file is there
+    /// with the pinned hash. Photos scanned by the other network are stale from then on (the stored model version names
+    /// the network), so the service re-embeds them and keeps who each face was named as (put_scan matches by overlap).
+    pub fn choose_recognizer(&self, runtime: &Path, settings: &crate::settings::Settings, kind: &str) -> Result<Recognizer, String> {
+        let r = match kind {
+            "sface" => Recognizer::Sface,
+            "arcface" => Recognizer::Arcface,
+            _ => return Err("The recognizer is sface or arcface".into()),
+        };
+        if r == Recognizer::Arcface && self.arcface().is_none() {
+            let file = self.arcface_root.join("models").join(ARCFACE_FILE);
+            return Err(if file.is_file() {
+                format!("{} is not the expected ArcFace model (its SHA-256 differs from the pinned one)", file.display())
+            } else {
+                format!("ArcFace is not installed: put {ARCFACE_FILE} in {}", self.arcface_root.join("models").display())
+            });
+        }
+        settings.set("faces.recognizer", kind)?;
+        debug_assert_eq!(self.recognizer(runtime), r);
+        Ok(r)
     }
     /// The recognizer to use now: the setting, but ArcFace only while its file is there.
     pub fn recognizer(&self, runtime: &Path) -> Recognizer {
@@ -436,6 +460,36 @@ pub fn detector_outputs(outputs: &[Tensor]) -> Result<crate::faces_detect::DetOu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn switching_the_recognizer_needs_the_file_and_changes_the_stored_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = dir.path().join("rt");
+        std::fs::create_dir_all(&runtime).unwrap();
+        let settings = crate::settings::Settings::load(&runtime);
+        let mut models = Models::new(runtime.join("faces-models"), runtime.join("faces-eyes"));
+        assert!(models.choose_recognizer(&runtime, &settings, "other").is_err());
+        let e = models.choose_recognizer(&runtime, &settings, "arcface").unwrap_err();
+        assert!(e.contains("not installed") && e.contains(ARCFACE_FILE), "{e}");
+        assert_eq!(models.recognizer(&runtime), Recognizer::Sface, "a refused switch changes nothing");
+        // a file with another hash
+        std::fs::create_dir_all(runtime.join("faces-arcface/models")).unwrap();
+        std::fs::write(runtime.join("faces-arcface/models").join(ARCFACE_FILE), b"a stand-in model").unwrap();
+        assert!(models.choose_recognizer(&runtime, &settings, "arcface").unwrap_err().contains("SHA-256"));
+        // the right hash (the test names the stand-in's)
+        let real = sha256_file(&runtime.join("faces-arcface/models").join(ARCFACE_FILE)).unwrap();
+        models.arcface_digest = Box::leak(real.into_boxed_str());
+        *models.arcface_ok.lock().unwrap() = None;
+        let before = version_for(&runtime, models.recognizer(&runtime));
+        assert_eq!(models.choose_recognizer(&runtime, &settings, "arcface"), Ok(Recognizer::Arcface));
+        assert_eq!(models.recognizer(&runtime), Recognizer::Arcface);
+        let after = version_for(&runtime, models.recognizer(&runtime));
+        assert_ne!(before, after, "photos made by the other network are stale");
+        assert!(runtime.join("faces-arcface/engine/arcface/config.json").is_file(), "the engine can find the model");
+        assert_eq!(thresholds_for(Recognizer::Arcface, Strictness::Balanced), Thresholds { suggest: 0.40, cluster: 0.35, attach: 0.30, merge: 0.55 });
+        assert_eq!(models.choose_recognizer(&runtime, &settings, "sface"), Ok(Recognizer::Sface));
+        assert_eq!(version_for(&runtime, models.recognizer(&runtime)), before);
+    }
 
     #[test]
     fn detection_size_is_part_of_the_stored_version() {

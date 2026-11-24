@@ -49,6 +49,8 @@ Counts of photos are of shots (`shot_key`: folder without a trailing Processed, 
 `faces.strictness` shifts the grouping thresholds by 0.04 either way, `faces.detect_size` (1024, 1600, 2048; larger also
 looks at 640 px tiles) is part of the stored model version. `cargo test opt_in_detect_sizes -- --ignored` measures faces found per size.
 
+`faces_set_recognizer` switches the embedding network (ArcFace only with its local file); see the design note.
+
 ## Network shares
 Faces never reads, stats or lists a path on a network share (judged from the mount table, `volumes::MountSnapshot`)
 unless the user allowed that source (`faces.network_sources`, `faces_network_source`) or asked for that folder with

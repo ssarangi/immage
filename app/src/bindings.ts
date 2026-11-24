@@ -162,6 +162,11 @@ export const commands = {
 	facesReprocess: () => __TAURI_INVOKE<number>("faces_reprocess"),
 	/**  Sets the detection size. Photos scanned at another size are scanned again (naming is kept), so the page confirms first. */
 	facesSetDetectSize: (size: number) => __TAURI_INVOKE<FacesSettings>("faces_set_detect_size", { size }),
+	/**
+	 *  Chooses the embedding network: "sface" (default) or "arcface" (needs the local file, refused with the reason otherwise).
+	 *  Photos made by the other network are re-embedded by the running scan (names kept, as with `faces_reprocess`).
+	 */
+	facesSetRecognizer: (kind: string) => __TAURI_INVOKE<FacesSettings>("faces_set_recognizer", { kind }),
 	facesPeople: (includeRemoved: boolean) => __TAURI_INVOKE<PersonRow[]>("faces_people", { includeRemoved }),
 	facesGroups: () => __TAURI_INVOKE<ClusterRow[]>("faces_groups"),
 	facesList: (filter: FaceFilter, offset: number, limit: number) => __TAURI_INVOKE<FaceRow[]>("faces_list", { filter, offset, limit }),
@@ -1296,6 +1301,8 @@ export type FacesSettings = {
 	recognizer: string,
 	/**  The long edge photos are decoded at for detection: 1024, 1600 or 2048 (larger also looks at tiles for small faces). */
 	detect_size: number,
+	/**  The local ArcFace file is in place with the right hash (the only thing that lets it be chosen). */
+	arcface_available: boolean,
 };
 
 /**  What Preferences > Faces shows: counts, sizes on disk and the model in use. Read only. */

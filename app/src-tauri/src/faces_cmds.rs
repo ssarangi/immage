@@ -171,6 +171,8 @@ pub struct FacesSettings {
     pub recognizer: String,
     /// The long edge photos are decoded at for detection: 1024, 1600 or 2048 (larger also looks at tiles for small faces).
     pub detect_size: u32,
+    /// The local ArcFace file is in place with the right hash (the only thing that lets it be chosen).
+    pub arcface_available: bool,
 }
 
 #[tauri::command]
@@ -182,7 +184,19 @@ pub fn faces_settings(ai: State<'_, AiState>) -> FacesSettings {
         strictness: fm::wanted_strictness(&ai.faces_runtime).name().to_string(),
         recognizer: if ai.faces.recognizer(&ai.faces_runtime) == fm::Recognizer::Arcface { "arcface" } else { "sface" }.to_string(),
         detect_size: fm::wanted_detect_size(&ai.faces_runtime),
+        arcface_available: ai.faces.arcface().is_some(),
     }
+}
+
+/// Chooses the embedding network: "sface" (default) or "arcface" (needs the local file, refused with the reason otherwise).
+/// Photos made by the other network are re-embedded by the running scan (names kept, as with `faces_reprocess`).
+#[tauri::command]
+#[specta::specta]
+pub fn faces_set_recognizer(app: AppHandle, ai: State<'_, AiState>, settings: State<'_, Settings>, kind: String) -> Result<FacesSettings, String> {
+    ai.faces.choose_recognizer(&ai.faces_runtime, &settings, &kind)?;
+    ai.faces_service.retry();
+    changed(&app, &ai);
+    Ok(faces_settings(ai))
 }
 
 /// Sets the detection size. Photos scanned at another size are scanned again (naming is kept), so the page confirms first.
