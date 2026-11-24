@@ -3815,7 +3815,7 @@
   "library.find.faces.together": "Toutes ensemble",
   "library.find.faces.noPeopleRow": "Aucune personne",
   "library.find.faces.unnamed": "Visages sans nom",
-  "library.find.faces.unavailable": "Ces deux options demandent une mise à jour des données de visage : pas encore disponibles.",
+  "library.find.faces.unavailable": "Les visages n’ont pas pu être lus pour ce filtre.",
   "library.find.faces.clear": "Effacer les personnes",
   "people.suggest.notSame": "Pas la même",
   "people.act.mergeGroups": "Fusionner les groupes",

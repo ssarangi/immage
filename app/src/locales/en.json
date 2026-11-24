@@ -3815,7 +3815,7 @@
   "library.find.faces.together": "All together",
   "library.find.faces.noPeopleRow": "No people",
   "library.find.faces.unnamed": "Unnamed faces",
-  "library.find.faces.unavailable": "These two need an update to the face data: not available yet.",
+  "library.find.faces.unavailable": "The faces could not be read for this filter.",
   "library.find.faces.clear": "Clear people",
   "people.suggest.notSame": "Not the same",
   "people.act.mergeGroups": "Merge groups",

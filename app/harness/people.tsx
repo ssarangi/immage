@@ -143,8 +143,21 @@ const fake: PeopleApi = {
     face: f.id, x: 0.1 + 0.22 * i, y: 0.2 + (f.id % 5) * 0.05, w: 0.16, h: 0.28, person: f.person ?? f.maybe, name: db.people.find((p) => p.id === (f.person ?? f.maybe))?.name ?? null,
     state: f.person !== null ? "confirmed" as const : f.maybe !== null ? "suggested" as const : "unassigned" as const, confidence: 0.9,
   }))),
-  photoSets: () => wait({ withFaces: db.faces.filter((f) => f.state !== "rejected").map((f) => f.path),
-                          unnamed: db.faces.filter((f) => f.state === "unreviewed" && f.person === null).map((f) => f.path) }),
+  filterPaths: (f) => {
+    const alive = db.faces.filter((x) => x.state !== "rejected");
+    const of = (id: number) => new Set(alive.filter((x) => x.person === id).map((x) => x.path));
+    const deny = new Set<string>();
+    for (const id of f.exclude) of(id).forEach((p) => deny.add(p));
+    if (f.none) alive.forEach((x) => deny.add(x.path));
+    let allow: Set<string> | null = null;
+    const narrow = (s: Set<string>) => { allow = allow === null ? s : new Set([...allow].filter((p) => s.has(p))); };
+    if (f.include.length) {
+      const sets = f.include.map(of);
+      narrow(f.together ? new Set([...sets[0]].filter((p) => sets.every((s) => s.has(p)))) : new Set(sets.flatMap((s) => [...s])));
+    }
+    if (f.unnamed) narrow(new Set(alive.filter((x) => x.person === null).map((x) => x.path)));
+    return wait({ allow: allow ? [...(allow as Set<string>)] : f.none ? null : null, deny: [...deny] });
+  },
   status: () => scan.fail ? Promise.reject(new Error("harness: the engine did not answer")) : wait(status()),
   paused: () => wait(scan.paused),
   people: () => wait(rows()),

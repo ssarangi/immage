@@ -10,7 +10,7 @@ import { useSyncExternalStore } from "react";
 import { commands } from "./commands";
 import type { ClusterRow, FaceFilter, FaceRow, FacesStatus, MergeSuggestion, PersonRow, Side } from "./bindings";
 import { settings } from "./settings";
-import { dropFaceSets, setFaceSource } from "./facesFilter";
+import { dropFaceSets, setFaceSource, type FaceFilter as PeopleQuery } from "./facesFilter";
 import { setScanJob } from "./background";
 import {
   mergeUndo, faceKey, groupKey, keyId, maybeKey, needsReview, scanJob, scanView, type PeopleData, type ScanCtx, type ScanView, type UndoEntry, type UndoKind,
@@ -21,15 +21,14 @@ export type PhotoFace = {
   face: number; x: number; y: number; w: number; h: number;
   person: number | null; name: string | null; state: "confirmed" | "suggested" | "unassigned" | "rejected"; confidence: number;
 };
-// what the page needs from the backend for the person page, the Find filter and the overlay; the commands are
-// asked for by name until bindings.ts has them (a missing one rejects, and the page says "not available yet")
+// the person page, the Find filter and the overlay read these from the backend (bindings.ts has the commands)
 export type PersonPhotos = { paths: string[]; total: number };
-export type PhotoSets = { withFaces: string[]; unnamed: string[] };
+export type FilterPaths = { allow: string[] | null; deny: string[] };
 
 export type PeopleApi = {
   personPhotos(person: number, offset: number, limit: number): Promise<PersonPhotos>;
   photoFaces(path: string): Promise<PhotoFace[]>;
-  photoSets(): Promise<PhotoSets>;
+  filterPaths(f: PeopleQuery): Promise<FilterPaths>;
   status(): Promise<FacesStatus>;
   paused(): Promise<boolean>;
   people(): Promise<PersonRow[]>;
@@ -60,26 +59,13 @@ export type PeopleApi = {
   subscribe(onChanged: () => void, onProgress: (p: { scanned: number; pending: number | null; faces_found: number }) => void): () => void;
 };
 
-const named = (name: string) => (commands as unknown as Record<string, ((...a: unknown[]) => Promise<unknown>) | undefined>)[name];
-const call = <T,>(name: string, ...args: unknown[]): Promise<T> => {
-  const f = named(name);
-  return f ? (f(...args) as Promise<T>) : Promise.reject(new Error("not available yet"));
-};
-// a box as the backend writes it: {x,y,w,h} or [x,y,w,h]
-const boxOf = (b: unknown): [number, number, number, number] => {
-  if (Array.isArray(b)) return [Number(b[0]), Number(b[1]), Number(b[2]), Number(b[3])];
-  const o = (b ?? {}) as Record<string, number>;
-  return [Number(o.x ?? 0), Number(o.y ?? 0), Number(o.w ?? o.width ?? 0), Number(o.h ?? o.height ?? 0)];
-};
-
 const real: PeopleApi = {
-  personPhotos: (person, offset, limit) => call<PersonPhotos>("facesPersonPhotos", person, offset, limit),
-  photoFaces: async (path) => (await call<Record<string, unknown>[]>("facesPhotoFaces", path)).map((f) => {
-    const [x, y, w, h] = boxOf(f.bbox);
-    return { face: Number(f.face), x, y, w, h, person: (f.person as number | null) ?? null, name: (f.name as string | null) ?? null,
-             state: f.state as PhotoFace["state"], confidence: Number(f.detector_confidence ?? 0) };
-  }),
-  photoSets: () => call<PhotoSets>("facesPhotoSets"),
+  personPhotos: (person, offset, limit) => commands.facesPersonPhotos(person, offset, limit),
+  photoFaces: async (path) => (await commands.facesPhotoFaces(path)).map((f) => ({
+    face: f.face, x: f.x ?? 0, y: f.y ?? 0, w: f.w ?? 0, h: f.h ?? 0, person: f.person, name: f.name,
+    state: f.state as PhotoFace["state"], confidence: f.detector_confidence ?? 0,
+  })),
+  filterPaths: (f) => commands.facesFilterPaths(f),
   status: () => commands.facesStatus(),
   paused: async () => (await commands.analysisStatus()).paused,
   people: () => commands.facesPeople(true),

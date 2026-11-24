@@ -270,27 +270,27 @@ test('File type ticks: All RAW, one raw extension, legacy kinds', async () => {
 
 // ---- the People row (facesFilter.ts) ----
 const F = await import('../app/src/facesFilter.ts');
-const sets = (o = {}) => ({ person: new Map([[1, new Set(['a', 'b'])], [2, new Set(['b', 'c'])], [3, new Set(['c'])]]), withFaces: new Set(['a', 'b', 'c']),
-  unnamed: new Set(['c']), ...o });
 const f = (o = {}) => ({ ...F.NO_FACES, ...o });
+// what the backend answers for a filter (faces_filter_paths): who may pass, and who never does
+const sets = (ff, allow, deny = []) => new Map([[F.filterKey(ff), { allow: allow === null ? null : new Set(allow), deny: new Set(deny) }]]);
 
-test('faces filter: any of them, all together, exclude, no people, unnamed', () => {
-  const s = sets();
-  const pass = (ff) => ['a', 'b', 'c', 'd'].filter((p) => F.faceAllows(p, ff, s));
-  assert.deepEqual(pass(f({ include: [1] })), ['a', 'b']);
-  assert.deepEqual(pass(f({ include: [1, 2] })), ['a', 'b', 'c']);                  // any of them
-  assert.deepEqual(pass(f({ include: [1, 2], together: true })), ['b']);           // all together
-  assert.deepEqual(pass(f({ include: [1], exclude: [2] })), ['a']);
-  assert.deepEqual(pass(f({ exclude: [3] })), ['a', 'b', 'd']);
-  assert.deepEqual(pass(f({ none: true })), ['d']);
-  assert.deepEqual(pass(f({ unnamed: true })), ['c']);
-  assert.deepEqual(pass(f({ include: [2], unnamed: true })), ['c']);               // rows combine as "and"
-  // a set that has not arrived yet admits nothing, so the grid never flashes the wrong photos
-  assert.deepEqual(pass(f({ include: [9] })), []);
-  assert.deepEqual(pass(f({ none: true }), ), ['d']);
-  assert.equal(F.faceAllows('a', f({ none: true }), sets({ withFaces: null })), false);
+test('faces filter: a photo passes when it is allowed (if the filter has positive conditions) and not denied', () => {
+  const ff = f({ include: [1, 2], together: true });
+  const s = sets(ff, ['b'], ['x']);
+  assert.equal(F.faceAllows('b', ff, s), true);
+  assert.equal(F.faceAllows('a', ff, s), false);                       // not allowed
+  const none = f({ none: true });
+  const s2 = sets(none, null, ['a', 'b']);                              // no positive condition: everything but the denied
+  assert.deepEqual(['a', 'b', 'c'].filter((p) => F.faceAllows(p, none, s2)), ['c']);
+  assert.equal(F.faceAllows('b', ff, sets(ff, ['b'], ['b'])), false);   // denied wins
+  // a filter whose paths have not arrived admits nothing, so the grid never flashes the wrong photos
+  assert.equal(F.faceAllows('b', ff, new Map()), false);
+  // the order of the people does not matter, the rest does
+  assert.equal(F.filterKey(f({ include: [2, 1] })), F.filterKey(f({ include: [1, 2] })));
+  assert.notEqual(F.filterKey(f({ include: [1, 2] })), F.filterKey(f({ include: [1, 2], together: true })));
+  assert.notEqual(F.filterKey(f({ none: true })), F.filterKey(f({ unnamed: true })));
   assert.equal(F.facesOnFilter(f()), false);
-  assert.equal(F.facesOnFilter(f({ none: true })), true);
+  assert.equal(F.facesOnFilter(f({ unnamed: true })), true);
 });
 
 test('the People row: hidden while faces are off, one chip when set, cleared by clearAll and its own x, kept by saved filters', () => {
