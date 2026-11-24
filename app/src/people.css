@@ -165,3 +165,22 @@ html[data-scheme="light"] .people-view { background: color-mix(in srgb, var(--wi
 .people-link:hover { color: var(--text); }
 .people-failed { margin: 8px 0 0; padding: 0; list-style: none; max-height: 240px; overflow: auto; font-size: var(--fs-small); color: var(--text-2); }
 .people-failed li { height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* the suggestions row: fixed height, always laid out in To review; the list of the rest floats over the grid */
+.people-suggest {
+  position: relative; flex: none; height: 36px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding-inline: 16px;
+  border-block-end: 1px solid var(--inset); white-space: nowrap; outline-offset: -2px;
+}
+.people-suggest-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
+.people-suggest-text[data-confidence="high"] { color: var(--text); }
+.people-suggest-list {
+  position: absolute; z-index: 6; inset-inline: 8px; top: 100%; margin: 0; padding: 6px; list-style: none; max-height: 280px; overflow-y: auto;
+  border-radius: 10px; background: var(--panel); box-shadow: 0 0 0 1px var(--hover), 0 8px 24px rgba(0, 0, 0, .45);
+}
+.people-suggest-list li { display: flex; align-items: center; gap: 8px; height: 32px; padding-inline: 6px; }
+/* a group that looks like someone named: a dashed chip with the name, over the foot of the crop */
+.ptile-look {
+  position: absolute; inset-inline: 6px; bottom: 6px; max-width: calc(100% - 12px); height: 18px; box-sizing: border-box; padding: 0 6px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; border-radius: 9px; outline: 1px dashed var(--text); outline-offset: -1px;
+  background: color-mix(in srgb, var(--window) 82%, transparent); color: var(--text); font-size: var(--fs-micro); line-height: 18px; width: fit-content;
+}

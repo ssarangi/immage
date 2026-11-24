@@ -14,7 +14,7 @@ import { scanJob } from "../src/peopleModel";
 import { activeJobs } from "../src/background";
 
 type R = { x: number; y: number; w: number; h: number };
-type H = { calls: string[]; folderScope: boolean; grow: boolean; scan: { photos: number | null; fw: number; offline: number; net: number; failed: number; enabled: boolean; installed: boolean; scanned: number; pending: number | null; health: string; failure: string | null; paused: boolean };
+type H = { suggestFor: (g: number) => void; calls: string[]; folderScope: boolean; grow: boolean; scan: { photos: number | null; fw: number; offline: number; net: number; failed: number; enabled: boolean; installed: boolean; scanned: number; pending: number | null; health: string; failure: string | null; paused: boolean };
            db: () => { faces: { id: number; person: number | null; state: string; cluster: number | null; maybe: number | null; path: string }[] };
            setPack: (m: string) => void; tick: () => void };
 const h = () => (window as unknown as { __h: H }).__h;
@@ -424,6 +424,65 @@ export async function runPeopleShift() {
   out.layoutShift = { supported, value: Math.round(shifts * 10000) / 10000, detail };
 
   phase("counts");
+  // 6a. suggestions: one fixed row at the top of To review, strongest first; the rest in a list that floats; nothing moves
+  phase("suggest");
+  click($$(".people-rail-item")[1]);
+  await frames(6);
+  const onScreen = $(".ptile[data-kind=group]")?.id.replace("ptile-g:", "");
+  if (onScreen) h().suggestFor(Number(onScreen));
+  await refreshAll(true);
+  await frames(6);
+  const sugg = () => $(".people-suggest")!;
+  const sText = () => sugg().querySelector(".people-suggest-text")?.textContent ?? "";
+  const sBase = snapshot(view);
+  const sRect = JSON.stringify(rect(sugg().getBoundingClientRect()));
+  const SUG = ".people-suggest *, .people-suggest-list, .people-suggest-list *, .people-name, .people-name *, .modal-backdrop, .modal-backdrop *";
+  const first = sText();
+  out.suggest = { first, chips: $$(".ptile-look").length };
+  if (!/looks like/.test(first)) fail(`suggestions: the strongest row says "${first}"`);
+  if (!$$(".ptile-look").length) fail("suggestions: the group that looks like someone has no chip");
+  const moreBtn = sugg().querySelector<HTMLButtonElement>(".people-link");
+  if (!moreBtn || !/Show 2 more/.test(moreBtn.textContent ?? "")) fail(`suggestions: "Show N more" says "${moreBtn?.textContent}"`);
+  if (moreBtn) { click(moreBtn); await frames(3); }
+  const listedRows = $$(".people-suggest-list li").length;
+  if (listedRows !== 2) fail(`suggestions: the list shows ${listedRows} rows, not the 2 others (a low one stays out)`);
+  note("suggestions list opens", diff(sBase, snapshot(view), SUG));
+  if (moreBtn) { click(moreBtn); await frames(2); }
+  // "Not them" stays gone (faces_not_person), the next one comes up
+  const notCalls = h().calls.length;
+  click(Array.from(sugg().querySelectorAll<HTMLButtonElement>("button")).find((b) => b.textContent === "Not them")!);
+  await frames(10);
+  if (!h().calls.slice(notCalls).some((c) => c.startsWith("notPerson:"))) fail("suggestions: Not them did not call not_person");
+  const second = sText();
+  if (!/may be the same person/.test(second) || /looks like/.test(second)) fail(`suggestions: after Not them the row says "${second}"`);
+  await frames(60);
+  if (/looks like/.test(sText())) fail("suggestions: the pair came back after a refresh");
+  // the keyboard: focus the row, Enter merges the two groups (the name box opens for both), Escape closes it
+  sugg().focus();
+  press(sugg(), "Enter");
+  await frames(4);
+  const nm = $(".people-name label")?.textContent ?? "";
+  out.suggest = { ...(out.suggest as object), second, name: nm };
+  if (!/^Name \d+ faces$/.test(nm)) fail(`suggestions: Enter on two groups opened "${nm}"`);
+  press($<HTMLInputElement>(".people-name input") ?? grid(), "Escape");
+  await frames(3);
+  // Escape on the row dismisses it for this session, and the people pair comes up
+  sugg().focus();
+  press(sugg(), "Escape");
+  await frames(4);
+  const third = sText();
+  if (!/Nana|Sam|Maya|Dad|Alex|Marcus|Zoe/.test(third) || !/may be the same person/.test(third) || /groups/.test(third)) fail(`suggestions: after Escape the row says "${third}"`);
+  press(sugg(), "Enter");
+  await frames(6);
+  const dlg = !!$(".modal-backdrop");
+  if (!dlg) fail("suggestions: Enter on two people did not open the merge dialog");
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  await frames(4);
+  note("suggestions act", diff(sBase, snapshot(view), SUG + ", .ptile, .ptile *, .people-canvas, .people-rail-count"));
+  if (JSON.stringify(rect(sugg().getBoundingClientRect())) !== sRect) fail("suggestions: the row changed its size");
+  checkFixed("suggestions");
+  drain(false);
+
   // 6b. real counts, the collage and the Ignored section
   const railCount = (i: number) => $$(".people-rail-item")[i].querySelector(".people-rail-count")?.textContent?.split(",").join("") ?? "";
   const totals = peopleState().status!.totals;

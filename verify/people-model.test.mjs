@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NO_SEL, GAP, PAD, CAPTION, geometry, gridKey, keepSelected, mergeUndo, nameOptions, needsReview, scanView, sectionCounts,
-  scanNotes, scanJob, undoMs, sectionTiles, select, stableOrder, tilePos, tilesInRect, totalHeight, viewKind, visibleRange } from '../app/src/peopleModel.ts';
+  scanNotes, scanJob, undoMs, suggestRows, capRows, lookAlikes, sectionTiles, select, stableOrder, tilePos, tilesInRect, totalHeight, viewKind, visibleRange } from '../app/src/peopleModel.ts';
 
 const person = (id, name, o = {}) => ({ id, name, state: 'active', faces: 5, photos: 10, cover_face_id: null, cover_manual: false, suggestions: 0, ...o });
 const data = (o = {}) => ({ people: [], groups: [], unknown: [], unknownMore: false, ignoredFaces: [], ignoredMore: false, ...o });
@@ -185,4 +185,21 @@ test('the Undo line stays longer after a change to many faces', () => {
   assert.equal(undoMs(20), 5000);
   assert.equal(undoMs(21), 8000);
   assert.equal(undoMs(88), 8000);
+});
+
+test('suggestions: only what is still there, strongest first, low left out, dismissed hidden, capped', () => {
+  const d = data({ people: [person(1, 'Dad'), person(2, 'Maya'), person(3, 'Sam'), person(4, 'Old', { state: 'ignored' })],
+    groups: [1, 2, 3, 4].map((id) => ({ id, rep_face_id: id * 10, size: 5, members: [id * 10] })) });
+  const s = (kind, a, b, similarity, confidence) => ({ kind, a, b, similarity, confidence });
+  const list = [s('groups', 1, 2, 0.7, 'medium'), s('people', 2, 3, 0.6, 'high'), s('group_person', 3, 1, 0.9, 'high'), s('groups', 3, 4, 0.5, 'low'),
+    s('groups', 1, 9, 0.99, 'high'), s('group_person', 4, 4, 0.99, 'high'), s('people', 1, 4, 0.99, 'high'), s('groups', 2, 2, 0.99, 'high'), s('other', 1, 2, 0.99, 'high'),
+    s('people', 2, 3, 0.6, 'high'), s('groups', 1, 3, 0.95, 'medium')];
+  const rows = suggestRows(list, d);
+  assert.deepEqual(rows.map((r) => r.key), ['group_person:3:1', 'people:2:3', 'groups:1:3', 'groups:1:2']);   // high first, then by similarity
+  assert.deepEqual(suggestRows(list, d, new Set(['people:2:3'])).map((r) => r.key), ['group_person:3:1', 'groups:1:3', 'groups:1:2']);
+  assert.deepEqual(suggestRows(list, data({ people: d.people, groups: d.groups.filter((g) => g.id !== 3) })).map((r) => r.key), ['people:2:3', 'groups:1:2']);   // a named group is gone
+  const cap = capRows(rows, 3);
+  assert.deepEqual([cap.shown.length, cap.more], [3, 1]);
+  assert.deepEqual(capRows(rows.slice(0, 2), 3), { shown: rows.slice(0, 2), more: 0 });
+  assert.deepEqual([...lookAlikes(rows)], [['g:3', 1]]);
 });

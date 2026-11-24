@@ -22,7 +22,7 @@ import { createRoot } from "react-dom/client";
 import { useEffect, useState } from "react";
 import "../src/styles.css";
 import { BUILTIN_THEMES, THEME_TOKENS } from "../src/themes";
-import type { ClusterRow, FaceFilter, FaceRow, FacesStatus, PackInfo, PersonRow } from "../src/bindings";
+import type { ClusterRow, FaceFilter, FaceRow, FacesStatus, MergeSuggestion, PackInfo, PersonRow } from "../src/bindings";
 import { PeopleView } from "../src/PeopleView";
 import { settings } from "../src/settings";
 import { peopleState, refreshAll, resetPeople, setPeopleApi, setPeopleOn, setScanFolderTotal, startPeople, type PeopleApi } from "../src/peopleStore";
@@ -103,7 +103,7 @@ const status = (): FacesStatus => {
   const unrev = db.faces.filter((f) => f.state === "unreviewed" && f.person === null);
   const groups = new Set(unrev.filter((f) => f.cluster !== null).map((f) => f.cluster)).size;
   return { enabled: scan.enabled, installed: scan.installed, eyes_available: false, scanned: scan.scanned, faces_found: db.faces.length, pending: scan.pending, folders_waiting: scan.fw,
-    infer_ms: scan.pending && !scan.fw ? 300 : null, health: scan.health, failure: scan.failure, undo: undoStack.length ? "change" : null, offline_folders: scan.offline,
+    infer_ms: scan.pending && !scan.fw ? 300 : null, health: scan.health, failure: scan.failure, undo: undoStack.length ? "change" : null, offline_folders: scan.offline, recognizer: "sface",
     skipped_network_sources: scan.net,
     totals: { photos: scan.photos ?? db.faces.length, failed_photos: scan.failed, ignored_faces: db.faces.filter((f) => f.state === "rejected").length, ignored_people: db.people.filter((p) => p.state === "ignored").length,
               unknown: db.faces.filter((f) => isUnknown(f)).length, faces: db.faces.filter((f) => f.state !== "rejected").length, people: db.people.filter((p) => p.state === "active").length,
@@ -122,6 +122,8 @@ const liveGroups = (): ClusterRow[] => {
   return [...by].filter(([, ids]) => ids.length >= 2).map(([id, ids]): ClusterRow => ({ id, rep_face_id: ids[0], size: ids.length, members: ids.slice(0, 4) }));
 };
 let ghosts: ClusterRow[] = [];
+let suggestGroup = -1;   // the group the test wants to look like someone: one that is on screen
+const notPairs = new Set<string>();   // group:person pairs the user said are not them
 const ghost = (faces: number[]) => { if (q.get("stale") !== "0") ghosts.push(...liveGroups().filter((g) => g.members.some((m) => faces.includes(m)))); };
 const fake: PeopleApi = {
   status: () => scan.fail ? Promise.reject(new Error("harness: the engine did not answer")) : wait(status()),
@@ -157,10 +159,21 @@ const fake: PeopleApi = {
   remove: (id, removed) => { mutate(`remove:${id}:${removed}`, () => { db.people.find((p) => p.id === id)!.state = removed ? "ignored" : "active"; }); return wait(undefined); },
   cover: (id, face) => { mutate(`cover:${id}:${face}`, () => { const p = db.people.find((x) => x.id === id)!; p.cover = face; p.manual = true; }); return wait(undefined); },
   assign: (person, faces) => { ghost(faces); mutate(`assign:${person}:${faces.length}`, () => { for (const f of db.faces) if (faces.includes(f.id)) Object.assign(f, { person, state: "confirmed", cluster: null, maybe: null }); }); return wait(undefined); },
-  notPerson: (person, faces) => { mutate(`notPerson:${person}:${faces.length}`, () => { for (const f of db.faces) if (faces.includes(f.id) && f.maybe === person) f.maybe = null; }); return wait(undefined); },
+  notPerson: (person, faces) => { for (const f of db.faces) if (faces.includes(f.id) && f.cluster !== null) notPairs.add(`${f.cluster}:${person}`); mutate(`notPerson:${person}:${faces.length}`, () => { for (const f of db.faces) if (faces.includes(f.id) && f.maybe === person) f.maybe = null; }); return wait(undefined); },
   notFace: (faces) => { mutate(`notFace:${faces.length}`, () => { for (const f of db.faces) if (faces.includes(f.id)) f.state = "rejected"; }); return wait(undefined); },
   unignore: (faces) => { mutate(`unignore:${faces.length}`, () => { for (const f of db.faces) if (faces.includes(f.id) && f.state === "rejected") f.state = "unreviewed"; }); return wait(undefined); },
   failedPhotos: (limit) => wait(Array.from({ length: Math.min(limit, scan.failed) }, (_, i) => `/synthetic/broken_${i}.jpg`)),
+  mergeSuggestions: () => {
+    const g = liveGroups().sort((x, y) => y.size - x.size), ps = db.people.filter((x) => x.state === "active");
+    const out: MergeSuggestion[] = [];
+    const pick = g.find((x) => x.id === suggestGroup) ?? g[0];
+    if (pick && ps[0] && !notPairs.has(`${pick.id}:${ps[0].id}`)) out.push({ kind: "group_person", a: pick.id, b: ps[0].id, similarity: 0.9, confidence: "high" });
+    const others = g.filter((x) => x !== pick);
+    if (others[0] && others[1]) out.push({ kind: "groups", a: others[0].id, b: others[1].id, similarity: 0.8, confidence: "high" });
+    if (ps[1] && ps[2]) out.push({ kind: "people", a: ps[1].id, b: ps[2].id, similarity: 0.5, confidence: "medium" });
+    if (others[2] && others[3]) out.push({ kind: "groups", a: others[2].id, b: others[3].id, similarity: 0.46, confidence: "low" });
+    return wait(out);
+  },
   undo: () => { const prev = undoStack.pop(); calls.push("undo"); if (!prev) return wait(null); db = prev; sizes = null; ghosts = []; return wait("undone"); },
   deleteAll: () => { db = { faces: [], people: [], nextPerson: 1 }; scan.enabled = false; undoStack.length = 0; calls.push("deleteAll"); return wait(undefined); },
   retry: () => { scan.health = "ok"; scan.failure = null; return wait(undefined); },
@@ -181,14 +194,14 @@ const packFor = (m: string): PackInfo => m === "download"
   ? { ...PACK_BASE, state: "downloading", progress: { id: "faces", done: 3_100_000, total: 8_600_000, bytes_per_sec: 2_000_000, eta_s: 3, phase: "download" } }
   : m === "off" ? PACK_BASE : { ...PACK_BASE, state: "installed", bytes_on_disk: 8_600_000, files_ok: 2, verified_at: 1 };
 
-type H = { calls: string[]; scan: typeof scan; folderScope: boolean; grow: boolean; fake: PeopleApi; db: () => Db; setPack: (m: string) => void; tick: () => void; changed: () => void; peopleState: typeof peopleState };
+type H = { suggestFor: (g: number) => void; calls: string[]; scan: typeof scan; folderScope: boolean; grow: boolean; fake: PeopleApi; db: () => Db; setPack: (m: string) => void; tick: () => void; changed: () => void; peopleState: typeof peopleState };
 
 function Harness() {
   const [pack, setPack] = useState<PackInfo>(packFor(mode));
   const [width] = useState(Number(q.get("w") ?? 1440));
   useEffect(() => {
     const h: H = {
-      calls, scan, folderScope, grow: q.get("grow") === "1", fake, db: () => db, setPack: (m) => { scan.installed = m === "installed"; setPack(packFor(m)); }, peopleState,
+      suggestFor: (g) => { suggestGroup = g; }, calls, scan, folderScope, grow: q.get("grow") === "1", fake, db: () => db, setPack: (m) => { scan.installed = m === "installed"; setPack(packFor(m)); }, peopleState,
       tick: () => { if (scan.pending) { scan.scanned += 10; scan.pending = Math.max(0, scan.pending - 10); } listeners.forEach((l) => l.progress({ scanned: scan.scanned, pending: scan.pending, faces_found: db.faces.length })); },
       changed: () => listeners.forEach((l) => l.changed()),
     };

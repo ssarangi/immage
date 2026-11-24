@@ -44,6 +44,16 @@ reads *Unnamed group* (hover for "Looks like one person"). On the left, four sec
 | **Unassigned** | single faces with no group |
 | **Ignored** | people you ignored and faces you marked "not a face", dimmed; **Restore** brings them back |
 
+At the top of To review, a **Suggestions** row offers the strongest pair the analysis thinks is one
+person (nothing is ever done for you): *These groups may be the same person* (**Merge** opens the
+name box for both groups, so naming them makes them one person), *This group looks like Maya*
+(**Add to Maya** names its faces Maya, **Not them** is remembered and the pair is not offered
+again) or *Maya and Sam may be the same person* (**Merge** opens the merge dialog). **Show N more**
+lists the others. The row is one fixed line: focus it with Tab and press **Enter** to take the
+first action or **Esc** to dismiss the suggestion for this session. A group that looks like someone
+named wears a dashed chip with that name on its tile. Naming or confirming faces makes the
+analysis suggest the alike faces and groups again within about a second.
+
 The first time faces appear, the view opens on To review when there is something there. The
 tab shows a dot while faces need review. New items are added at the end of a grid while you
 look at it, and the view does not change under your pointer: updates wait until the pointer

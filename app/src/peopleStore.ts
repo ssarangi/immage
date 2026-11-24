@@ -8,7 +8,7 @@
 // backend only through `PeopleApi`, so the harness runs the real view on fixtures.
 import { useSyncExternalStore } from "react";
 import { commands } from "./commands";
-import type { ClusterRow, FaceFilter, FaceRow, FacesStatus, PersonRow } from "./bindings";
+import type { ClusterRow, FaceFilter, FaceRow, FacesStatus, MergeSuggestion, PersonRow } from "./bindings";
 import { settings } from "./settings";
 import { setScanJob } from "./background";
 import {
@@ -31,6 +31,7 @@ export type PeopleApi = {
   notFace(faces: number[]): Promise<void>;
   unignore(faces: number[]): Promise<void>;
   failedPhotos(limit: number): Promise<string[]>;
+  mergeSuggestions(): Promise<MergeSuggestion[]>;
   undo(): Promise<string | null>;
   deleteAll(): Promise<void>;
   retry(): Promise<void>;
@@ -59,6 +60,7 @@ const real: PeopleApi = {
   notFace: async (faces) => { await commands.facesNotFace(faces); },
   unignore: async (faces) => { await commands.facesUnignore(faces); },
   failedPhotos: (limit) => commands.facesFailedPhotos(limit),
+  mergeSuggestions: () => commands.facesMergeSuggestions(),
   undo: () => commands.facesUndo(),
   deleteAll: async () => { await commands.facesDeleteAll(); },
   retry: async () => { await commands.facesRetry(); },
@@ -91,6 +93,7 @@ export type PeopleState = {
   paused: boolean;
   scan: ScanView;
   loaded: boolean;                   // the lists have been read once
+  suggestions: MergeSuggestion[];    // pairs the backend thinks are one person (never acted on by itself)
   data: PeopleData;
   undo: (UndoEntry & { id: number }) | null;
   error: string;                     // the last change that failed, said plainly
@@ -99,7 +102,7 @@ export type PeopleState = {
 
 const EMPTY_DATA: PeopleData = { people: [], groups: [], unknown: [], unknownMore: false, ignoredFaces: [], ignoredMore: false };
 const NO_STATUS_SCAN: ScanView = { kind: "off", done: 0, total: null, left: null, reason: null };
-const EMPTY: PeopleState = { on: false, status: null, failed: false, paused: false, scan: NO_STATUS_SCAN, loaded: false, data: EMPTY_DATA, undo: null, error: "", busy: false };
+const EMPTY: PeopleState = { on: false, status: null, failed: false, paused: false, scan: NO_STATUS_SCAN, loaded: false, suggestions: [], data: EMPTY_DATA, undo: null, error: "", busy: false };
 
 let state: PeopleState = EMPTY;
 const listeners = new Set<() => void>();
@@ -180,10 +183,13 @@ export async function refreshAll(force = false) {
       bounded(api.list({ kind: "unknown" }, 0, UNKNOWN_PAGE)), bounded(api.list({ kind: "ignored" }, 0, UNKNOWN_PAGE)),
     ]);
     listSig = sigOf(s);
+    // quiet: no pairs is a fine answer, and the lists never wait for it
+    const pairs = await bounded(api.mergeSuggestions()).catch(() => state.suggestions);
     const prev = state.data.unknown;
     // more than the first page was loaded before: keep that much, so the grid does not shrink under the user
     const keep = prev.length > unknown.length && unknown.length === UNKNOWN_PAGE ? await api.list({ kind: "unknown" }, 0, prev.length) : unknown;
     applyStatus(s, paused);
+    setPeople({ suggestions: pairs });
     // a pointer on the grid keeps the tiles still, but only when there are tiles to keep: the counts and the
     // strip always move, and a grid that is empty fills at once
     const held = holds > 0 && !force && (state.data.people.length + state.data.groups.length + state.data.unknown.length + state.data.ignoredFaces.length) > 0;

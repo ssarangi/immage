@@ -35,7 +35,8 @@ export function NamePopover({ o, index, count, group, seed, people, onPick, onCl
   const height = HEAD + Math.max(1, options.length) * ROW;
   const left = Math.min(Math.max(8, p.x), Math.max(8, o.width - W - 8));
   const below = p.y - o.scrollTop + o.g.tile + CAPTION + 4;
-  const top = below + height > o.height ? Math.max(4, p.y - o.scrollTop - height - 4) : below;
+  const flipped = below + height > o.height ? Math.max(4, p.y - o.scrollTop - height - 4) : below;
+  const top = Math.min(Math.max(4, flipped), Math.max(4, o.height - height - 4));
   return (
     <div className="people-name" style={{ left, top }} role="dialog" aria-label={title}
          onPointerDown={(e) => e.stopPropagation()}>

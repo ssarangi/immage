@@ -31,6 +31,9 @@ Improvements
   "N of M photos" without a placeholder. The view keeps following a running scan
   by itself, a named group leaves To review at once, Ctrl/Cmd+Z undoes the latest
   change, and a change to many faces keeps its Undo line for eight seconds.
+  A Suggestions row at the top of To review offers groups that may be one person,
+  a group that looks like someone you named (with a dashed chip on its tile) and
+  two people who may be one, to merge or dismiss; nothing is applied by itself.
 - **Library panel:** the Metadata, Keywording, Folders, Catalog and History cards
   now always open independently, so Folders and Catalog can be open together;
   Focus mode applies only to the Edit view's tool panels, Presets and Advanced

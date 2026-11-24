@@ -39,8 +39,8 @@ export const tileLabel = (tile: Tile, byId: ReadonlyMap<number, string>): { name
   }
 };
 
-function TileView({ tile, label, g, index, selected, active, size, rename, onRename }: {
-  tile: Tile; label: { name: string; sub: string; title?: string }; g: Geometry; index: number; selected: boolean; active: boolean; size: number;
+function TileView({ tile, label, look, g, index, selected, active, size, rename, onRename }: {
+  tile: Tile; look?: string; label: { name: string; sub: string; title?: string }; g: Geometry; index: number; selected: boolean; active: boolean; size: number;
   rename: boolean; onRename: (name: string | null) => void;
 }) {
   const p = tilePos(index, g);
@@ -61,6 +61,7 @@ function TileView({ tile, label, g, index, selected, active, size, rename, onRen
       ) : <Crop face={cover} tile={size} style={{ height: size }} />}
       <span className="ptile-badge ptile-check" aria-hidden="true"><Check size={11} /></span>
       {count !== null && <span className="ptile-badge ptile-count" aria-hidden="true">{formatNumber(count)}</span>}
+      {look && <span className="ptile-look" title={t("people.suggest.looks", { name: look })}>{t("people.suggest.looks", { name: look })}</span>}
       {tile.kind === "person" && tile.review > 0 && <span className="ptile-badge ptile-flag" aria-hidden="true">!</span>}
       <div className="pcap">
         {rename ? (
@@ -83,8 +84,8 @@ function TileView({ tile, label, g, index, selected, active, size, rename, onRen
 
 export type GridOverlay = { pos: (index: number) => { x: number; y: number }; scrollTop: number; width: number; height: number; g: Geometry };
 
-export function PeopleGrid({ tiles, section, open, size, sel, byId, renameKey, label, dir, onSel, onIntent, onRename, onNearEnd, overlay, empty }: {
-  tiles: Tile[]; section: Section; open: boolean; size: number; sel: Sel; byId: ReadonlyMap<number, string>; renameKey: string | null; label: string;
+export function PeopleGrid({ tiles, looks, section, open, size, sel, byId, renameKey, label, dir, onSel, onIntent, onRename, onNearEnd, overlay, empty }: {
+  tiles: Tile[]; looks?: ReadonlyMap<string, string>; section: Section; open: boolean; size: number; sel: Sel; byId: ReadonlyMap<number, string>; renameKey: string | null; label: string;
   dir: "ltr" | "rtl"; onSel: (a: SelAction) => void; onIntent: (i: Intent) => void; onRename: (key: string, name: string | null) => void;
   onNearEnd?: () => void; overlay?: (o: GridOverlay) => ReactNode; empty?: ReactNode;
 }) {
@@ -181,7 +182,7 @@ export function PeopleGrid({ tiles, section, open, size, sel, byId, renameKey, l
   const items: ReactNode[] = [];
   for (let i = range.from; i < range.to && i < tiles.length; i++) {
     const tile = tiles[i];
-    items.push(<TileView key={tile.key} tile={tile} label={tileLabel(tile, byId)} g={g} index={i} size={g.tile} selected={sel.keys.has(tile.key)} active={i === active}
+    items.push(<TileView key={tile.key} tile={tile} look={looks?.get(tile.key)} label={tileLabel(tile, byId)} g={g} index={i} size={g.tile} selected={sel.keys.has(tile.key)} active={i === active}
                          rename={renameKey === tile.key} onRename={(name) => onRename(tile.key, name)} />);
   }
   const activeTile = tiles[active];

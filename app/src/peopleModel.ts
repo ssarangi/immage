@@ -5,7 +5,7 @@
 // order that never moves a tile under the pointer, the selection reducer, the grid geometry and the
 // marquee, the keyboard map, the name combobox's ranking, the Undo line's merging and the plain-language
 // state of the scan. No React and no commands: a Node test and the harness check all of it.
-import type { ClusterRow, FaceRow, FaceTotals, FacesStatus, PersonRow } from "./bindings";
+import type { ClusterRow, FaceRow, FaceTotals, FacesStatus, MergeSuggestion, PersonRow } from "./bindings";
 
 export type Section = "people" | "review" | "unassigned" | "ignored";
 export const SECTIONS: Section[] = ["people", "review", "unassigned", "ignored"];
@@ -328,4 +328,44 @@ export type ScanNotes = { failed: number; offline: number; network: number };
 export function scanNotes(s: FacesStatus | null): ScanNotes {
   if (!s) return { failed: 0, offline: 0, network: 0 };
   return { failed: s.totals.failed_photos ?? 0, offline: s.offline_folders ?? 0, network: s.skipped_network_sources ?? 0 };
+}
+
+// ---- suggestions: groups that may be one person, a group that looks like someone named, two people who may be one ----
+
+export type SuggestKind = "groups" | "group_person" | "people";
+export type SuggestRow = { key: string; kind: SuggestKind; a: number; b: number; confidence: "high" | "medium"; similarity: number | null };
+
+// The backend's pairs, kept to what the page still shows: both sides must still be there (a group that was just
+// named is gone), "low" confidence is left out as noise, a pair the user dismissed stays hidden, and the strongest
+// come first (high before medium, then by similarity). Only ever a suggestion: nothing here changes data.
+export function suggestRows(list: readonly MergeSuggestion[], d: PeopleData, dismissed: ReadonlySet<string> = new Set()): SuggestRow[] {
+  const groups = new Set(d.groups.map((g) => g.id));
+  const active = new Set(d.people.filter((p) => p.state === "active").map((p) => p.id));
+  const seen = new Set<string>();
+  const out: SuggestRow[] = [];
+  for (const s of list) {
+    const kind = s.kind as SuggestKind;
+    if (kind !== "groups" && kind !== "group_person" && kind !== "people") continue;
+    if (s.confidence !== "high" && s.confidence !== "medium") continue;
+    const ok = kind === "groups" ? groups.has(s.a) && groups.has(s.b) && s.a !== s.b
+      : kind === "group_person" ? groups.has(s.a) && active.has(s.b) : active.has(s.a) && active.has(s.b) && s.a !== s.b;
+    const key = `${kind}:${s.a}:${s.b}`;
+    if (!ok || dismissed.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ key, kind, a: s.a, b: s.b, confidence: s.confidence, similarity: s.similarity });
+  }
+  return out.map((r, i) => ({ r, i })).sort((x, y) => (x.r.confidence === y.r.confidence ? 0 : x.r.confidence === "high" ? -1 : 1)
+    || (y.r.similarity ?? 0) - (x.r.similarity ?? 0) || x.i - y.i).map((x) => x.r);
+}
+
+// the first `n` and how many more there are ("Show N more")
+export function capRows<T>(rows: readonly T[], n = 3): { shown: T[]; more: number } {
+  return { shown: rows.slice(0, n), more: Math.max(0, rows.length - n) };
+}
+
+// the person each group looks like (its best "group_person" pair), for the chip on the group's tile
+export function lookAlikes(rows: readonly SuggestRow[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const r of rows) if (r.kind === "group_person" && !out.has(groupKey(r.a))) out.set(groupKey(r.a), r.b);
+  return out;
 }

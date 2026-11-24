@@ -16,8 +16,9 @@ import { direction, formatNumber, t } from "./i18n";
 import { PeopleConsent } from "./PeopleConsent";
 import { Crop, PeopleGrid, tileLabel, type GridOverlay } from "./PeopleGrid";
 import { NamePopover } from "./PeopleName";
+import { PeopleSuggest, type SuggestAct } from "./PeopleSuggest";
 import {
-  NO_SEL, SECTIONS, TILE_DEFAULT, TILE_MAX, TILE_MIN, keepSelected, scanNotes, undoMs, sectionCounts, sectionTiles, select, stableOrder, viewKind,
+  NO_SEL, SECTIONS, TILE_DEFAULT, TILE_MAX, TILE_MIN, keepSelected, lookAlikes, scanNotes, suggestRows, undoMs, sectionCounts, sectionTiles, select, stableOrder, viewKind,
   type Intent, type Section, type Sel, type SelAction, type Tile, type UndoEntry,
 } from "./peopleModel";
 import {
@@ -79,11 +80,19 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
   const [query, setQuery] = useState("");
   const [naming, setNaming] = useState<{ keys: string[]; seed: string; index: number; faces: number; groups: number } | null>(null);
   const [renameKey, setRenameKey] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
   const [dupe, setDupe] = useState<{ name: string; id: number; target: number } | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
 
   const data = s.data;
   const counts = useMemo(() => sectionCounts(data, s.status?.totals ?? null), [data, s.status?.totals]);
+  const rows = useMemo(() => suggestRows(s.suggestions, data, dismissed), [s.suggestions, data, dismissed]);
+  const sizes = useMemo(() => new Map(data.groups.map((g) => [g.id, g.size])), [data.groups]);
+  // a group that looks like someone named wears that name as a dashed chip until a person confirms it
+  const looks = useMemo(() => {
+    const byId = new Map(data.people.map((p) => [p.id, p.name]));
+    return new Map([...lookAlikes(rows)].map(([k, id]) => [k, byId.get(id) ?? ""] as [string, string]).filter(([, n]) => n));
+  }, [rows, data.people]);
   const names = useMemo(() => new Map(data.people.filter((p) => p.state === "active").map((p) => [p.id, p.name])), [data.people]);
 
   // until the user picks a section the view lands on To review when there is something there: when the lists first
@@ -159,6 +168,24 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
     if (other) { setDupe({ name: other.name, id: other.id, target: tile.id }); return; }
     setDupe(null);
     await renamePerson(tile.id, name.trim());
+  };
+  const suggestAct = (r: (typeof rows)[number], what: SuggestAct) => {
+    const person = (id: number) => data.people.find((p) => p.id === id);
+    if (r.kind === "groups") {
+      const ks = [`g:${r.a}`, `g:${r.b}`];
+      const at = Math.max(0, tiles.findIndex((x) => x.key === ks[0]));
+      setSel(NO_SEL);
+      setNaming({ keys: ks, seed: "", index: at, faces: (sizes.get(r.a) ?? 0) + (sizes.get(r.b) ?? 0), groups: 2 });
+    } else if (r.kind === "group_person") {
+      const p = person(r.b);
+      if (!p) return;
+      if (what === "notThem") void notPerson([`g:${r.a}`], new Map([[`g:${r.a}`, r.b]]), names);
+      else void nameTiles([`g:${r.a}`], { kind: "person", id: p.id, name: p.name });
+    } else {
+      const a = person(r.a), b = person(r.b);
+      if (!a || !b) return;
+      setDialog({ kind: "merge", ids: [a.id, b.id], into: b.photos > a.photos ? b.id : a.id });
+    }
   };
   const askMerge = () => {
     if (people.length < 2) return;
@@ -338,7 +365,10 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
                 <span>{t("people.tile.faces", { n: sheet.faces.length, count: formatNumber(sheet.faces.length) })}</span>
               </>}
             </div>
-            <PeopleGrid tiles={tiles} section={section} open={!!sheet} size={size} sel={sel} byId={names} renameKey={renameKey} label={gridLabel} dir={dir}
+            {/* always laid out, empty outside To review, so changing section moves nothing */}
+            <PeopleSuggest rows={section === "review" && !sheet ? rows : []} people={data.people} sizes={sizes} onAct={suggestAct}
+                           onDismiss={(r) => setDismissed((d) => new Set([...d, r.key]))} />
+            <PeopleGrid tiles={tiles} looks={looks} section={section} open={!!sheet} size={size} sel={sel} byId={names} renameKey={renameKey} label={gridLabel} dir={dir}
                         onSel={apply} onIntent={act} onRename={(k, n) => void rename(k, n)}
                         onNearEnd={sheet ? undefined : section === "unassigned" ? () => void loadMoreUnknown() : section === "ignored" ? () => void loadMoreIgnored() : undefined}
                         empty={<>
