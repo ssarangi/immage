@@ -270,6 +270,9 @@ Performance
 
 Bug fixes
 
+- **Navigator:** when the viewer is larger than the zoomed photo (a small photo at
+  100%, say), the rectangle now covers the whole picture instead of sitting
+  shifted off it.
 - **Preferences:** the settings now scroll inside their own framed area, under a
   fixed header that names the page and says what it holds, above a fixed footer,
   instead of running through the window's top edge. The window is 80% of the

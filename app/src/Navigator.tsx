@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 import { useState } from "react";
-import { type Zoom, type Placement, ZOOMS } from "./zoom";
+import { type Zoom, type Placement, ZOOMS, navRect } from "./zoom";
 import { t } from "./i18n";
 
 // the whole image, the zoom levels, and a rectangle over the part the
@@ -13,12 +13,7 @@ export function Navigator({ thumb, zoom, placement: p, disabled, onZoom, onPan }
   const [live, setLive] = useState<{ x: number; y: number } | null>(null);
   const zoomed = zoom !== "fit" && p && p.scale > 0;
   // the visible window as fractions of the image
-  const rect = zoomed ? {
-    w: Math.min(1, p.width / (p.fullWidth * p.scale)),
-    h: Math.min(1, p.height / (p.fullHeight * p.scale)),
-    x: p.x / (p.fullWidth * p.scale),
-    y: p.y / (p.fullHeight * p.scale),
-  } : null;
+  const rect = zoomed ? navRect(p) : null;
   const at = (e: React.PointerEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
