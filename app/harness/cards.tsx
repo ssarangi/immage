@@ -28,6 +28,10 @@ document.body.style.margin = "0";
 const broken = q.get("break") === "1";
 const noReserve = q.get("break") === "reserve";
 if (q.get("dir")) document.documentElement.dir = q.get("dir")!;
+// the real column gives Keywording a 224px floor (styles.css), whose spare height sits under the card's content
+// and absorbs a reserve lost or a chip row gained, hiding exactly what these checks measure at the Folders
+// marker; the floor is checked in the real column by verify/left-panel-shift.test.mjs, so it is off here
+document.head.insertAdjacentHTML("beforeend", "<style>.left .panel.keywording:has(> .kw-body){min-height:0!important}</style>");
 if (noReserve) document.head.insertAdjacentHTML("beforeend", "<style>.kw-auto-body{min-height:0!important}.kw-auto{min-height:0!important}.kw-auto-head{height:auto!important}</style>");
 if (q.get("break") === "undo") document.head.insertAdjacentHTML("beforeend", "<style>.kw-auto-head{height:auto!important}.kw-auto-state{flex-direction:column;white-space:normal!important}</style>");
 const W = Number(q.get("w") ?? 320);
