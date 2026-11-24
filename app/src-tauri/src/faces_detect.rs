@@ -19,6 +19,14 @@ pub const EMBED_EDGE: u32 = 112;
 pub const EMBED_DIMS: usize = 128;
 pub const EYE_W: u32 = 40;
 pub const EYE_H: u32 = 24;
+/// The eye crops one eye is judged from: (width as a share of the distance between the eyes, how far below the
+/// YuNet landmark the crop is centred, in eye distances). The landmark sits above the visible eye on lowered
+/// lids, so a crop centred on it often shows the brow instead of the eye (measured on real portraits: with
+/// 0.55 and no shift 5 of 13 faces were judged wrongly). One crop is very sensitive to this, so the verdict
+/// averages the probabilities of these three; thresholds stay `OPEN_AT` and `SEMI_AT`.
+pub const EYE_CROPS: [(f64, f64); 3] = [(0.7, 0.10), (0.7, 0.15), (0.8, 0.12)];
+pub const EYE_CROP_SCALE: f64 = EYE_CROPS[0].0;
+pub const EYE_CROP_DOWN: f64 = EYE_CROPS[0].1;
 
 /// A detected face; every coordinate is normalised to the picture (0..1, top-left origin).
 #[derive(Clone, Debug, PartialEq)]
@@ -402,13 +410,18 @@ pub fn eye_verdict(prob_open: f32) -> EyeVerdict {
 /// One eye as the OCEC input: 1x3x24x40, RGB, 0..1. The crop is centred on the landmark, 0.55 of the
 /// eyes' distance wide and 24/40 of that tall.
 pub fn eye_input(img: &RgbImage, f: &Face, right: bool) -> Option<Vec<f32>> {
+    eye_input_with(img, f, right, EYE_CROP_SCALE, EYE_CROP_DOWN, false)
+}
+
+/// `eye_input` with the crop width (in eye distances) and the channel order chosen.
+pub fn eye_input_with(img: &RgbImage, f: &Face, right: bool, scale: f64, down: f64, bgr: bool) -> Option<Vec<f32>> {
     let ied = f64::from(eye_distance_px(f, img.width(), img.height()));
     if ied < 4.0 {
         return None;
     }
     let p = f.lm[usize::from(!right)];
-    let (cx, cy) = (f64::from(p.0) * img.width() as f64, f64::from(p.1) * img.height() as f64);
-    let cw = 0.55 * ied;
+    let (cx, cy) = (f64::from(p.0) * img.width() as f64, f64::from(p.1) * img.height() as f64 + down * ied);
+    let cw = scale * ied;
     let ch = cw * f64::from(EYE_H) / f64::from(EYE_W);
     let (w, h) = (EYE_W as usize, EYE_H as usize);
     let mut out = vec![0f32; 3 * w * h];
@@ -418,7 +431,7 @@ pub fn eye_input(img: &RgbImage, f: &Face, right: bool) -> Option<Vec<f32>> {
             let sy = cy - ch / 2.0 + (v as f64 + 0.5) / h as f64 * ch;
             let rgb = sample(img, sx, sy);
             for c in 0..3 {
-                out[c * w * h + v * w + u] = rgb[c] / 255.0;
+                out[c * w * h + v * w + u] = rgb[if bgr { 2 - c } else { c }] / 255.0;
             }
         }
     }
@@ -657,9 +670,11 @@ mod tests {
     #[test]
     fn eye_crops_and_verdicts() {
         let mut img = RgbImage::from_pixel(300, 300, image::Rgb([0, 0, 0]));
-        // a white patch where the right eye is
+        // a white patch where the right eye is: the crop is centred a little below the landmark (EYE_CROP_DOWN),
+        // since the landmark sits above the visible eye
         let f = face(0.3, 0.3, 0.4, 0.4, 0.9);
-        let (ex, ey) = ((f.lm[0].0 * 300.0) as u32, (f.lm[0].1 * 300.0) as u32);
+        let ied = f64::from(eye_distance_px(&f, 300, 300));
+        let (ex, ey) = ((f.lm[0].0 * 300.0) as u32, (f.lm[0].1 * 300.0 + EYE_CROP_DOWN as f32 * ied as f32) as u32);
         for y in ey - 3..ey + 3 {
             for x in ex - 6..ex + 6 {
                 img.put_pixel(x, y, image::Rgb([255, 255, 255]));

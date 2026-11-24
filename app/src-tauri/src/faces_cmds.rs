@@ -631,9 +631,7 @@ pub async fn faces_eye_state(ai: State<'_, AiState>, state: State<'_, AppState>,
         let f = det::Face { x: row.x, y: row.y, w: row.w, h: row.h, score: row.score, lm: std::array::from_fn(|i| (lm[2 * i], lm[2 * i + 1])) };
         let mut probs = [None, None];
         for (k, right) in [true, false].into_iter().enumerate() {
-            let Some(input) = det::eye_input(&img, &f, right) else { continue };
-            let (out, _) = fm::run(&engine, &runtime, &eyes_root, Model::Eyes, &[1, 3, 24, 40], &input)?;
-            probs[k] = out.iter().find(|t| t.name == "prob_open").or(out.first()).and_then(|t| t.data.first().copied()).map(|p| p.clamp(0.0, 1.0));
+            probs[k] = crate::faces_eyes::eye_probability(&engine, &runtime, &eyes_root, &img, &f, right)?;
         }
         let worst = probs.iter().flatten().copied().fold(None, |m: Option<f32>, p| Some(m.map_or(p, |m| m.min(p))));
         Ok(EyeState { available: true, right: probs[0], left: probs[1], verdict: worst.map(det::eye_verdict) })

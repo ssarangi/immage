@@ -61,6 +61,10 @@ computes the missing ones for the photos a cull, a Scenes view or `faces_eyes_fo
 2048 px picture; network photos and unscanned photos are skipped) and answers Find's `closedEyes` flag. `cull_plan::plan_with_faces`
 adds the adjustment to the frame score (ranking, set winner, highlights) and never rejects on it; `scenes_rules` ranks by
 `quality + faceAdjust` while `Rules.preferOpenEyes` is on but judges the minimum quality on the raw score.
+The eye crop is centred 0.10 to 0.15 eye distances below the YuNet landmark (it sits above the visible eye on lowered lids) and the
+verdict averages three crops (`faces_detect::EYE_CROPS`); the stored `eye_model` carries a `crops3` suffix so a recipe change recomputes.
+Checked by eye on 13 real faces: the old single 0.55 crop on the landmark was wrong on 5, this recipe agrees on 11 with 2 ambiguous
+lowered-lid cases; the model's output is the probability of an OPEN eye (polarity confirmed).
 `cargo test opt_in_real_eyes -- --ignored --nocapture` (needs the same variables as `opt_in_real_faces`, plus `IMMAGE_FACES_EYES`)
 prints the eye step's counts and timings only. Notes: notes/faces-p4-backend-notes.md.
 

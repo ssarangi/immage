@@ -28,7 +28,8 @@ const EYE_EDGE: u32 = 2048;
 
 /// What `eye_model` holds for verdicts made by the pinned file.
 pub fn model_tag() -> String {
-    format!("ocec-s:{}", &fm::EYES_SHA256[..8])
+    // the suffix names the crop recipe (faces_detect::EYE_CROPS): a change of it makes stored verdicts stale
+    format!("ocec-s:{}:crops3", &fm::EYES_SHA256[..8])
 }
 
 /// A face that still needs a verdict.
@@ -148,6 +149,28 @@ impl EyeCtx {
     }
 }
 
+/// The open probability in the OCEC outputs (`prob_open`, 1 is an open eye), clamped to 0..1.
+pub fn open_prob(tensors: &[fm::Tensor]) -> Option<f32> {
+    tensors.iter().find(|t| t.name == "prob_open").or(tensors.first()).and_then(|t| t.data.first().copied()).filter(|p| p.is_finite()).map(|p| p.clamp(0.0, 1.0))
+}
+
+/// One eye's probability of being open: the mean over the crops of `faces_detect::EYE_CROPS`.
+/// `Ok(None)` when the eye cannot be cropped.
+pub fn eye_probability(engine: &crate::engine::Tagged, runtime: &Path, eyes_root: &Path, img: &image::RgbImage, face: &det::Face, right: bool) -> Result<Option<f32>, String> {
+    let mut probs = Vec::new();
+    for (scale, down) in det::EYE_CROPS {
+        let Some(input) = det::eye_input_with(img, face, right, scale, down, false) else { return Ok(None) };
+        let (tensors, _) = fm::run(engine, runtime, eyes_root, Model::Eyes, &[1, 3, 24, 40], &input)?;
+        probs.extend(open_prob(&tensors));
+    }
+    Ok((!probs.is_empty()).then(|| probs.iter().sum::<f32>() / probs.len() as f32))
+}
+
+/// A face's probability of open eyes: the worse eye decides, and one eye is enough.
+pub fn face_probability(eyes: [Option<f32>; 2]) -> Option<f32> {
+    eyes.into_iter().flatten().fold(None, |m: Option<f32>, p| Some(m.map_or(p, |m| m.min(p))))
+}
+
 /// The verdicts of one photo's pending faces: the picture is read once, and only when some face can be judged.
 fn judge(ctx: &EyeCtx, eyes_root: &Path, path: &str, tasks: &[EyeTask]) -> Result<Vec<EyeResult>, String> {
     if !tasks.iter().any(|t| t.eligible) {
@@ -160,16 +183,8 @@ fn judge(ctx: &EyeCtx, eyes_root: &Path, path: &str, tasks: &[EyeTask]) -> Resul
             out.push((t.id, None));
             continue;
         }
-        let mut worst: Option<f32> = None;
-        for right in [true, false] {
-            let Some(input) = det::eye_input(&img, &t.face, right) else { continue };
-            let (tensors, _) = fm::run(&ctx.engine, &ctx.runtime, eyes_root, Model::Eyes, &[1, 3, 24, 40], &input)?;
-            let p = tensors.iter().find(|x| x.name == "prob_open").or(tensors.first()).and_then(|x| x.data.first().copied()).map(|p| p.clamp(0.0, 1.0));
-            worst = match (worst, p) {
-                (Some(a), Some(b)) => Some(a.min(b)),
-                (a, b) => a.or(b),
-            };
-        }
+        let [right, left] = [true, false].map(|right| eye_probability(&ctx.engine, &ctx.runtime, eyes_root, &img, &t.face, right));
+        let worst = face_probability([right?, left?]);
         out.push((t.id, worst.map(|p| (p, det::eye_verdict(p).into()))));
     }
     Ok(out)
@@ -281,6 +296,37 @@ mod tests {
 
     fn scan(s: &FaceStore, path: &str, faces: &[NewFace]) -> Vec<i64> {
         s.put_scan(path, "fp", "m1", 1000, 800, faces, None).unwrap()
+    }
+
+    fn tensor(name: &str, v: f32) -> fm::Tensor {
+        fm::Tensor { name: name.into(), shape: vec![1, 1], data: vec![v] }
+    }
+
+    #[test]
+    fn a_high_open_probability_is_an_open_eye_and_a_low_one_is_closed() {
+        // the OCEC output is the probability that the eye is OPEN: 1 means open (checked on real portraits)
+        assert_eq!(open_prob(&[tensor("prob_open", 0.97)]).map(|p| det::eye_verdict(p).into()), Some(EyeLabel::Open));
+        assert_eq!(open_prob(&[tensor("prob_open", 0.02)]).map(|p| det::eye_verdict(p).into()), Some(EyeLabel::Closed));
+        assert_eq!(open_prob(&[tensor("prob_open", 0.5)]).map(|p| det::eye_verdict(p).into()), Some(EyeLabel::Semi));
+        // the named output wins over the first one, an unnamed single output is used, junk is refused
+        assert_eq!(open_prob(&[tensor("other", 0.1), tensor("prob_open", 0.9)]), Some(0.9));
+        assert_eq!(open_prob(&[tensor("x", 0.8)]), Some(0.8));
+        assert_eq!(open_prob(&[tensor("prob_open", f32::NAN)]), None);
+        assert_eq!(open_prob(&[tensor("prob_open", 1.7)]), Some(1.0));
+        assert_eq!(open_prob(&[]), None);
+    }
+
+    #[test]
+    fn the_worse_eye_decides_and_one_eye_is_enough() {
+        assert_eq!(face_probability([Some(0.95), Some(0.1)]), Some(0.1));
+        assert_eq!(face_probability([None, Some(0.8)]), Some(0.8));
+        assert_eq!(face_probability([None, None]), None);
+        assert_eq!(det::eye_verdict(face_probability([Some(0.95), Some(0.1)]).unwrap()), det::EyeVerdict::Closed);
+    }
+
+    #[test]
+    fn the_stored_model_tag_names_the_crop_recipe() {
+        assert!(model_tag().starts_with("ocec-s:9a346a08:crops"), "{}", model_tag());
     }
 
     #[test]
