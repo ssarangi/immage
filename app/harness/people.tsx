@@ -12,6 +12,7 @@
 //   offline, net, failed  numbers for the strip notes (folders offline, network sources left out, photos not read)
 //   offline, net, failed  counts for the strip notes (folders offline, network sources left out, photos not read)
 //   folderscope=1  the folder scan (36 of 333 photos stored, one folder waiting); nofolder=1  no folder is open
+//   grow=1  the scan goes on and ends by itself, with no event (the poll alone); stale=0  the backend drops a named group at once
 //   many    the number of faces (default 1400; 5000 for the scale run)
 //   theme   a built-in theme id        dir  ltr | rtl        w  width of the view in px (default 1440)
 //   break=1 adds styles that move things (the shift test must catch it)
@@ -115,14 +116,21 @@ const svg = (face: number) => {
 const listeners: { changed: () => void; progress: (p: { scanned: number; pending: number | null; faces_found: number }) => void }[] = [];
 const wait = <T,>(v: T) => Promise.resolve(v);
 
+const liveGroups = (): ClusterRow[] => {
+  const by = new Map<number, number[]>();
+  for (const f of db.faces) if (f.state === "unreviewed" && f.person === null && f.cluster !== null) by.set(f.cluster, [...(by.get(f.cluster) ?? []), f.id]);
+  return [...by].filter(([, ids]) => ids.length >= 2).map(([id, ids]): ClusterRow => ({ id, rep_face_id: ids[0], size: ids.length, members: ids.slice(0, 4) }));
+};
+let ghosts: ClusterRow[] = [];
+const ghost = (faces: number[]) => { if (q.get("stale") !== "0") ghosts.push(...liveGroups().filter((g) => g.members.some((m) => faces.includes(m)))); };
 const fake: PeopleApi = {
   status: () => scan.fail ? Promise.reject(new Error("harness: the engine did not answer")) : wait(status()),
   paused: () => wait(scan.paused),
   people: () => wait(rows()),
   groups: () => {
-    const by = new Map<number, number[]>();
-    for (const f of db.faces) if (f.state === "unreviewed" && f.person === null && f.cluster !== null) by.set(f.cluster, [...(by.get(f.cluster) ?? []), f.id]);
-    return wait([...by].filter(([, ids]) => ids.length >= 2).map(([id, ids]): ClusterRow => ({ id, rep_face_id: ids[0], size: ids.length, members: ids.slice(0, 4) })));
+    const live = liveGroups();
+    // the real backend regroups when it is idle: until then a group whose faces were all named is still listed (stale=1, the default)
+    return wait([...live, ...ghosts.filter((g) => !live.some((l) => l.id === g.id))]);
   },
   list: (filter: FaceFilter, offset, limit) => {
     const pick = (f: F) => filter.kind === "person" ? f.person === filter.id && f.state !== "rejected"
@@ -136,6 +144,7 @@ const fake: PeopleApi = {
   createPerson: (name, faces) => {
     if (db.people.some((p) => p.state === "active" && p.name.toLowerCase() === name.toLowerCase())) return Promise.reject(new Error(`${name} already exists`));
     const id = db.nextPerson;
+    ghost(faces);
     mutate(`create:${name}:${faces.length}`, () => { db.nextPerson++; db.people.push({ id, name, state: "active", cover: faces[0] ?? null, manual: false }); for (const f of db.faces) if (faces.includes(f.id)) Object.assign(f, { person: id, state: "confirmed", cluster: null, maybe: null }); });
     return wait(id);
   },
@@ -147,12 +156,12 @@ const fake: PeopleApi = {
   merge: (from, into) => { mutate(`merge:${from}:${into}`, () => { for (const f of db.faces) if (f.person === from) f.person = into; db.people = db.people.filter((p) => p.id !== from); }); return wait(undefined); },
   remove: (id, removed) => { mutate(`remove:${id}:${removed}`, () => { db.people.find((p) => p.id === id)!.state = removed ? "ignored" : "active"; }); return wait(undefined); },
   cover: (id, face) => { mutate(`cover:${id}:${face}`, () => { const p = db.people.find((x) => x.id === id)!; p.cover = face; p.manual = true; }); return wait(undefined); },
-  assign: (person, faces) => { mutate(`assign:${person}:${faces.length}`, () => { for (const f of db.faces) if (faces.includes(f.id)) Object.assign(f, { person, state: "confirmed", cluster: null, maybe: null }); }); return wait(undefined); },
+  assign: (person, faces) => { ghost(faces); mutate(`assign:${person}:${faces.length}`, () => { for (const f of db.faces) if (faces.includes(f.id)) Object.assign(f, { person, state: "confirmed", cluster: null, maybe: null }); }); return wait(undefined); },
   notPerson: (person, faces) => { mutate(`notPerson:${person}:${faces.length}`, () => { for (const f of db.faces) if (faces.includes(f.id) && f.maybe === person) f.maybe = null; }); return wait(undefined); },
   notFace: (faces) => { mutate(`notFace:${faces.length}`, () => { for (const f of db.faces) if (faces.includes(f.id)) f.state = "rejected"; }); return wait(undefined); },
   unignore: (faces) => { mutate(`unignore:${faces.length}`, () => { for (const f of db.faces) if (faces.includes(f.id) && f.state === "rejected") f.state = "unreviewed"; }); return wait(undefined); },
   failedPhotos: (limit) => wait(Array.from({ length: Math.min(limit, scan.failed) }, (_, i) => `/synthetic/broken_${i}.jpg`)),
-  undo: () => { const prev = undoStack.pop(); calls.push("undo"); if (!prev) return wait(null); db = prev; sizes = null; return wait("undone"); },
+  undo: () => { const prev = undoStack.pop(); calls.push("undo"); if (!prev) return wait(null); db = prev; sizes = null; ghosts = []; return wait("undone"); },
   deleteAll: () => { db = { faces: [], people: [], nextPerson: 1 }; scan.enabled = false; undoStack.length = 0; calls.push("deleteAll"); return wait(undefined); },
   retry: () => { scan.health = "ok"; scan.failure = null; return wait(undefined); },
   scanFolder: (path) => { calls.push(`scanFolder:${path}`); return wait(undefined); },
@@ -172,19 +181,31 @@ const packFor = (m: string): PackInfo => m === "download"
   ? { ...PACK_BASE, state: "downloading", progress: { id: "faces", done: 3_100_000, total: 8_600_000, bytes_per_sec: 2_000_000, eta_s: 3, phase: "download" } }
   : m === "off" ? PACK_BASE : { ...PACK_BASE, state: "installed", bytes_on_disk: 8_600_000, files_ok: 2, verified_at: 1 };
 
-type H = { calls: string[]; scan: typeof scan; folderScope: boolean; fake: PeopleApi; db: () => Db; setPack: (m: string) => void; tick: () => void; changed: () => void; peopleState: typeof peopleState };
+type H = { calls: string[]; scan: typeof scan; folderScope: boolean; grow: boolean; fake: PeopleApi; db: () => Db; setPack: (m: string) => void; tick: () => void; changed: () => void; peopleState: typeof peopleState };
 
 function Harness() {
   const [pack, setPack] = useState<PackInfo>(packFor(mode));
   const [width] = useState(Number(q.get("w") ?? 1440));
   useEffect(() => {
     const h: H = {
-      calls, scan, folderScope, fake, db: () => db, setPack: (m) => { scan.installed = m === "installed"; setPack(packFor(m)); }, peopleState,
+      calls, scan, folderScope, grow: q.get("grow") === "1", fake, db: () => db, setPack: (m) => { scan.installed = m === "installed"; setPack(packFor(m)); }, peopleState,
       tick: () => { if (scan.pending) { scan.scanned += 10; scan.pending = Math.max(0, scan.pending - 10); } listeners.forEach((l) => l.progress({ scanned: scan.scanned, pending: scan.pending, faces_found: db.faces.length })); },
       changed: () => listeners.forEach((l) => l.changed()),
     };
     (window as unknown as { __h: H }).__h = h;
     if (folderScope) { settings.set("faces.scope", "folder"); settings.set("faces.scope_folder", "/synthetic/Shoot"); setScanFolderTotal("/synthetic/Shoot", 333); }
+    // grow=1: the scan goes on by itself (no event is ever sent: the poll alone must keep the view current), then ends
+    let grown: ReturnType<typeof setInterval> | undefined;
+    if (q.get("grow") === "1") {
+      let n = 0;
+      grown = setInterval(() => {
+        n++;
+        scan.photos = (scan.photos ?? 0) + 20;
+        const top = Math.max(0, ...db.faces.map((f) => f.id));
+        for (let k = 0; k < 4; k++) db.faces.push({ id: top + 1 + k, path: `/synthetic/g${n}_${k}.jpg`, person: null, state: "unreviewed", cluster: 500 + n, maybe: null });
+        if (n >= 6) { scan.fw = 0; scan.pending = 0; scan.photos = 333; clearInterval(grown); }
+      }, 1000);
+    }
     const stop = startPeople();
     resetPeople({ on: false });
     setPeopleOn(true);
@@ -198,7 +219,7 @@ function Harness() {
       if (q.get("shift") === "1") void runPeopleShift().then((r) => r, (e) => ({ ok: false, error: String(e?.stack ?? e) }))
         .then((r) => { const el = document.getElementById("shift-report")!; el.textContent = JSON.stringify(r); el.dataset.done = "1"; });
     });
-    return stop;
+    return () => { stop(); clearInterval(grown); };
   }, []);
   return (
     <div style={{ position: "fixed", inset: 0, width, display: "flex" }}>

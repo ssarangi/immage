@@ -31,7 +31,7 @@ html[data-scheme="light"] .people-view { background: color-mix(in srgb, var(--wi
 .people-btn.primary { background: var(--accent); color: var(--window); }
 .people-btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, var(--window)); }
 .people-bar { border-block-end: 1px solid var(--inset); }
-.people-scope { flex: none; display: inline-flex; align-items: center; height: 22px; padding: 0 10px; border-radius: 11px; background: var(--inset); color: var(--text-2); }
+.people-scope { flex: 0 1 auto; min-width: 0; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; height: 22px; padding: 0 10px; border-radius: 11px; background: var(--inset); color: var(--text-2); }
 .people-find { flex: 0 1 220px; min-width: 0; height: 26px; box-sizing: border-box; padding: 0 10px; border: 1px solid var(--inset); border-radius: var(--radius-ctl); background: var(--card); color: var(--text); font-size: var(--fs-small); }
 .people-size { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); }
 .people-size input { width: 120px; }

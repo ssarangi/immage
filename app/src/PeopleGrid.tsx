@@ -29,18 +29,18 @@ export function Crop({ face, tile, className = "pcrop", style }: { face: number 
   );
 }
 
-export const tileLabel = (tile: Tile, byId: ReadonlyMap<number, string>): { name: string; sub: string } => {
+export const tileLabel = (tile: Tile, byId: ReadonlyMap<number, string>): { name: string; sub: string; title?: string } => {
   const n = (x: number) => ({ n: x, count: formatNumber(x) });
   switch (tile.kind) {
     case "person": return { name: tile.name, sub: t("people.tile.photos", n(tile.photos)) };
-    case "group": return { name: t("people.group.hint"), sub: t("people.tile.faces", n(tile.size)) };
+    case "group": return { name: t("people.group.name"), title: t("people.group.hint"), sub: t("people.tile.faces", n(tile.size)) };
     case "maybe": return { name: t("people.suggest.maybe", { name: tile.name }), sub: t("people.tile.faces", n(tile.size)) };
     case "face": return { name: tile.maybe != null && byId.has(tile.maybe) ? t("people.suggest.maybe", { name: byId.get(tile.maybe)! }) : t("people.face.unnamed"), sub: "" };
   }
 };
 
 function TileView({ tile, label, g, index, selected, active, size, rename, onRename }: {
-  tile: Tile; label: { name: string; sub: string }; g: Geometry; index: number; selected: boolean; active: boolean; size: number;
+  tile: Tile; label: { name: string; sub: string; title?: string }; g: Geometry; index: number; selected: boolean; active: boolean; size: number;
   rename: boolean; onRename: (name: string | null) => void;
 }) {
   const p = tilePos(index, g);
@@ -53,7 +53,7 @@ function TileView({ tile, label, g, index, selected, active, size, rename, onRen
     <div role="gridcell" id={`ptile-${tile.key}`} className="ptile" data-tile={index} data-kind={tile.kind} aria-selected={selected} aria-label={aria}
          data-active={active || undefined} data-maybe={(tile.kind === "maybe" || (tile.kind === "face" && tile.maybe != null)) || undefined}
          data-dim={((tile.kind === "person" || tile.kind === "face") && tile.ignored) || undefined}
-         style={{ left: p.x, top: p.y, width: size, height: size + CAPTION }} title={label.name}>
+         style={{ left: p.x, top: p.y, width: size, height: size + CAPTION }} title={label.title ?? label.name}>
       {tile.kind === "group" && tile.members.length > 1 ? (
         <div className="pcrop pcollage" style={{ height: size }} aria-hidden="true">
           {tile.members.slice(0, 4).map((m) => <Crop key={m} face={m} tile={Math.round(size / 2)} className="pcell" />)}

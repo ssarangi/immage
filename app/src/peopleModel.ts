@@ -269,6 +269,9 @@ export function mergeUndo(prev: UndoEntry | null, next: UndoEntry): UndoEntry {
   return { ...next, n: prev.n + next.n, steps: prev.steps + next.steps };
 }
 
+// how long the Undo line stays: a change to many faces (a whole group) gets longer
+export const undoMs = (n: number) => (n > 20 ? 8000 : 5000);
+
 // ---- the scan, in plain words ----
 
 export type ScanKind = "off" | "idle" | "scanning" | "paused" | "waiting" | "blocked" | "retrying";

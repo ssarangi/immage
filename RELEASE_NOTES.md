@@ -28,7 +28,9 @@ Improvements
   face" can be restored in Ignored, and the scan strip notes photos that could
   not be read, folders that are offline and network folders that are left out.
   The first-run card starts on "Only the open folder", and a folder scan shows
-  "N of M photos" without a placeholder.
+  "N of M photos" without a placeholder. The view keeps following a running scan
+  by itself, a named group leaves To review at once, Ctrl/Cmd+Z undoes the latest
+  change, and a change to many faces keeps its Undo line for eight seconds.
 - **Library panel:** the Metadata, Keywording, Folders, Catalog and History cards
   now always open independently, so Folders and Catalog can be open together;
   Focus mode applies only to the Edit view's tool panels, Presets and Advanced

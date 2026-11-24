@@ -11,9 +11,10 @@
 // zero; break=1 is the negative control.
 import { clearUndo, peopleState, refreshAll, setPeople } from "../src/peopleStore";
 import { scanJob } from "../src/peopleModel";
+import { activeJobs } from "../src/background";
 
 type R = { x: number; y: number; w: number; h: number };
-type H = { calls: string[]; folderScope: boolean; scan: { photos: number | null; fw: number; offline: number; net: number; failed: number; enabled: boolean; installed: boolean; scanned: number; pending: number | null; health: string; failure: string | null; paused: boolean };
+type H = { calls: string[]; folderScope: boolean; grow: boolean; scan: { photos: number | null; fw: number; offline: number; net: number; failed: number; enabled: boolean; installed: boolean; scanned: number; pending: number | null; health: string; failure: string | null; paused: boolean };
            db: () => { faces: { id: number; person: number | null; state: string; cluster: number | null; maybe: number | null; path: string }[] };
            setPack: (m: string) => void; tick: () => void };
 const h = () => (window as unknown as { __h: H }).__h;
@@ -118,6 +119,28 @@ async function folderRun(out: Record<string, unknown>, fail: (m: string) => void
   if (peopleState().scan.kind !== "idle") fail(`folder scope: the scan is "${peopleState().scan.kind}" after it ended`);
 }
 
+// a scan that goes on by itself, with no event and no input, the pointer outside the grid: the strip, the counts and the
+// groups follow within the poll's 2 s, the activity line leaves when the scan ends
+async function growRun(out: Record<string, unknown>, fail: (m: string) => void) {
+  const text = () => $(".people-strip-text")?.textContent ?? "";
+  const rail = (i: number) => $$(".people-rail-item")[i]?.querySelector(".people-rail-count")?.textContent ?? "";
+  const job = () => activeJobs().some((j) => /Finding faces/.test(j.what));
+  await frames(10);
+  const t0 = { strip: text(), review: rail(1), tiles: $$(".ptile").length, job: job() };
+  await frames(130);   // 3 s
+  const t1 = { strip: text(), review: rail(1), tiles: $$(".ptile").length, job: job() };
+  await frames(200);   // the scan ends after 6 s of growth
+  const t2 = { strip: text(), review: rail(1), tiles: $$(".ptile").length, job: job() };
+  out.grow = [t0, t1, t2];
+  if (t1.strip === t0.strip) fail(`grow: the strip did not change in 3 s ("${t0.strip}")`);
+  if (t1.review === t0.review) fail(`grow: To review did not change in 3 s (${t0.review})`);
+  if (t1.tiles <= t0.tiles) fail(`grow: no group arrived in 3 s (${t0.tiles} > ${t1.tiles})`);
+  if (!t0.job || !t1.job) fail("grow: no activity line while the scan runs");
+  if (t2.strip !== "") fail(`grow: the strip says "${t2.strip}" after the scan ended`);
+  if (t2.job) fail("grow: the activity line stays after the scan ended");
+  if (Number(t2.review) <= Number(t1.review)) fail(`grow: To review stopped at ${t1.review} (${t2.review})`);
+}
+
 async function consentRun(out: Record<string, unknown>, fail: (m: string) => void) {
   const card = () => $(".people-consent")!;
   const radios = $$<HTMLInputElement>(".people-consent input[type=radio]");
@@ -178,6 +201,11 @@ export async function runPeopleShift() {
   out.styleOffenders = auditStyles();
   if ((out.styleOffenders as string[]).length) fail(`state rules touch a size: ${(out.styleOffenders as string[]).slice(0, 3).join("; ")}`);
 
+  if (h().grow) {
+    await growRun(out, fail);
+    out.ok = (out.failures as string[]).length === 0;
+    return out;
+  }
   if (h().folderScope) {
     await folderRun(out, fail);
     out.ok = (out.failures as string[]).length === 0;
@@ -283,14 +311,27 @@ export async function runPeopleShift() {
   const startIndex = Number(target?.dataset.tile ?? -1);
   if (target?.dataset.kind !== "group") fail(`keyboard: arrows did not reach a group (${walk.join(" ")}; section ${$(".people-rail-item[aria-selected=true]")?.textContent})`);
   const countBefore = $$(".ptile[data-kind=group]").length;
+  const railNow = (i: number) => Number(($$(".people-rail-item")[i].querySelector(".people-rail-count")?.textContent ?? "").split(",").join(""));
+  const reviewBefore = railNow(1), namedId = target?.id ?? "";
   base = snapshot(view);
   press(grid(), "d");
   await frames(3);
+  const nameTitle = $(".people-name label")?.textContent ?? "";
+  out.nameTitle = nameTitle;
+  if (!/^Name this group \(\d+ faces?\)$/.test(nameTitle)) fail(`naming: the box says "${nameTitle}" for a selected group`);
   let kbd = $<HTMLInputElement>(".people-name input");
   if (!kbd) fail("keyboard: a letter did not open the name box");
   if (kbd && kbd.value !== "d") fail(`keyboard: the box opened with "${kbd.value}", not the letter`);
   if (kbd) { typeInto(kbd, "Dad"); await frames(2); press(kbd, "Enter"); }
   await frames(6);
+  // the named group goes from the grid and the count at once, and stays gone when the backend (which still lists it
+  // until it regroups) is read again
+  const gone = () => !document.getElementById(namedId);
+  const goneNow = gone(), countNow = railNow(1);
+  await frames(120);
+  out.named = { goneNow, goneLater: gone(), reviewBefore, reviewNow: countNow, reviewLater: railNow(1) };
+  if (!goneNow || !gone()) fail("named group: its tile is still in To review");
+  if (countNow !== reviewBefore - 1 || railNow(1) !== reviewBefore - 1) fail(`named group: To review went ${reviewBefore} > ${countNow} > ${railNow(1)}`);
   const assigned = h().calls.find((c) => c.startsWith("assign:1:"));
   if (!assigned) fail(`keyboard: Enter did not name the group Dad (${h().calls.join(",")})`);
   const undoText = $(".people-undo-text")?.textContent ?? "";
@@ -323,6 +364,14 @@ export async function runPeopleShift() {
   await frames(3);
   checkFixed("undo line gone");
   drain(false);   // Undo puts the tile back: on purpose
+  // Ctrl+Z in People takes back the latest change (faces_undo), though the line is gone
+  const undos = h().calls.filter((c) => c === "undo").length;
+  grid().dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+  await frames(8);
+  const after = h().calls.filter((c) => c === "undo").length;
+  out.ctrlZ = { before: undos, after };
+  if (after !== undos + 1) fail(`Ctrl+Z did not call undo (${undos} > ${after})`);
+  drain(false);
 
   await refreshAll(true); await frames(4);
   drain(false);   // naming and Undo reflow the tiles on purpose

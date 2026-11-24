@@ -144,3 +144,21 @@ test('the consent card starts on the open folder, and on the Catalog only when n
   assert.equal(report(dump('shift=1&state=off&theme=dark')).defaultScope, 'folder');
   assert.equal(report(dump('shift=1&state=off&nofolder=1&theme=dark')).defaultScope, 'catalog');
 });
+
+test('a scan that goes on by itself keeps the strip, the counts and the groups current with no event, and the activity line leaves at its end', { skip }, () => {
+  const r = report(dump('shift=1&state=scanning&folderscope=1&grow=1&theme=dark', 1440, 900, [], 120000));
+  assert.equal(r.error, undefined, r.error);
+  assert.deepEqual(r.failures, []);
+  assert.equal(r.grow[2].strip, '');
+  assert.equal(r.grow[2].job, false);
+});
+
+test('a named group leaves To review at once and for good, the box says what is named, and Ctrl+Z takes it back', { skip }, () => {
+  const r = report(dump('shift=1&theme=dark'));
+  assert.equal(r.error, undefined, r.error);
+  assert.deepEqual(r.failures, []);
+  assert.ok(r.named.goneNow && r.named.goneLater);
+  assert.equal(r.named.reviewNow, r.named.reviewBefore - 1);
+  assert.match(r.nameTitle, /^Name this group \(\d+ faces?\)$/);
+  assert.equal(r.ctrlZ.after, r.ctrlZ.before + 1);
+});

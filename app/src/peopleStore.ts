@@ -145,11 +145,25 @@ function applyStatus(s: FacesStatus, paused: boolean) {
   if ((before === "scanning" || before === "paused") && scan.kind === "idle" && state.on) void refreshAll(true);
 }
 
+// no call may wedge the view: a command that never answers (a lock held by the scan, a dead bridge) is given up on
+// after CALL_MS, so the guards below always reset and the next poll tries again
+const CALL_MS = 10000;
+const bounded = <T,>(p: Promise<T>, ms = CALL_MS): Promise<T> => new Promise<T>((res, rej) => {
+  const t = setTimeout(() => rej(new Error("no answer")), ms);
+  p.then((v) => { clearTimeout(t); res(v); }, (e) => { clearTimeout(t); rej(e); });
+});
+// what the lists depend on: when it changes the lists are read again, when it does not they are left alone
+const sigOf = (s: FacesStatus | null) => (s ? JSON.stringify([s.totals, s.enabled, s.installed]) : "");
+let listSig = "", statusBusy = false;
+
 export async function refreshStatus() {
+  if (statusBusy) return;
+  statusBusy = true;
   try {
-    const [s, paused] = await Promise.all([api.status(), api.paused().catch(() => state.paused)]);
+    const [s, paused] = await Promise.all([bounded(api.status()), bounded(api.paused()).catch(() => state.paused)]);
     applyStatus(s, paused);
   } catch { if (!state.status) setPeople({ failed: true }); }
+  finally { statusBusy = false; }
 }
 
 // the lists. While a pointer is on a tile the answer waits (`holdRefresh(false)` brings it), and at most one
@@ -162,9 +176,10 @@ export async function refreshAll(force = false) {
   reading = true; dirty = false; lastRead = Date.now();
   try {
     const [s, paused, people, groups, unknown, ignored] = await Promise.all([
-      api.status(), api.paused().catch(() => state.paused), api.people(), api.groups(), api.list({ kind: "unknown" }, 0, UNKNOWN_PAGE),
-      api.list({ kind: "ignored" }, 0, UNKNOWN_PAGE),
+      bounded(api.status()), bounded(api.paused()).catch(() => state.paused), bounded(api.people()), bounded(api.groups()),
+      bounded(api.list({ kind: "unknown" }, 0, UNKNOWN_PAGE)), bounded(api.list({ kind: "ignored" }, 0, UNKNOWN_PAGE)),
     ]);
+    listSig = sigOf(s);
     const prev = state.data.unknown;
     // more than the first page was loaded before: keep that much, so the grid does not shrink under the user
     const keep = prev.length > unknown.length && unknown.length === UNKNOWN_PAGE ? await api.list({ kind: "unknown" }, 0, prev.length) : unknown;
@@ -173,7 +188,7 @@ export async function refreshAll(force = false) {
     // strip always move, and a grid that is empty fills at once
     const held = holds > 0 && !force && (state.data.people.length + state.data.groups.length + state.data.unknown.length + state.data.ignoredFaces.length) > 0;
     if (held) { dirty = true; return; }
-    setPeople({ data: { people, groups, unknown: keep, unknownMore: keep.length >= UNKNOWN_PAGE && keep.length % UNKNOWN_PAGE === 0, ignoredFaces: ignored, ignoredMore: ignored.length >= UNKNOWN_PAGE }, loaded: true });
+    setPeople({ data: unsettled({ people, groups, unknown: keep, unknownMore: keep.length >= UNKNOWN_PAGE && keep.length % UNKNOWN_PAGE === 0, ignoredFaces: ignored, ignoredMore: ignored.length >= UNKNOWN_PAGE }), loaded: true });
   } catch (e) {
     if (!state.status) setPeople({ failed: true }); else setPeople({ error: String(e) });
   } finally { reading = false; }
@@ -222,14 +237,26 @@ export function startPeople(): () => void {
       applyStatus({ ...state.status, scanned: p.scanned, pending: p.pending, faces_found: p.faces_found }, state.paused);
     },
   );
+  // the status is memory-only and always read; the lists only when what they depend on changed (or an event said so)
   const poll = setInterval(() => {
-    if (document.visibilityState !== "visible") return;
-    if (state.on) void refreshAll(); else if (state.status?.enabled) void refreshStatus();
+    void refreshStatus().then(() => {
+      if (state.on && (sigOf(state.status) !== listSig || dirty)) void refreshAll();
+    });
   }, 2000);
   return () => { stop(); clearInterval(poll); clearTimeout(timer); };
 }
 
 // ---- changes ----
+
+// Faces the user has just named or ignored. The backend regroups when it is idle, so for a while it can still list a
+// group whose faces are all named; those groups are kept out of the lists here (by their faces), so the grid and the
+// counts drop them at once and for good. Undo and Delete clear it, and the next read is then the backend's own.
+const settled = new Set<number>();
+const unsettled = (d: PeopleData): PeopleData => !settled.size ? d : {
+  ...d, groups: d.groups.filter((g) => !(g.members?.length ? g.members : [g.rep_face_id]).some((m) => settled.has(m))),
+  unknown: d.unknown.filter((f) => !settled.has(f.id)),
+};
+const settle = (faces: readonly number[]) => { faces.forEach((f) => settled.add(f)); if (settled.size > 20000) settled.clear(); };
 
 let undoId = 1;
 const entry = (kind: UndoKind, n: number, name = "", other = ""): UndoEntry => ({ kind, n, name, other, steps: 1 });
@@ -249,6 +276,7 @@ async function change(local: (d: PeopleData) => PeopleData, call: () => Promise<
     await call();
     if (done) postUndo(done);
   } catch (e) {
+    settled.clear();
     setPeople({ data: before, error: String(e) });
   } finally {
     setPeople({ busy: false });
@@ -257,6 +285,7 @@ async function change(local: (d: PeopleData) => PeopleData, call: () => Promise<
 }
 
 export async function undoLast(steps: number) {
+  settled.clear();
   setPeople({ undo: null, busy: true });
   try { for (let i = 0; i < steps; i++) if (!(await api.undo())) break; }
   catch (e) { setPeople({ error: String(e) }); }
@@ -287,6 +316,7 @@ export type NameTarget = { kind: "person"; id: number; name: string } | { kind: 
 export async function nameTiles(keys: readonly string[], to: NameTarget) {
   const faces = await facesOf(keys);
   if (!faces.length) return;
+  settle(faces);
   await change((d) => without(d, keys),
     async () => { if (to.kind === "create") await api.createPerson(to.name, faces); else await api.assign(to.id, faces); },
     entry("assigned", faces.length, to.name));
@@ -297,6 +327,7 @@ export async function confirmTiles(keys: readonly string[], names: ReadonlyMap<n
   for (const k of keys) {
     if (!k.startsWith("s:")) continue;
     const person = keyId(k), faces = await facesOf([k]);
+    if (faces.length) settle(faces);
     if (faces.length) await change((d) => without(d, [k]), () => api.assign(person, faces), entry("confirmed", faces.length, names.get(person) ?? ""));
   }
 }
@@ -315,6 +346,7 @@ export async function notPerson(keys: readonly string[], faceMaybe: ReadonlyMap<
 export async function ignoreTiles(keys: readonly string[]) {
   const people = keys.filter((k) => k.startsWith("p:")).map(keyId);
   const faces = await facesOf(keys.filter((k) => !k.startsWith("p:") && !k.startsWith("s:")));
+  if (faces.length) settle(faces);
   if (faces.length) await change((d) => without(d, keys), () => api.notFace(faces), entry("ignored", faces.length));
   for (const id of people) {
     const p = state.data.people.find((x) => x.id === id);
@@ -382,6 +414,7 @@ export async function turnOff() {
   try { await api.setEnabled(false); await refreshAll(true); } catch (e) { setPeople({ error: String(e) }); }
 }
 export async function deleteAllFaceData() {
+  settled.clear();
   try { await api.deleteAll(); resetPeople({ on: true }); await refreshAll(true); } catch (e) { setPeople({ error: String(e) }); }
 }
 export async function togglePause() {

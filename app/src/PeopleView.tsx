@@ -17,7 +17,7 @@ import { PeopleConsent } from "./PeopleConsent";
 import { Crop, PeopleGrid, tileLabel, type GridOverlay } from "./PeopleGrid";
 import { NamePopover } from "./PeopleName";
 import {
-  NO_SEL, SECTIONS, TILE_DEFAULT, TILE_MAX, TILE_MIN, keepSelected, scanNotes, sectionCounts, sectionTiles, select, stableOrder, viewKind,
+  NO_SEL, SECTIONS, TILE_DEFAULT, TILE_MAX, TILE_MIN, keepSelected, scanNotes, undoMs, sectionCounts, sectionTiles, select, stableOrder, viewKind,
   type Intent, type Section, type Sel, type SelAction, type Tile, type UndoEntry,
 } from "./peopleModel";
 import {
@@ -77,7 +77,7 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
   const [sel, setSel] = useState<Sel>(NO_SEL);
   const [size, setSize] = useState(readSize);
   const [query, setQuery] = useState("");
-  const [naming, setNaming] = useState<{ keys: string[]; seed: string; index: number } | null>(null);
+  const [naming, setNaming] = useState<{ keys: string[]; seed: string; index: number; faces: number; groups: number } | null>(null);
   const [renameKey, setRenameKey] = useState<string | null>(null);
   const [dupe, setDupe] = useState<{ name: string; id: number; target: number } | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
@@ -128,7 +128,9 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
   };
   const startNaming = (seed: string) => {
     if (!nameable.length) return;
-    setNaming({ keys: nameable.map((x) => x.key), seed, index: sel.active });
+    // what is named is faces: a group stands for all of its faces
+    const faces = nameable.reduce((n, x) => n + (x.kind === "group" || x.kind === "maybe" ? x.size : 1), 0);
+    setNaming({ keys: nameable.map((x) => x.key), seed, index: sel.active, faces, groups: nameable.filter((x) => x.kind === "group").length });
   };
   const finishNaming = (to: NameTarget, next: boolean) => {
     if (!naming) return;
@@ -143,7 +145,10 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
     }
     setSel(left.length ? select(NO_SEL, { type: "click", index: at }, left) : NO_SEL);
     void nameTiles(naming.keys, to).then(() => {
-      if (next && left.length) setNaming({ keys: [left[at]], seed: "", index: at });
+      if (next && left.length) {
+        const nt = byKey.get(left[at]);
+        setNaming({ keys: [left[at]], seed: "", index: at, faces: nt && (nt.kind === "group" || nt.kind === "maybe") ? nt.size : 1, groups: nt?.kind === "group" ? 1 : 0 });
+      }
     });
   };
   const rename = async (key: string, name: string | null) => {
@@ -203,8 +208,30 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
 
   // ---- the Undo line ----
   const timer = useRef<ReturnType<typeof createUndoTimer> | null>(null);
-  if (!timer.current) timer.current = createUndoTimer(() => clearUndo());
-  useEffect(() => { if (s.undo) timer.current!.start(); else timer.current!.cancel(); }, [s.undo?.id]);
+  useEffect(() => {
+    timer.current?.cancel();
+    // a change to many faces (a whole group) stays up longer
+    timer.current = createUndoTimer(() => clearUndo(), s.undo ? undoMs(s.undo.n) : undefined);
+    if (s.undo) timer.current.start();
+  }, [s.undo?.id]);
+  // Ctrl or Cmd+Z takes back the latest change while People is up and no text field has the keyboard: the app's own
+  // Ctrl+Z is the edit history, which is not what the view is showing
+  const undoRef = useRef(s);
+  undoRef.current = s;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || (e.key !== "z" && e.key !== "Z")) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName))) return;
+      if (document.querySelector(".modal-backdrop")) return;
+      const cur = undoRef.current;
+      if (!cur.undo && !cur.status?.undo) return;
+      e.preventDefault(); e.stopPropagation();
+      void undoLast(cur.undo?.steps ?? 1);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
   useEffect(() => () => timer.current?.cancel(), []);
 
   // ---- rows ----
@@ -224,6 +251,10 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
     : scan.kind === "paused" ? { label: t("aimodels.resume"), run: togglePause }
     : scan.kind === "blocked" || scan.kind === "retrying" ? { label: t("people.scan.tryAgain"), run: retryFailed } : null;
 
+  // what the scan covers, in words: the folder that was chosen, or the Catalog
+  const scopeFolder = settings.get("faces.scope") === "folder" ? settings.get("faces.scope_folder") : null;
+  const scopeText = scopeFolder ? t("people.scope.folder", { name: scopeFolder.split(/[\\/]/).filter(Boolean).pop() ?? scopeFolder }) : t("people.scope.catalog");
+  const scopeTitle = scopeFolder ?? t("people.scope.title");
   const sectionLabel = (x: Section) => t(`people.section.${x}`);
   const one = target.length === 1 ? target[0] : null;
   const maybeOnly = nameable.length > 0 && nameable.every((x) => x.kind === "maybe");
@@ -250,7 +281,7 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
 
       <div className="people-bar">
         {kind === "ready" || kind === "scanning" || kind === "none" ? <>
-          <span className="people-scope" title={t("people.scope.title")}>{t("people.scope.catalog")}</span>
+          <span className="people-scope" title={scopeTitle}>{scopeText}</span>
           <input className="people-find" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("people.find")} aria-label={t("people.find")} />
           <label className="people-size">{t("people.size")}
             <input type="range" min={TILE_MIN} max={TILE_MAX} step={4} value={size}
@@ -323,7 +354,7 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
                           )}
                         </>}
                         overlay={(o: GridOverlay) => naming ? (
-                          <NamePopover key={naming.keys.join()} o={o} index={naming.index} count={naming.keys.length} seed={naming.seed} people={data.people}
+                          <NamePopover key={naming.keys.join()} o={o} index={naming.index} count={naming.faces} group={naming.groups === 1 && naming.keys.length === 1} seed={naming.seed} people={data.people}
                                        onPick={finishNaming} onClose={() => { setNaming(null); }} />
                         ) : null} />
           </div>

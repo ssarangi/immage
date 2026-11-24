@@ -34,7 +34,8 @@ scanned*, because network folders are left out of the scan.
 The strip, the toolbar, the selection bar and the Undo line at the bottom always have their
 place, so nothing jumps when they fill.
 
-On the left, four sections with counts:
+The chip at the left of the toolbar says what the scan covers: *Catalog* or *Folder: name*. A group tile
+reads *Unnamed group* (hover for "Looks like one person"). On the left, four sections with counts:
 
 | Section | What it holds |
 |---|---|
@@ -78,9 +79,10 @@ name that exists offers to merge), **Merge...** (two or more people, with a dial
 who keeps the name; the default is the person with more photos), **Cover...** (pick the
 picture shown for the person), **Ignore** (key I; Restore in Ignored).
 
-Every change shows **Undo** for five seconds at the bottom ("Named 12 faces Dad."). Further
+Every change shows **Undo** for five seconds (eight when it touched more than 20 faces) at the bottom ("Named 12 faces Dad."). Further
 changes of the same kind join the line; Undo takes all of them back. The line waits while the
-pointer or the keyboard is on it.
+pointer or the keyboard is on it. **Ctrl/Cmd+Z** in People takes back the latest change even after the line is gone
+(outside a text field; the edit history keeps Ctrl/Cmd+Z everywhere else).
 
 ## Turning off and deleting
 

@@ -189,6 +189,8 @@ export function setScanJob(p: { done: number; total: number; paused: boolean } |
   } else update(SCAN_JOB, { what, done: p.done, total: p.total, cancel: p.paused ? null : "faces", stopping: false });
 }
 
+export const activeJobs = (): readonly Job[] => jobs;
+
 export function dismissJob(id: number) {
   jobs = jobs.filter((j) => j.id !== id);
   emit();

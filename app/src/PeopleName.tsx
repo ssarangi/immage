@@ -14,8 +14,8 @@ import type { NameTarget } from "./peopleStore";
 
 const W = 260, ROW = 30, HEAD = 74;
 
-export function NamePopover({ o, index, count, seed, people, onPick, onClose }: {
-  o: GridOverlay; index: number; count: number; seed: string; people: PersonRow[];
+export function NamePopover({ o, index, count, group, seed, people, onPick, onClose }: {
+  o: GridOverlay; index: number; count: number; group: boolean; seed: string; people: PersonRow[];
   onPick: (to: NameTarget, next: boolean) => void; onClose: () => void;
 }) {
   const [q, setQ] = useState(seed);
@@ -23,6 +23,8 @@ export function NamePopover({ o, index, count, seed, people, onPick, onClose }: 
   const input = useRef<HTMLInputElement>(null);
   const id = useId();
   const options = nameOptions(q, people);
+  // what is being named, by what is selected: one group is "this group", anything else is its faces
+  const title = t(group ? "people.name.group" : "people.name.title", { n: count, count: formatNumber(count) });
   useEffect(() => { input.current?.focus(); const n = input.current?.value.length ?? 0; input.current?.setSelectionRange(n, n); }, []);
   const at = Math.min(hi, Math.max(0, options.length - 1));
   const accept = (opt: NameOption | undefined, next: boolean) => {
@@ -35,9 +37,9 @@ export function NamePopover({ o, index, count, seed, people, onPick, onClose }: 
   const below = p.y - o.scrollTop + o.g.tile + CAPTION + 4;
   const top = below + height > o.height ? Math.max(4, p.y - o.scrollTop - height - 4) : below;
   return (
-    <div className="people-name" style={{ left, top }} role="dialog" aria-label={t("people.name.title", { n: count, count: formatNumber(count) })}
+    <div className="people-name" style={{ left, top }} role="dialog" aria-label={title}
          onPointerDown={(e) => e.stopPropagation()}>
-      <label htmlFor={id}>{t("people.name.title", { n: count, count: formatNumber(count) })}</label>
+      <label htmlFor={id}>{title}</label>
       <input id={id} ref={input} role="combobox" aria-expanded="true" aria-controls={`${id}-list`} aria-autocomplete="list" autoComplete="off" spellCheck={false}
              aria-activedescendant={options.length ? `${id}-${at}` : undefined} value={q} placeholder={t("people.name.placeholder")}
              onChange={(e) => { setQ(e.target.value); setHi(0); }}

@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NO_SEL, GAP, PAD, CAPTION, geometry, gridKey, keepSelected, mergeUndo, nameOptions, needsReview, scanView, sectionCounts,
-  scanNotes, scanJob, sectionTiles, select, stableOrder, tilePos, tilesInRect, totalHeight, viewKind, visibleRange } from '../app/src/peopleModel.ts';
+  scanNotes, scanJob, undoMs, sectionTiles, select, stableOrder, tilePos, tilesInRect, totalHeight, viewKind, visibleRange } from '../app/src/peopleModel.ts';
 
 const person = (id, name, o = {}) => ({ id, name, state: 'active', faces: 5, photos: 10, cover_face_id: null, cover_manual: false, suggestions: 0, ...o });
 const data = (o = {}) => ({ people: [], groups: [], unknown: [], unknownMore: false, ignoredFaces: [], ignoredMore: false, ...o });
@@ -178,4 +178,11 @@ test('scan view in the folder scope: photos of the open folder, no ETA without a
   const cat = scanView(status({ scanned: 100, pending: 900, infer_ms: 200 }), false);
   assert.deepEqual([cat.done, cat.total, cat.left], [100, 1000, 180]);
   assert.equal(scanView(status({ scanned: 100, pending: 900 }), false).left, null);
+});
+
+test('the Undo line stays longer after a change to many faces', () => {
+  assert.equal(undoMs(1), 5000);
+  assert.equal(undoMs(20), 5000);
+  assert.equal(undoMs(21), 8000);
+  assert.equal(undoMs(88), 8000);
 });
