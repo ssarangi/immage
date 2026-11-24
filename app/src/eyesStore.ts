@@ -7,7 +7,7 @@
 // off or there is no eye model; the verdict is the "preview" of notes/faces-p4-backend-notes.md until the model is validated.
 import { useEffect, useSyncExternalStore } from "react";
 import { EyeQueue, scanPaths, type EyeLabel } from "./eyesQueue";
-import { eyeVerdict, setEyeVerdicts, forgetEyes } from "./eyesKnown";
+import { eyeVerdict, setEyeVerdicts } from "./eyesKnown";
 import { eyesVersion, subscribeEyes } from "./eyesKnown";
 import { peopleApi, peopleState, subscribePeople } from "./peopleStore";
 
@@ -30,7 +30,9 @@ export const eyesActive = () => { const s = peopleState().status; return !!s && 
 const want = () => {
   const s = peopleState();
   // the faces changed (naming, a scan): the verdicts are asked for again
-  if (s.tick !== lastTick) { lastTick = s.tick; queue.forget(); forgetEyes(); }
+  // Faces changed (a scan, naming, or this very store's batches, which make the backend say so): the verdicts stay, only the photos still
+  // unknown are asked for again. Forgetting them all here once emptied Find's Closed eyes result the moment its own scan finished.
+  if (s.tick !== lastTick) { lastTick = s.tick; queue.reask((p) => (eyeVerdict(p) ?? null) === null); }
   queue.want(eyesActive() ? [...watchers.keys()] : []);
 };
 

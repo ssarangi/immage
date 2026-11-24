@@ -28,6 +28,8 @@ import { FaceOverlay } from "../src/FaceOverlay";
 import { PeopleCard } from "../src/PeopleCard";
 import { runOverlayTest } from "./facesOverlayTest";
 import { EyeBadge } from "../src/EyeBadge";
+import { startEyesScan, useEyesVersion } from "../src/eyesStore";
+import { passes, NO_FILTER } from "../src/filter";
 import { runEyesTest } from "./facesEyesTest";
 import { settings } from "../src/settings";
 import { peopleState, refreshAll, resetPeople, setPeople, setPeopleApi, setPeopleOn, setScanFolderTotal, startPeople, type PeopleApi } from "../src/peopleStore";
@@ -332,8 +334,13 @@ function OverlayStage() {
 // ?view=eyes: 400 thumbnails of which 20 are mounted at a time, like a grid; the eye glyphs arrive without moving a cell
 function EyesStage() {
   const [from, setFrom] = useState(0);
+  const version = useEyesVersion();
+  // like App's grid: the filter runs again when verdicts arrive, and the count is what it keeps
+  const all = Array.from({ length: 60 }, (_, n) => `/synthetic/IMG_${String(n).padStart(4, "0")}.jpg`);
+  const kept = all.filter((p) => passes({ path: p, filename: p, rating: 0, rejected: false, labels: 0, edited: false, exif: { maker: "", model: "", lens: "", iso: 0, aperture: 0, exposure: 0, focal_length: 0, datetime: "" }, keywords: [] } as never, { ...NO_FILTER, closedEyes: true })).length;
+  void version;
   useEffect(() => {
-    const h = { eyeCalls, setFrom, scan, fake, calls, setStatus: (eyes: boolean) => { eyesAvail = eyes; setPeople({ status: status() }); } };
+    const h = { eyeCalls, setFrom, scan, fake, calls, scanAll: () => startEyesScan(all), bumpTick: () => setPeople({ tick: peopleState().tick + 1 }), setStatus: (eyes: boolean) => { eyesAvail = eyes; setPeople({ status: status() }); } };
     (window as unknown as { __h: unknown }).__h = h;
     scan.enabled = true; scan.installed = true;
     const stop = startPeople();
@@ -348,6 +355,7 @@ function EyesStage() {
   }, []);
   return (
     <div className="ov-stage" style={{ width: 800, display: "grid", gridTemplateColumns: "repeat(5, 150px)", gap: 8, padding: 12 }}>
+      <div data-count style={{ gridColumn: "1 / -1", height: 24 }}>{kept}</div>
       {Array.from({ length: 20 }, (_, k) => from + k).map((n) => {
         const path = `/synthetic/IMG_${String(n).padStart(4, "0")}.jpg`;
         return <div key={n} className="thumb" data-n={n} style={{ position: "relative", height: 100, background: "#345" }}><div className="thumb-image" style={{ position: "absolute", inset: 0 }}><EyeBadge path={path} /></div></div>;

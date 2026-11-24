@@ -98,3 +98,22 @@ test('the verdict remembers which face it came from, and forgets with the rest',
   K.forgetEyes();
   assert.equal(K.eyeVerdict('/p'), undefined);
 });
+
+test('reask: only the photos still unknown are asked for again after the faces change; the rest keep their answer', async () => {
+  const r = rig();
+  r.q.want(['a', 'b', 'c']); r.fire(); await tick();
+  assert.deepEqual(r.calls, [['a', 'b', 'c']]);
+  r.q.reask((p) => p === 'b');             // b was answered "unknown": it may have a verdict now
+  r.q.want(['a', 'b', 'c']); r.fire(); await tick();
+  assert.deepEqual(r.calls, [['a', 'b', 'c'], ['b']]);
+  r.q.reask(() => false);
+  r.q.want(['a', 'b', 'c']);
+  assert.equal(r.timers.length, 0);        // nothing to ask: no wait either
+});
+
+test('the store no longer wipes the verdicts when the faces change (it once did, and Find\'s Closed eyes came back empty)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../app/src/eyesStore.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /forgetEyes\(\)/);
+  assert.match(src, /queue\.reask\(/);
+});

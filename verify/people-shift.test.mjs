@@ -189,3 +189,11 @@ test('closed-eye glyphs on thumbnails: asked for after a pause, one window at a 
   assert.deepEqual(r.firstCalls, [20]);
   assert.ok(r.badges > 3);
 });
+
+test('Find\'s Closed eyes: the grid count follows the verdicts (closed and half closed) and keeps them when the faces change', { skip }, () => {
+  const r = report(dump('shift=1&view=eyes&theme=dark', 1440, 900, [], 60000));
+  assert.equal(r.error, undefined, r.error);
+  assert.deepEqual(r.failures, []);
+  assert.equal(r.count, r.expected);
+  assert.ok(r.count > 10);
+});

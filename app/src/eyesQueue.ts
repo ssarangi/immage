@@ -39,6 +39,9 @@ export class EyeQueue {
   /** the faces changed: every verdict may be different */
   forget() { this.asked.clear(); this.generation++; }
 
+  /** the faces changed: the photos `unknown` says about may have a verdict now, so they can be asked for again (nothing else is) */
+  reask(unknown: (path: string) => boolean) { for (const p of [...this.asked]) if (unknown(p)) this.asked.delete(p); }
+
   get pending() { return this.wanted.length; }
 
   private pump() {

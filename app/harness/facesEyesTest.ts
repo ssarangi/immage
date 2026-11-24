@@ -5,7 +5,7 @@
 // call, the glyphs arrive without moving any cell, closed and half closed show (different shapes), open and unknown show
 // nothing, a quick scroll past a window never asks for it, and with no eye model nothing is asked at all.
 // verify/people-shift.test.mjs runs it (?view=eyes&shift=1).
-type H = { eyeCalls: number[]; setFrom: (n: number) => void; setStatus: (eyes: boolean) => void };
+type H = { scanAll: () => void; bumpTick: () => void; eyeCalls: number[]; setFrom: (n: number) => void; setStatus: (eyes: boolean) => void };
 const h = () => (window as unknown as { __h: H }).__h;
 const wait = (ms: number) => new Promise<void>((done) => { setTimeout(done, ms); });
 const $$ = (s: string) => Array.from(document.querySelectorAll<HTMLElement>(s));
@@ -35,6 +35,16 @@ export async function runEyesTest() {
   h().setFrom(20); await wait(60); h().setFrom(40); await wait(60); h().setFrom(60); await wait(700);
   out.afterScroll = [...h().eyeCalls];
   if (h().eyeCalls.length !== 1 || h().eyeCalls[0] !== 20) fail(`the scroll asked ${JSON.stringify(h().eyeCalls)}`);
+  // the Find filter over the whole folder: the count follows the verdicts as they arrive (closed AND half closed), and a change of
+  // the faces (the backend says so after every batch) does not wipe them
+  const count = () => Number(document.querySelector("[data-count]")?.textContent ?? "-1");
+  h().scanAll(); await wait(1200);
+  const expected = Array.from({ length: 60 }, (_, n) => n).filter((n) => n % 11 !== 0 && (n % 3 === 0 || n % 7 === 0)).length;   // closed, or half closed
+  out.count = count(); out.expected = expected;
+  if (count() !== expected) fail(`the grid counts ${count()} photos with closed or half closed eyes, expected ${expected}`);
+  const before2 = count();
+  h().bumpTick(); h().setFrom(20); await wait(900); h().bumpTick(); h().setFrom(40); await wait(900);   // new cells subscribe, which is when the old store forgot
+  if (count() !== before2) fail(`a change of the faces wiped the verdicts: ${before2} then ${count()}`);
   // no eye model: nothing shows and nothing is asked
   h().setStatus(false); await wait(100);
   h().eyeCalls.length = 0;
