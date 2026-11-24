@@ -85,9 +85,12 @@ test('visibleCategories', () => {
   const im = keys(visibleCategories({ ...NO_SEARCH, source: 'immich' }, true));
   assert.ok(!im.includes('bodies') && !im.includes('exposure'));
   for (const k of hidden) assert.ok(im.includes(k));
-  const both = visibleCategories({ ...NO_SEARCH, source: 'both' }, true);
-  assert.equal(both.length, 13);
+  const both = visibleCategories({ ...NO_SEARCH, source: 'both' }, true, true);
+  assert.equal(both.length, 14);
   assert.deepEqual(both, CATEGORIES);
+  // People is hidden entirely while it is off, and shown (before Camera) when it is on
+  assert.ok(!keys(visibleCategories({ ...NO_SEARCH, source: 'both' }, true)).includes('faces'));
+  assert.equal(keys(visibleCategories({ ...NO_SEARCH, source: 'local' }, true, true))[4], 'faces');
 });
 
 const busy = () => st({ source: 'immich' }, { cameras: ['A'], keywords: ['k'], rejected: 'hide', minRating: 3, takenFrom: '2020-01-01',
@@ -263,4 +266,49 @@ test('File type ticks: All RAW, one raw extension, legacy kinds', async () => {
   // RAW alone still narrows the server to Raw only; an extension does not
   assert.equal(setKinds(st(), ['RAW']).search.rawOnly, true);
   assert.equal(setKinds(st(), ['ORF']).search.rawOnly, false);
+});
+
+// ---- the People row (facesFilter.ts) ----
+const F = await import('../app/src/facesFilter.ts');
+const sets = (o = {}) => ({ person: new Map([[1, new Set(['a', 'b'])], [2, new Set(['b', 'c'])], [3, new Set(['c'])]]), withFaces: new Set(['a', 'b', 'c']),
+  unnamed: new Set(['c']), ...o });
+const f = (o = {}) => ({ ...F.NO_FACES, ...o });
+
+test('faces filter: any of them, all together, exclude, no people, unnamed', () => {
+  const s = sets();
+  const pass = (ff) => ['a', 'b', 'c', 'd'].filter((p) => F.faceAllows(p, ff, s));
+  assert.deepEqual(pass(f({ include: [1] })), ['a', 'b']);
+  assert.deepEqual(pass(f({ include: [1, 2] })), ['a', 'b', 'c']);                  // any of them
+  assert.deepEqual(pass(f({ include: [1, 2], together: true })), ['b']);           // all together
+  assert.deepEqual(pass(f({ include: [1], exclude: [2] })), ['a']);
+  assert.deepEqual(pass(f({ exclude: [3] })), ['a', 'b', 'd']);
+  assert.deepEqual(pass(f({ none: true })), ['d']);
+  assert.deepEqual(pass(f({ unnamed: true })), ['c']);
+  assert.deepEqual(pass(f({ include: [2], unnamed: true })), ['c']);               // rows combine as "and"
+  // a set that has not arrived yet admits nothing, so the grid never flashes the wrong photos
+  assert.deepEqual(pass(f({ include: [9] })), []);
+  assert.deepEqual(pass(f({ none: true }), ), ['d']);
+  assert.equal(F.faceAllows('a', f({ none: true }), sets({ withFaces: null })), false);
+  assert.equal(F.facesOnFilter(f()), false);
+  assert.equal(F.facesOnFilter(f({ none: true })), true);
+});
+
+test('the People row: hidden while faces are off, one chip when set, cleared by clearAll and its own x, kept by saved filters', () => {
+  const on = st({ source: 'local' }, { faces: f({ include: [1, 2], together: true }) });
+  assert.deepEqual(keys(chips(on, false)), []);                         // off: no chip, no row
+  assert.deepEqual(keys(chips(on, false, true)), ['faces']);
+  assert.equal(findCount(on, false, true), 1);
+  assert.deepEqual(settingOf('faces', on, false).faces.include, [1, 2]);
+  assert.equal(settingOf('faces', st(), false), null);
+  assert.equal(findCount(clearAll(on), false, true), 0);
+  assert.equal(findCount(clearCategory(on, 'faces'), false, true), 0);
+  assert.deepEqual(clearCategory(on, 'faces').filter.faces, F.NO_FACES);
+  // an Immich-only search has no folder photos to check against
+  assert.deepEqual(keys(chips(st({ source: 'immich' }, { faces: f({ none: true }) }), true, true)), []);
+  // a stored filter from before People still opens, and one with people comes back whole
+  assert.deepEqual(normalizeFind({ filter: { minRating: 2 } }).filter.faces, F.NO_FACES);
+  const back = normalizeFind(JSON.parse(JSON.stringify(on)));
+  assert.deepEqual(back.filter.faces, on.filter.faces);
+  assert.ok(sameFind(on, back));
+  assert.ok(!sameFind(on, st({ source: 'local' }, { faces: f({ include: [1, 2] }) })));
 });

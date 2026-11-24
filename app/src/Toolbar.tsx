@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
+import { useFacesOn } from "./peopleStore";
 import type { ViewMode } from "./ViewTabs";
 import { BanIcon, FilterIcon, MagnifierIcon, PanelIcon, ResetIcon, SlidersIcon, StarIcon, WandIcon } from "./icons";
 import { effectiveFilter, clearAll, findCount, serverPickers, setStars, withFilter, type FindState } from "./findModel";
@@ -125,7 +126,7 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
   // an Immich-only search has no reject flag or labels, and the stars set the server's
   const remote = serverPickers(find.search, immichAvailable);
   const stars = f.minRating || find.search.minRating;
-  const count = findCount(find, immichAvailable);
+  const count = findCount(find, immichAvailable, useFacesOn());
   const ef = effectiveFilter(find, immichAvailable);
   const filtering = count > 0 || ef.minRating > 0 || ef.rejected !== "all" || ef.edited !== "all" || ef.labels !== 0 || ef.unlabeled;
   // what the reject filter now shows, said for a moment above it

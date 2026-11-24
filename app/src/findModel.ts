@@ -14,6 +14,7 @@
 import { EXPOSURE, NO_FILTER, type Filter } from "./filter";
 import { fileKind } from "./library";
 import { NO_SEARCH, type ImmichSearch } from "./immich";
+import { NO_FACES, facesOnFilter, normalizeFaces, type FaceFilter } from "./facesFilter";
 
 export type FindState = { search: ImmichSearch; filter: Filter };
 
@@ -83,7 +84,7 @@ export type Group = "photo" | "camera" | "when" | "immich";
 export const GROUPS: Group[] = ["photo", "camera", "when", "immich"];
 
 export type CategoryKey = "rating" | "edits" | "kinds" | "keywords" | "cameras" | "bodies" | "lenses" | "exposure"
-  | "taken" | "place" | "people" | "albums" | "favorites";
+  | "taken" | "place" | "people" | "albums" | "favorites" | "faces";
 
 // `local`: needs this computer's photos (hidden for Immich-only searches);
 // `immich`: a server field (shown, tagged IMMICH, once Immich is in the
@@ -97,6 +98,7 @@ export const CATEGORIES: Category[] = [
   { key: "edits", group: "photo", only: "local" },
   { key: "kinds", group: "photo", only: null },
   { key: "keywords", group: "photo", only: null },
+  { key: "faces", group: "photo", only: "local" },
   { key: "cameras", group: "camera", only: null },
   { key: "bodies", group: "camera", only: "local" },
   { key: "lenses", group: "camera", only: null },
@@ -109,9 +111,10 @@ export const CATEGORIES: Category[] = [
 ];
 
 // the categories a search shows, in order
-export function visibleCategories(s: ImmichSearch, immichAvailable: boolean): Category[] {
+// `faces`: People is on (its row is hidden entirely while it is off)
+export function visibleCategories(s: ImmichSearch, immichAvailable: boolean, faces = false): Category[] {
   const r = reach(s, immichAvailable);
-  return CATEGORIES.filter((c) => c.only === "local" ? r.local : c.only === "immich" ? r.immich : true);
+  return CATEGORIES.filter((c) => (c.key === "faces" && !faces) ? false : c.only === "local" ? r.local : c.only === "immich" ? r.immich : true);
 }
 
 // whether a shared row (camera, lens, keywords) edits the server's fields
@@ -147,6 +150,7 @@ export type Setting = {
   from?: string; to?: string;
   make?: string; model?: string; lens?: string; country?: string; city?: string;
   flags?: ("favorites" | "raw")[];
+  faces?: FaceFilter;
 };
 
 // what a category is set to in this state, or null when it is not on.
@@ -192,6 +196,8 @@ export function settingOf(key: CategoryKey, st: FindState, server: boolean): Set
       return s.albumIds.length ? { values: s.albumIds } : null;
     case "favorites":
       return s.favorites ? { flags: ["favorites"] } : null;
+    case "faces":
+      return facesOnFilter(f.faces) ? { faces: normalizeFaces(f.faces) } : null;
   }
 }
 
@@ -213,6 +219,7 @@ export function clearCategory(st: FindState, key: CategoryKey): FindState {
     case "people": return { search: { ...s, personIds: [] }, filter: f };
     case "albums": return { search: { ...s, albumIds: [] }, filter: f };
     case "favorites": return { search: { ...s, favorites: false }, filter: f };
+    case "faces": return { search: s, filter: { ...f, faces: NO_FACES } };
   }
 }
 
@@ -270,14 +277,14 @@ export type Chip = { key: CategoryKey; setting: Setting; excludes: "local" | "im
 const dropsImmich = (key: CategoryKey, st: FindState) => {
   const f = st.filter;
   if (key === "rating") return f.rejected !== "all" || f.labels !== 0 || f.unlabeled;
-  return key === "edits" || key === "bodies" || key === "keywords";
+  return key === "edits" || key === "bodies" || key === "keywords" || key === "faces";
 };
 
-export function chips(st: FindState, immichAvailable: boolean): Chip[] {
+export function chips(st: FindState, immichAvailable: boolean, faces = false): Chip[] {
   const r = reach(st.search, immichAvailable);
   const server = r.immich && !r.local;
   const both = r.immich && r.local;
-  return visibleCategories(st.search, immichAvailable).flatMap((c) => {
+  return visibleCategories(st.search, immichAvailable, faces).flatMap((c) => {
     const setting = settingOf(c.key, st, server);
     if (!setting) return [];
     const excludes = !both ? null : c.only === "immich" ? "local" : dropsImmich(c.key, st) ? "immich" : null;
@@ -286,7 +293,7 @@ export function chips(st: FindState, immichAvailable: boolean): Chip[] {
 }
 
 // how many filters are on, for the toolbar's Find button
-export const findCount = (st: FindState, immichAvailable: boolean) => chips(st, immichAvailable).length;
+export const findCount = (st: FindState, immichAvailable: boolean, faces = false) => chips(st, immichAvailable, faces).length;
 
 // ---- saved filters ---------------------------------------------------
 
@@ -310,5 +317,6 @@ export const sameFind = (a: FindState, b: FindState) => JSON.stringify(canonical
 // older version still opens
 export function normalizeFind(v: unknown): FindState {
   const o = (v && typeof v === "object" ? v : {}) as Partial<FindState>;
-  return { search: { ...NO_SEARCH, ...(o.search ?? {}) }, filter: { ...NO_FILTER, ...(o.filter ?? {}) } };
+  const filter = { ...NO_FILTER, ...(o.filter ?? {}) };
+  return { search: { ...NO_SEARCH, ...(o.search ?? {}) }, filter: { ...filter, faces: normalizeFaces(filter.faces) } };
 }

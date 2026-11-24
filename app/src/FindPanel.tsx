@@ -7,6 +7,7 @@
 // the count and the saved filters. Every change applies at once (the state is
 // findModel.ts's; App.tsx runs it). The rows are FindFilters.tsx's, the editors
 // FindEditors.tsx's
+import { useFacesOn, usePeople } from "./peopleStore";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { commands, type Named } from "./commands";
 import {
@@ -50,10 +51,12 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   const { search: s, filter: f } = state;
   const r = reach(s, immichAvailable);
   const server = serverPickers(s, immichAvailable);
-  const cats = visibleCategories(s, immichAvailable);
+  const facesOn = useFacesOn();
+  usePeople();   // the row's summary reads the names
+  const cats = visibleCategories(s, immichAvailable, facesOn);
   // one no longer shown (the source changed) counts as closed
   const openKey = cats.some((c) => c.key === expanded) ? expanded : null;
-  const active = chips(state, immichAvailable);
+  const active = chips(state, immichAvailable, facesOn);
 
   // the clicked row stays where it is on screen, whatever closes above it, then the
   // new editor is scrolled into view by the least that shows it, the row never

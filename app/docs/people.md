@@ -94,6 +94,14 @@ changes of the same kind join the line; Undo takes all of them back. The line wa
 pointer or the keyboard is on it. **Ctrl/Cmd+Z** in People takes back the latest change even after the line is gone
 (outside a text field; the edit history keeps Ctrl/Cmd+Z everywhere else).
 
+## Finding photos by person
+
+When People is on, Find has a **People** row (in the Photo group; hidden while People is off). Type to add
+people: each becomes a chip, and the chip's button flips it between *include* and *leave out*.
+**Any of them** keeps photos with at least one of the people, **All together** only photos with all of
+them. **No people** keeps photos without faces, **Unnamed faces** photos with a face still to name. The
+row counts as one filter, is cleared by Clear all, and is kept in saved filters.
+
 ## Turning off and deleting
 
 *Turn off People...* stops scanning and keeps your data. *Delete all face data...* removes

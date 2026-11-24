@@ -10,12 +10,26 @@ import { useSyncExternalStore } from "react";
 import { commands } from "./commands";
 import type { ClusterRow, FaceFilter, FaceRow, FacesStatus, MergeSuggestion, PersonRow, Side } from "./bindings";
 import { settings } from "./settings";
+import { dropFaceSets, setFaceSource } from "./facesFilter";
 import { setScanJob } from "./background";
 import {
   mergeUndo, faceKey, groupKey, keyId, maybeKey, needsReview, scanJob, scanView, type PeopleData, type ScanCtx, type ScanView, type UndoEntry, type UndoKind,
 } from "./peopleModel";
 
+// one face of one photo, in the displayed orientation (boxes are fractions of the picture), for the overlay and the Library card
+export type PhotoFace = {
+  face: number; x: number; y: number; w: number; h: number;
+  person: number | null; name: string | null; state: "confirmed" | "suggested" | "unassigned" | "rejected"; confidence: number;
+};
+// what the page needs from the backend for the person page, the Find filter and the overlay; the commands are
+// asked for by name until bindings.ts has them (a missing one rejects, and the page says "not available yet")
+export type PersonPhotos = { paths: string[]; total: number };
+export type PhotoSets = { withFaces: string[]; unnamed: string[] };
+
 export type PeopleApi = {
+  personPhotos(person: number, offset: number, limit: number): Promise<PersonPhotos>;
+  photoFaces(path: string): Promise<PhotoFace[]>;
+  photoSets(): Promise<PhotoSets>;
   status(): Promise<FacesStatus>;
   paused(): Promise<boolean>;
   people(): Promise<PersonRow[]>;
@@ -46,7 +60,26 @@ export type PeopleApi = {
   subscribe(onChanged: () => void, onProgress: (p: { scanned: number; pending: number | null; faces_found: number }) => void): () => void;
 };
 
+const named = (name: string) => (commands as unknown as Record<string, ((...a: unknown[]) => Promise<unknown>) | undefined>)[name];
+const call = <T,>(name: string, ...args: unknown[]): Promise<T> => {
+  const f = named(name);
+  return f ? (f(...args) as Promise<T>) : Promise.reject(new Error("not available yet"));
+};
+// a box as the backend writes it: {x,y,w,h} or [x,y,w,h]
+const boxOf = (b: unknown): [number, number, number, number] => {
+  if (Array.isArray(b)) return [Number(b[0]), Number(b[1]), Number(b[2]), Number(b[3])];
+  const o = (b ?? {}) as Record<string, number>;
+  return [Number(o.x ?? 0), Number(o.y ?? 0), Number(o.w ?? o.width ?? 0), Number(o.h ?? o.height ?? 0)];
+};
+
 const real: PeopleApi = {
+  personPhotos: (person, offset, limit) => call<PersonPhotos>("facesPersonPhotos", person, offset, limit),
+  photoFaces: async (path) => (await call<Record<string, unknown>[]>("facesPhotoFaces", path)).map((f) => {
+    const [x, y, w, h] = boxOf(f.bbox);
+    return { face: Number(f.face), x, y, w, h, person: (f.person as number | null) ?? null, name: (f.name as string | null) ?? null,
+             state: f.state as PhotoFace["state"], confidence: Number(f.detector_confidence ?? 0) };
+  }),
+  photoSets: () => call<PhotoSets>("facesPhotoSets"),
   status: () => commands.facesStatus(),
   paused: async () => (await commands.analysisStatus()).paused,
   people: () => commands.facesPeople(true),
@@ -87,6 +120,7 @@ const real: PeopleApi = {
   },
 };
 let api: PeopleApi = real;
+setFaceSource(() => api);
 export const setPeopleApi = (a: PeopleApi) => { api = a; };
 export const peopleApi = () => api;
 
@@ -241,7 +275,7 @@ export function holdRefresh(on: boolean) {
 export function startPeople(): () => void {
   void refreshStatus();
   const stop = api.subscribe(
-    () => { if (state.on) { dirty = true; schedule(READ_GAP_MS); } else void refreshStatus(); },
+    () => { dropFaceSets(); if (state.on) { dirty = true; schedule(READ_GAP_MS); } else void refreshStatus(); },
     (p) => {
       if (!state.status) return;
       applyStatus({ ...state.status, scanned: p.scanned, pending: p.pending, faces_found: p.faces_found }, state.paused);
@@ -290,6 +324,7 @@ async function change(local: (d: PeopleData) => PeopleData, call: () => Promise<
     settled.clear(); joined.clear();
     setPeople({ data: before, error: String(e) });
   } finally {
+    dropFaceSets();
     setPeople({ busy: false });
     void refreshAll(true);
   }
@@ -447,3 +482,19 @@ export async function togglePause() {
   try { await api.pause(!state.paused); await refreshStatus(); } catch (e) { setPeople({ error: String(e) }); }
 }
 export const retryFailed = () => api.retry().then(() => refreshStatus(), (e) => setPeople({ error: String(e) }));
+
+// the people, read once for a picker that is not the People view (Find's row, the overlay's name box)
+let ensured: Promise<void> | null = null;
+export function ensurePeople(): Promise<void> {
+  ensured ??= (async () => {
+    try {
+      const [s, people] = await Promise.all([bounded(api.status()), bounded(api.people())]);
+      setPeople({ status: s, data: { ...state.data, people } });
+    } catch { /* the pickers stay empty; the next ask tries again */ }
+    finally { setTimeout(() => { ensured = null; }, 10000); }
+  })();
+  return ensured;
+}
+// whether faces are on, for the places that show nothing when they are off (Find's row, the overlay, the card)
+export const useFacesOn = () => useSyncExternalStore(subscribe, () => !!state.status?.enabled && !!state.status?.installed);
+export const facesOn = () => !!state.status?.enabled && !!state.status?.installed;

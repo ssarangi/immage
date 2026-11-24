@@ -36,6 +36,9 @@ Improvements
   two people who may be one, to merge, to mark as not the same (remembered) or to
   dismiss; nothing is applied by itself. Two or more selected groups can be joined
   with Merge groups.
+- **Find by person:** Find has a **People** row (while People is on): include or leave out
+  people, require them all together, or find photos with no people or with faces
+  still to name. It is cleared by Clear all and kept in saved filters.
 - **Library panel:** the Metadata, Keywording, Folders, Catalog and History cards
   now always open independently, so Folders and Catalog can be open together;
   Focus mode applies only to the Edit view's tool panels, Presets and Advanced

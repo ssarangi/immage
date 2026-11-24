@@ -184,3 +184,16 @@ html[data-scheme="light"] .people-view { background: color-mix(in srgb, var(--wi
   text-overflow: ellipsis; white-space: nowrap; border-radius: 9px; outline: 1px dashed var(--text); outline-offset: -1px;
   background: color-mix(in srgb, var(--window) 82%, transparent); color: var(--text); font-size: var(--fs-micro); line-height: 18px; width: fit-content;
 }
+
+/* Find's People row editor */
+.ff { display: flex; flex-direction: column; gap: 8px; }
+.ff-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ff-chip { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 4px 0 8px; border-radius: 12px; background: var(--inset); font-size: var(--fs-small); }
+.ff-chip[data-kind="exclude"] { outline: 1px dashed var(--text-3); outline-offset: -1px; }
+.ff-chip-btn { display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 9px; background: none; color: var(--text-2); cursor: pointer; }
+.ff-chip-btn:hover { background: var(--hover); color: var(--text); }
+.ff-input { height: 28px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--hover); border-radius: var(--radius-ctl); background: var(--card); color: var(--text); font-size: var(--fs-body); }
+.ff-list { list-style: none; margin: 0; padding: 0; max-height: 168px; overflow-y: auto; }
+.ff-list li { display: flex; align-items: center; justify-content: space-between; height: 28px; padding: 0 8px; border-radius: 6px; cursor: pointer; font-size: var(--fs-body); }
+.ff-list li[aria-selected="true"] { background: var(--inset); }
+.ff-n { color: var(--text-2); font-size: var(--fs-small); }

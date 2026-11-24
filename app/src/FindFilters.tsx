@@ -5,6 +5,7 @@
 // editor (FindEditors.tsx) directly beneath it. A row says what its filter is
 // set to; an active one has a button to clear it. FindPanel.tsx owns which row
 // is open and the scrolling
+import { peopleState } from "./peopleStore";
 import { ChevronRight, X } from "lucide-react";
 import type { Named } from "./commands";
 import { bodyLabel, EXPOSURE } from "./filter";
@@ -33,6 +34,7 @@ export function categoryTitle(key: CategoryKey): string {
     case "people": return t("library.filters.people");
     case "albums": return t("library.filters.albums");
     case "favorites": return t("library.filters.favorites");
+    case "faces": return t("library.find.faces.title");
   }
 }
 
@@ -70,6 +72,13 @@ export function summarize(key: CategoryKey, state: FindState, server: boolean, n
     case "people": return chosen(list, nameOf(names.people));
     case "albums": return chosen(list, nameOf(names.albums));
     case "favorites": return t("library.filters.favorites");
+    case "faces": {
+      const fx = v.faces!, people = peopleState().data.people;
+      const nm = (id: number) => people.find((p) => p.id === id)?.name ?? "...";
+      return [fx.include.length ? fx.include.map(nm).join(fx.together ? " + " : ", ") : "",
+              fx.exclude.length ? t("library.find.faces.not", { name: fx.exclude.map(nm).join(", ") }) : "",
+              fx.none ? t("library.find.faces.noPeopleRow") : "", fx.unnamed ? t("library.find.faces.unnamed") : ""].filter(Boolean).join(" · ");
+    }
   }
 }
 

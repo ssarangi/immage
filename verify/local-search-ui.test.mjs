@@ -20,6 +20,8 @@ const mocks={
  'react-dom':'export const createPortal=c=>c;',
  './icons':'export const StarIcon="star";export const ResetIcon="reset";',
  './AnalysisStatus':'export const AnalysisStatus=()=>null;',
+ './peopleStore':'export const useFacesOn=()=>false;export const usePeople=()=>({data:{people:[]}});export const peopleState=()=>({data:{people:[]}});',
+ './FindFaces':'export const FacesEditor=()=>null;',
  './library':'export const LABEL_COLORS=["#f00","#ff0","#0f0","#00f","#a0f"];export const fileKind=()=>"";export const fileExt=()=>"";export const kindsInclude=()=>true;export const takenAt=()=>0;',
  './exportTokens':'export const shutter=v=>String(v);',
  './i18n':i18nMock,

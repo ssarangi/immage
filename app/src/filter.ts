@@ -6,6 +6,7 @@
 // narrowed by the server instead (immich.ts), all but the stars and type
 import { shutter } from "./exportTokens";
 import { fileExt, fileKind, kindsInclude, takenAt, type ImageEntry, type Known } from "./library";
+import { NO_FACES, faceAllows, faceSets, facesOnFilter, type FaceFilter } from "./facesFilter";
 
 export const EXPOSURE = ["iso", "aperture", "focal", "shutter"] as const;
 export type ExposureKey = typeof EXPOSURE[number];
@@ -20,11 +21,12 @@ export type Filter = {
   // exposure settings as exposureLabel() writes them
   kinds: string[]; cameras: string[]; bodies: string[]; lenses: string[]; keywords: string[];
   takenFrom: string; takenTo: string;       // YYYY-MM-DD, "" for open
+  faces: FaceFilter;                        // who is in the photo (People), decided from path sets (facesFilter.ts)
 } & Record<ExposureKey, string[]>;
 
 export const NO_FILTER: Filter = {
   minRating: 0, rejected: "all", edited: "all", labels: 0, unlabeled: false, kinds: [], cameras: [], bodies: [], lenses: [],
-  keywords: [], takenFrom: "", takenTo: "", iso: [], aperture: [], focal: [], shutter: [],
+  keywords: [], takenFrom: "", takenTo: "", faces: NO_FACES, iso: [], aperture: [], focal: [], shutter: [],
 };
 
 export const cameraOf = (i: Known) => `${i.exif.maker} ${i.exif.model}`.trim();
@@ -70,7 +72,8 @@ export const passes = (i: Known, f: Filter) =>
   && f.keywords.every((k) => hasKeyword(i, k))
   && (!f.takenFrom || (!!takenAt(i) && day(i) >= f.takenFrom))
   && (!f.takenTo || (!!takenAt(i) && day(i) <= f.takenTo))
-  && EXPOSURE.every((k) => !f[k].length || f[k].includes(exposureLabel(k, value(i, k))));
+  && EXPOSURE.every((k) => !f[k].length || f[k].includes(exposureLabel(k, value(i, k))))
+  && (!facesOnFilter(f.faces) || faceAllows(i.path, f.faces, faceSets()));
 
 // the Rejected category's rows and their counts: of the photos every other
 // filter admits, all of them, the ones not rejected, and the rejected ones

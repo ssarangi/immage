@@ -128,6 +128,16 @@ const pairKey = (kind: string, a: number, b: number) => `${kind}:${Math.min(a, b
 const notPairs = new Set<string>();   // group:person pairs the user said are not them
 const ghost = (faces: number[]) => { if (q.get("stale") !== "0") ghosts.push(...liveGroups().filter((g) => g.members.some((m) => faces.includes(m)))); };
 const fake: PeopleApi = {
+  personPhotos: (person, offset, limit) => {
+    const all = db.faces.filter((f) => f.person === person && f.state !== "rejected").map((f) => f.path);
+    return wait({ paths: all.slice(offset, offset + limit), total: all.length });
+  },
+  photoFaces: (path) => wait(db.faces.filter((f) => f.path === path && f.state !== "rejected").map((f, i) => ({
+    face: f.id, x: 0.2 + 0.25 * i, y: 0.2 + (f.id % 5) * 0.05, w: 0.2, h: 0.28, person: f.person, name: db.people.find((p) => p.id === f.person)?.name ?? null,
+    state: f.person !== null ? "confirmed" as const : f.maybe !== null ? "suggested" as const : "unassigned" as const, confidence: 0.9,
+  }))),
+  photoSets: () => wait({ withFaces: db.faces.filter((f) => f.state !== "rejected").map((f) => f.path),
+                          unnamed: db.faces.filter((f) => f.state === "unreviewed" && f.person === null).map((f) => f.path) }),
   status: () => scan.fail ? Promise.reject(new Error("harness: the engine did not answer")) : wait(status()),
   paused: () => wait(scan.paused),
   people: () => wait(rows()),
