@@ -205,7 +205,7 @@ function Harness() {
     if (view === "scene") openScene(Number(q.get("scene") ?? 1));
     if (view === "rules" || view === "piles") setScenes({ preview: fakePreview(), previewStale: false, piles: view === "piles" });
     // a preview where the rules change nothing but some frames were already rejected: the panel says so and Apply stays off
-    if (view === "nothing") setScenes({ preview: { counts: { keep: 0, reject: 0, undecided: 394, alreadyRejected: 6 }, verdicts: [] }, previewStale: false });
+    if (view === "nothing") setScenes({ preview: { counts: { keep: 0, reject: 0, undecided: 394, alreadyRejected: 6, demotedForEyes: 0 }, verdicts: [] }, previewStale: false });
     if (q.get("shift") === "1") void (view === "scene" ? runSceneViewShift() : view === "rules" || view === "piles" ? runRulesShift(view === "piles") : runScenesShift()).then((r) => r, (e) => ({ ok: false, error: String(e?.stack ?? e) }))
       .then((r) => { const el = document.getElementById("shift-report")!; el.textContent = JSON.stringify(r); el.dataset.done = "1"; });
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
