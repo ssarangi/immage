@@ -135,7 +135,7 @@ import { GridCullingWithScenes } from "./SceneLightbox";
 import "./scenes.css";
 import { ScenesView } from "./ScenesView";
 import { PeoplePane } from "./PeoplePane";
-import { wantFaceSets } from "./facesFilter";
+import { NO_FACES, wantFaceSets } from "./facesFilter";
 import { useFaceSetsVersion } from "./useFaceSets";
 import "./people.css";
 import { peopleState, setPeopleOn, setScanFolderTotal, startPeople, usePeopleBadge, usePeopleOn } from "./peopleStore";
@@ -7280,7 +7280,9 @@ export default function App() {
                        onMeta={(i, fields) => rateSelection(i, fields)} />
             </div>
             {scenesOn && <div className="scenes-host"><ScenesView entries={shown} onMeta={(i, fields) => void setMeta(i.imgid, fields)} /></div>}
-            {peopleOn && <div className="people-host"><PeoplePane folder={folder} /></div>}
+            {peopleOn && <div className="people-host"><PeoplePane folder={folder}
+              onOpenPhoto={(p) => { setPeopleOn(false); setGrid(false); void openFile(p); }}
+              onOpenGrid={(p) => { changeFind({ ...find, filter: { ...find.filter, faces: { ...NO_FACES, include: [p.id] } } }); setPeopleOn(false); setGrid(true); }} /></div>}
           </div>
         </div>
         </div>

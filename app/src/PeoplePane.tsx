@@ -12,7 +12,7 @@ import { PackConsentDialog } from "./PackDialogs";
 import { PeopleView } from "./PeopleView";
 import { t } from "./i18n";
 
-export function PeoplePane({ folder }: { folder: string | null }) {
+export function PeoplePane({ folder, onOpenPhoto, onOpenGrid }: { folder: string | null; onOpenPhoto?: (path: string) => void; onOpenGrid?: (p: { id: number; name: string }) => void }) {
   const hasCatalog = useCatalog().sources.length > 0;
   const { packs, refresh, setPacks } = usePacks();
   const pack = packs?.find((p) => p.id === "faces") ?? null;
@@ -32,7 +32,7 @@ export function PeoplePane({ folder }: { folder: string | null }) {
   };
   return (
     <>
-      <PeopleView folder={folder} hasCatalog={hasCatalog} pack={pack} packBusy={busy} onPack={onPack} />
+      <PeopleView folder={folder} hasCatalog={hasCatalog} pack={pack} packBusy={busy} onPack={onPack} onOpenPhoto={onOpenPhoto} onOpenGrid={onOpenGrid} />
       {consent && pack && (
         <PackConsentDialog info={pack} name={t("aimodels.faces.name")} what={t("aimodels.faces.what", { n: 2 })}
                            license={() => commands.packLicense("faces")}

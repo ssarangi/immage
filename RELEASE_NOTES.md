@@ -36,6 +36,9 @@ Improvements
   two people who may be one, to merge, to mark as not the same (remembered) or to
   dismiss; nothing is applied by itself. Two or more selected groups can be joined
   with Merge groups.
+- **Person page:** double-click a person in People to open their page: their photos in the
+  app's grid (with **Open in Grid**, which sets Find's People filter), and their faces to
+  confirm, reject (**Not Maya**, **Not a face**) or choose as cover.
 - **Find by person:** Find has a **People** row (while People is on): include or leave out
   people, require them all together, or find photos with no people or with faces
   still to name. It is cleared by Clear all and kept in saved filters.

@@ -542,6 +542,56 @@ export async function runPeopleShift() {
   drain(false);
 
   phase("scale");
+  // 6c. a person's page: the head is one fixed block, Photos is the app's grid, Faces has the review actions, Esc goes back
+  phase("page");
+  click($$(".people-rail-item")[0]);
+  await frames(5);
+  const pt = $$(".ptile[data-kind=person]")[0];
+  const pname = pt?.querySelector("b")?.textContent ?? "";
+  click(pt);
+  pt.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  await frames(10);
+  const head = () => $(".person-head");
+  if (!head()) fail("page: double-clicking a person did not open their page");
+  else {
+    const headRect = JSON.stringify(rect(head()!.getBoundingClientRect()));
+    const hname = $(".person-name")?.textContent ?? "";
+    if (hname !== pname) fail(`page: the head says "${hname}" for "${pname}"`);
+    const cells = $$(".person-photos .thumb.known").length;
+    out.page = { name: hname, cells, facts: $(".person-facts")?.textContent };
+    if (!cells) fail("page: the Photos tab shows no photos");
+    const pc = h().calls.length;
+    const cell0 = $$(".person-photos .thumb.known")[0];
+    click(cell0); cell0.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));   // a cell opens on a click or a double click
+    await frames(3);
+    if (!h().calls.slice(pc).some((c) => c.startsWith("openPhoto:"))) fail("page: a photo did not open");
+    click(Array.from($$<HTMLButtonElement>(".person-actions button")).find((b) => b.textContent === "Open in Grid")!);
+    await frames(2);
+    if (!h().calls.slice(pc).some((c) => c.startsWith("openGrid:"))) fail("page: Open in Grid did not apply the person");
+    // Faces: the review actions
+    click($("#person-tab-faces")!);
+    await frames(12);
+    if (JSON.stringify(rect(head()!.getBoundingClientRect())) !== headRect) fail("page: the head moved when the tab changed");
+    const ft = $$(".ptile[data-kind=face]");
+    if (!ft.length) fail("page: the Faces tab shows no faces");
+    click(ft[0]); click(ft[1], { ctrlKey: true });
+    await frames(3);
+    const btn = (label: string) => Array.from($$<HTMLButtonElement>(".people-selbar button")).find((b) => (b.textContent ?? "").startsWith(label));
+    if (!btn("Not ") || !btn("Not a face") || !btn("Use as cover")) fail("page: the faces' actions are not all there");
+    const nc = h().calls.length;
+    click(Array.from($$<HTMLButtonElement>(".people-selbar button")).find((b) => b.textContent === `Not ${pname}`)!);
+    await frames(10);
+    if (!h().calls.slice(nc).some((c) => c.startsWith("notPerson:"))) fail("page: Not them did not call not_person");
+    // Esc with nothing selected goes back to People
+    grid().focus();
+    press(grid(), "Escape");
+    await frames(4);
+    press(grid(), "Escape");
+    await frames(5);
+    if (head()) fail("page: Escape did not leave the page");
+  }
+  drain(false);
+
   // 7. scale: scroll every section end to end; what is mounted stays bounded
   const section = async (name: string) => {
     phase(`scale-${name}`);

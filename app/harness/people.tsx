@@ -255,7 +255,7 @@ function Harness() {
     <div style={{ position: "fixed", inset: 0, width, display: "flex" }}>
       <div style={{ position: "relative", flex: 1, display: "flex" }}>
         <div className="people-host">
-          <PeopleView folder={q.get("nofolder") === "1" ? null : "/synthetic/Shoot"} hasCatalog={true} pack={pack} onPack={(a) => { if (a === "download") { calls.push("pack:download"); setPack(packFor("installed")); scan.installed = true; } }} />
+          <PeopleView onOpenPhoto={(path) => calls.push(`openPhoto:${path}`)} onOpenGrid={(pp) => calls.push(`openGrid:${pp.id}`)} folder={q.get("nofolder") === "1" ? null : "/synthetic/Shoot"} hasCatalog={true} pack={pack} onPack={(a) => { if (a === "download") { calls.push("pack:download"); setPack(packFor("installed")); scan.installed = true; } }} />
         </div>
       </div>
     </div>

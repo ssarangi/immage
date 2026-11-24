@@ -17,8 +17,10 @@ import { PeopleConsent } from "./PeopleConsent";
 import { Crop, PeopleGrid, tileLabel, type GridOverlay } from "./PeopleGrid";
 import { NamePopover } from "./PeopleName";
 import { PeopleSuggest, type SuggestAct } from "./PeopleSuggest";
+import { PersonHeader, type PageTab } from "./PersonPage";
+import { PersonPhotos } from "./PersonPhotos";
 import {
-  NO_SEL, SECTIONS, TILE_DEFAULT, TILE_MAX, TILE_MIN, joinPlan, keepSelected, lookAlikes, scanNotes, suggestRows, undoMs, sectionCounts, sectionTiles, select, stableOrder, viewKind,
+  NO_SEL, SECTIONS, personKey, TILE_DEFAULT, TILE_MAX, TILE_MIN, joinPlan, keepSelected, lookAlikes, scanNotes, suggestRows, undoMs, sectionCounts, sectionTiles, select, stableOrder, viewKind,
   type Intent, type Section, type Sel, type SelAction, type Tile, type UndoEntry,
 } from "./peopleModel";
 import {
@@ -66,15 +68,20 @@ export type PeopleViewProps = {
   pack: PackInfo | null;
   packBusy?: boolean;
   onPack: (a: ActionId) => void;
+  onOpenPhoto?: (path: string) => void;                    // a person's photo opened from their page
+  onOpenGrid?: (p: { id: number; name: string }) => void;  // the person as a Find filter, in the Grid
 };
 
-export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack }: PeopleViewProps) {
+export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack, onOpenPhoto, onOpenGrid }: PeopleViewProps) {
   const s = usePeople();
   const dir = direction === "rtl" ? "rtl" : "ltr";
   const kind = viewKind(s.status, s.failed, s.scan, s.loaded);
   const [section, setSection] = useState<Section>("people");
   const [picked, setPicked] = useState(false);
-  const [sheet, setSheet] = useState<{ key: string; title: string; faces: FaceRow[] } | null>(null);
+  const [sheet, setSheet] = useState<{ key: string; title: string; faces: FaceRow[]; person?: number } | null>(null);
+  // a person's page: their Photos (the app's grid) or their Faces (the sheet grid with the review actions)
+  const [page, setPage] = useState<{ id: number; tab: PageTab } | null>(null);
+  const [pageTick, setPageTick] = useState(0);
   const [sel, setSel] = useState<Sel>(NO_SEL);
   const [size, setSize] = useState(readSize);
   const [query, setQuery] = useState("");
@@ -106,6 +113,19 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
     }
   }, [s.loaded, picked, section, counts.people, counts.review]);
 
+  const pagePerson = page ? data.people.find((x) => x.id === page.id) ?? null : null;
+  useEffect(() => {
+    if (!page || page.tab !== "faces") { setSheet((cur) => (cur?.person ? null : cur)); return; }
+    let alive = true;
+    void Promise.all([personFaces(page.id, 2000), maybeFaces(page.id, 500)]).then(([own, maybe]) => {
+      if (!alive) return;
+      const seen = new Set(own.map((f) => f.id));
+      setSheet({ key: `person:${page.id}`, title: pagePerson?.name ?? "", faces: [...own, ...maybe.filter((f) => !seen.has(f.id))], person: page.id });
+    }, () => {});
+    return () => { alive = false; };
+  }, [page?.id, page?.tab, pageTick]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // a person who is gone (merged, ignored) takes the page with them
+  useEffect(() => { if (page && s.loaded && !pagePerson) { setPage(null); setSheet(null); } }, [page, pagePerson, s.loaded]);
   // tiles keep the order the user is looking at; only a section change or a sort starts it afresh
   const order = useRef<{ id: string; keys: string[] }>({ id: "", keys: [] });
   const tiles = useMemo<Tile[]>(() => {
@@ -122,7 +142,7 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
   useEffect(() => { setSel((p) => keepSelected(p, keys)); }, [keys]);
 
   const apply = useCallback((a: SelAction) => setSel((p) => select(p, a, keys)), [keys]);
-  const goSection = (x: Section) => { setPicked(true); setSection(x); setSheet(null); setSel(NO_SEL); setNaming(null); setQuery(""); };
+  const goSection = (x: Section) => { setPicked(true); setPage(null); setSection(x); setSheet(null); setSel(NO_SEL); setNaming(null); setQuery(""); };
   const selected = [...sel.keys].map((k) => byKey.get(k)).filter((x): x is Tile => !!x);
   const target = selected.length ? selected : tiles[sel.active] ? [tiles[sel.active]] : [];
   const nameable = target.filter((x) => x.kind !== "person");
@@ -163,11 +183,16 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
   const rename = async (key: string, name: string | null) => {
     setRenameKey(null);
     const tile = byKey.get(key);
-    if (!name || !tile || tile.kind !== "person" || name.trim() === tile.name) return;
-    const other = data.people.find((p) => p.state === "active" && p.id !== tile.id && p.name.toLowerCase() === name.trim().toLowerCase());
-    if (other) { setDupe({ name: other.name, id: other.id, target: tile.id }); return; }
+    if (!name || !tile || tile.kind !== "person") return;
+    await renameById(tile.id, tile.name, name);
+  };
+  // from a tile's caption or a person's page: a name that exists offers the merge instead
+  const renameById = async (id: number, old: string, name: string) => {
+    if (name.trim() === old) return;
+    const other = data.people.find((p) => p.state === "active" && p.id !== id && p.name.toLowerCase() === name.trim().toLowerCase());
+    if (other) { setDupe({ name: other.name, id: other.id, target: id }); return; }
     setDupe(null);
-    await renamePerson(tile.id, name.trim());
+    await renamePerson(id, name.trim());
   };
   const suggestAct = (r: (typeof rows)[number], what: SuggestAct) => {
     const person = (id: number) => data.people.find((p) => p.id === id);
@@ -220,6 +245,21 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
     if (k.length) void ignoreTiles(k);
     setSel(NO_SEL);
   };
+  const facePage = !!page && page.tab === "faces" && !!sheet?.person;
+  const afterPage = () => { setSel(NO_SEL); setTimeout(() => setPageTick((n) => n + 1), 400); };
+  const pageNotThem = () => {
+    if (!page) return;
+    void notPerson(target.map((x) => x.key), new Map(target.map((x) => [x.key, page.id] as [string, number])), names).then(afterPage);
+  };
+  const pageNotFace = () => { void ignoreTiles(target.map((x) => x.key)).then(afterPage); };
+  const pageConfirm = () => {
+    if (!page || !pagePerson) return;
+    void nameTiles(target.filter((x) => x.kind === "face" && x.maybe === page.id).map((x) => x.key), { kind: "person", id: page.id, name: pagePerson.name }).then(afterPage);
+  };
+  const pageCover = () => {
+    const f = target.find((x) => x.kind === "face");
+    if (page && f && f.kind === "face") void setCover(page.id, f.id);
+  };
   const reject = () => {
     const maybes = new Map<string, number | null>(target.map((x) => [x.key, x.kind === "face" ? x.maybe : x.kind === "maybe" ? x.person : null]));
     const withPerson = target.filter((x) => maybes.get(x.key) != null).map((x) => x.key);
@@ -231,7 +271,12 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
   const act = (i: Intent) => {
     switch (i.kind) {
       case "name": startNaming(i.seed); break;
-      case "open": if (tiles[sel.active]) void openSheet(tiles[sel.active]); break;
+      case "open": {
+        const tl = tiles[sel.active];
+        if (tl?.kind === "person" && !tl.ignored) { setPage({ id: tl.id, tab: "photos" }); setSel(NO_SEL); }
+        else if (tl) void openSheet(tl);
+        break;
+      }
       case "rename": if (tiles[sel.active]?.kind === "person") setRenameKey(tiles[sel.active].key); break;
       case "merge": askMerge(); break;
       case "ignore": ignore(); break;
@@ -239,7 +284,7 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
       case "confirm": void confirmTiles(target.filter((x) => x.kind === "maybe").map((x) => x.key), names); setSel(NO_SEL); break;
       case "cover": void askCover(); break;
       case "undo": if (s.undo) void undoLast(s.undo.steps); break;
-      case "clear": if (!sel.keys.size && sheet) setSheet(null); setNaming(null); break;
+      case "clear": if (!sel.keys.size && page) { setPage(null); setSheet(null); } else if (!sel.keys.size && sheet) setSheet(null); setNaming(null); break;
       default: break;
     }
   };
@@ -330,9 +375,15 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
       <div className="people-selbar" role="toolbar" aria-label={t("people.selection")}>
         {target.length > 0 && sel.keys.size > 0 && <>
           <span className="people-sel-count">{t("people.selected", { n: sel.keys.size, count: formatNumber(sel.keys.size) })}</span>
+          {facePage && pagePerson && <>
+            {target.some((x) => x.kind === "face" && x.maybe === page!.id) && <button type="button" className="people-btn" onClick={pageConfirm}>{t("people.act.confirm")}</button>}
+            <button type="button" className="people-btn" onClick={pageNotThem}>{t("people.act.notNamed", { name: pagePerson.name })}</button>
+            <button type="button" className="people-btn" onClick={pageNotFace}>{t("people.act.notFace")}</button>
+            <button type="button" className="people-btn" onClick={pageCover}>{t("people.page.useCover")}</button>
+          </>}
           {nameable.length > 0 && !maybeOnly && <button type="button" className="people-btn" onClick={() => startNaming("")}>{t("people.act.name")}</button>}
           {maybeOnly && <button type="button" className="people-btn" onClick={() => act({ kind: "confirm" })}>{t("people.act.confirm")}</button>}
-          {nameable.length > 0 && <button type="button" className="people-btn" onClick={reject}>{maybeOnly ? t("people.act.notThem") : t("people.act.notFace")}</button>}
+          {nameable.length > 0 && !facePage && <button type="button" className="people-btn" onClick={reject}>{maybeOnly ? t("people.act.notThem") : t("people.act.notFace")}</button>}
           {people.length >= 2 && section === "people" && <button type="button" className="people-btn" onClick={askMerge}>{t("people.act.merge")}</button>}
           {selectedGroups.length >= 2 && section === "review" && <button type="button" className="people-btn" onClick={askJoin}>{t("people.act.mergeGroups")}</button>}
           {people.length === 1 && section === "people" && <button type="button" className="people-btn" onClick={() => setRenameKey(people[0].key)}>{t("people.act.rename")}</button>}
@@ -370,7 +421,17 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
           </div>
 
           <div className="people-main">
-            <div className="people-crumb" hidden={!sheet}>
+            {page && pagePerson && (
+              <PersonHeader person={pagePerson} tab={page.tab} review={pagePerson.suggestions}
+                            onTab={(tb) => { setPage({ ...page, tab: tb }); setSel(NO_SEL); }}
+                            onBack={() => { setPage(null); setSheet(null); setSel(NO_SEL); }}
+                            onRename={(name) => void renameById(pagePerson.id, pagePerson.name, name)}
+                            onOpenGrid={onOpenGrid ? () => onOpenGrid({ id: pagePerson.id, name: pagePerson.name }) : undefined}
+                            onMerge={() => setDialog({ kind: "merge", ids: [pagePerson.id], into: data.people.filter((p) => p.state === "active" && p.id !== pagePerson.id).sort((a, b) => b.photos - a.photos)[0]?.id ?? pagePerson.id })}
+                            onIgnore={() => { void ignoreTiles([personKey(pagePerson.id)]); setPage(null); }}
+                            onCover={() => { setPage({ ...page, tab: "faces" }); }} />
+            )}
+            <div className="people-crumb" hidden={!sheet || !!page}>
               {sheet && <>
                 <button type="button" className="people-btn" onClick={() => setSheet(null)}>{t("people.back")}</button>
                 <span>{sheet.title}</span>
@@ -378,9 +439,10 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
               </>}
             </div>
             {/* always laid out, empty outside To review, so changing section moves nothing */}
-            <PeopleSuggest rows={section === "review" && !sheet ? rows : []} people={data.people} sizes={sizes} onAct={suggestAct}
+            <PeopleSuggest rows={section === "review" && !sheet && !page ? rows : []} people={data.people} sizes={sizes} onAct={suggestAct}
                            onDismiss={(r) => setDismissed((d) => new Set([...d, r.key]))} />
-            <PeopleGrid tiles={tiles} looks={looks} section={section} open={!!sheet} size={size} sel={sel} byId={names} renameKey={renameKey} label={gridLabel} dir={dir}
+            {page?.tab === "photos" && <PersonPhotos person={page.id} onOpen={(pth) => onOpenPhoto?.(pth)} size={size + 60} />}
+            {(!page || page.tab === "faces") && <PeopleGrid tiles={tiles} looks={looks} section={section} open={!!sheet} size={size} sel={sel} byId={names} renameKey={renameKey} label={gridLabel} dir={dir}
                         onSel={apply} onIntent={act} onRename={(k, n) => void rename(k, n)}
                         onNearEnd={sheet ? undefined : section === "unassigned" ? () => void loadMoreUnknown() : section === "ignored" ? () => void loadMoreIgnored() : undefined}
                         empty={<>
@@ -398,7 +460,7 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack 
                         overlay={(o: GridOverlay) => naming ? (
                           <NamePopover key={naming.keys.join()} o={o} index={naming.index} count={naming.faces} group={naming.groups === 1 && naming.keys.length === 1} seed={naming.seed} people={data.people}
                                        onPick={finishNaming} onClose={() => { setNaming(null); }} />
-                        ) : null} />
+                        ) : null} />}
           </div>
 
           <aside className="people-inspector" aria-label={t("people.inspector")}>

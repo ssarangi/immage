@@ -94,6 +94,16 @@ changes of the same kind join the line; Undo takes all of them back. The line wa
 pointer or the keyboard is on it. **Ctrl/Cmd+Z** in People takes back the latest change even after the line is gone
 (outside a text field; the edit history keeps Ctrl/Cmd+Z everywhere else).
 
+## A person's page
+
+Press **Enter** or double-click a person to open their page: a fixed head with the cover, the name (double-click to
+rename), what is known about them, and **Open in Grid**, **Rename**, **Cover...**, **Merge...** and **Ignore**.
+The **Photos** tab is the app's own grid of their photos (a thumbnail comes from the disk cache; a click opens the
+photo in the editor). **Open in Grid** returns to the Grid with Find's People filter set to this person, shown as
+a chip you can remove. The **Faces** tab lists their faces, the suggested ones dashed: select faces and **Confirm**
+a suggestion, say **Not Maya** (remembered), **Not a face**, or **Use as cover**. **Esc** or the breadcrumb goes
+back to People.
+
 ## Finding photos by person
 
 When People is on, Find has a **People** row (in the Photo group; hidden while People is off). Type to add
@@ -110,5 +120,4 @@ cannot be undone.
 
 ## Not yet
 
-A person's own page, finding photos by person, closed-eye detection and Preferences > Faces
-are planned.
+Closed-eye detection and Preferences > Faces are planned.
