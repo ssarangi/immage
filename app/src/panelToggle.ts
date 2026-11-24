@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-import { useEffect } from "react";
-
 // The right panel's tool cards, the Presets groups and Advanced groups follow Focus mode: with it on,
 // a plain click opens a card alone (or shuts it if it is the only one open) and ⌥-click opens it beside
 // the others; with it off the two are swapped.
@@ -20,18 +18,4 @@ export function toggleLeftSet<T>(old: ReadonlySet<T>, id: T): Set<T> {
   const next = new Set(old);
   if (next.has(id)) next.delete(id); else next.add(id);
   return next;
-}
-
-// Publishes an element's height as a CSS variable, so the Folders and Catalog bodies can be capped at a share
-// of the panel when both are open (styles.css, `--left-h`).
-export function useHeightVar(el: { current: HTMLElement | null }, name: string) {
-  useEffect(() => {
-    const node = el.current;
-    if (!node || typeof ResizeObserver === "undefined") return;
-    const set = () => node.style.setProperty(name, `${node.clientHeight}px`);
-    set();
-    const ro = new ResizeObserver(set);
-    ro.observe(node);
-    return () => ro.disconnect();
-  }, [el, name]);
 }

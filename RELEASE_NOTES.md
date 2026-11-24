@@ -10,9 +10,10 @@ Improvements
 - **Library panel:** the Metadata, Keywording, Folders, Catalog and History cards
   now always open independently, so Folders and Catalog can be open together;
   Focus mode applies only to the Edit view's tool panels, Presets and Advanced
-  groups, and its Preferences row is now **Focus mode (tool panels)**. With
-  both trees open, each takes at most about 38% of the panel and scrolls inside
-  itself.
+  groups, and its Preferences row is now **Focus mode (tool panels)**. The panel
+  is now as tall as the window and no longer scrolls as a whole: open cards
+  share the height, and a card taller than its share scrolls inside itself
+  under its title.
 - **Scenes:** the toolbar's new **Edit | Grid | Scenes** switch (Scenes is also **View > Scenes**
   and Shift+S). Scenes shows the open folder as a vertical timeline of time
   blocks, grouped by day, each a row of scene cards: bursts grouped by capture

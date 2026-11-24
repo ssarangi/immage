@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The Library panel's cards expand independently (Folders and Catalog together), the two trees are capped at
-// about 38% of the panel and scroll inside themselves when both are open, and toggling a card moves neither its
-// header nor the panel's scroll (app/harness/leftPanel.tsx runs the real styles, headerKey and toggle logic).
+// The Library column is as tall as the window and never scrolls itself: every open card shares the height and a
+// card taller than its share scrolls inside its own body, under a header that stays put; toggling a card moves no
+// header above it (app/harness/leftPanel.tsx runs the real styles, headerKey and toggle logic).
 // Starts a vite dev server and drives headless Chrome with --dump-dom; skips without Chrome or app/node_modules.
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
@@ -40,28 +40,31 @@ function run(query) {
   return JSON.parse(m[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&'));
 }
 
-for (const h of [700, 500, 900]) {
-  test(`Folders and Catalog stay open together, capped and scrolling inside, and no header or scroll moves: panel ${h}px`, { skip }, () => {
+// aside heights for the windows 900x640, 1280x800 and 1600x1000 (the window less the title strip, toolbar and gaps)
+for (const [win, h] of [['900x640', 544], ['1280x800', 704], ['1600x1000', 904]]) {
+  test(`the column has no scrollbar and tall bodies scroll inside themselves: ${win}`, { skip }, () => {
     const r = run(`h=${h}`);
     assert.equal(r.error, undefined, r.error);
-    assert.deepEqual(r.both.open, ['folders', 'catalog']);
-    assert.ok(r.both.folders <= r.cap + 0.5 && r.both.catalog <= r.cap + 0.5, JSON.stringify(r.both));
-    assert.ok(r.both.folders >= 139 && r.both.catalog >= 139, 'not below the minimum');
-    assert.ok(r.both.foldersScrolls && r.both.catalogScrolls);
-    assert.ok(r.innerScrollable);
-    assert.deepEqual(r.afterOpenTwo, ['metadata', 'keywording', 'folders', 'catalog']);
-    assert.equal(r.headerMoves, 0);
-    assert.equal(r.scrollDelta, 0);
+    for (const c of r.combos) {
+      assert.equal(c.columnScrollHeight, c.columnClientHeight, `column scrolls with ${c.set.join('+') || 'nothing'} open: ${JSON.stringify(c)}`);
+      assert.ok(c.headerStaysOnScroll);
+      for (const b of c.bodies) {
+        assert.equal(b.overflowY, 'auto');
+        assert.ok(b.clientHeight > 0, `${b.id} has no room in ${c.set.join('+')}`);
+        if (b.id === 'folders' || b.id === 'catalog' || b.id === 'keywording') assert.ok(b.scrolls, `${b.id} should scroll inside itself`);
+      }
+    }
+    const all = r.combos.at(-1);
+    assert.equal(all.set.length, 5);
+    assert.equal(r.headerMoves, 0, 'a header above the toggled card moved while the column had room');
+    assert.equal(r.fixedMoves, 0, 'the Navigator or the first header moved');
     assert.deepEqual(r.keys, ['true', 'false']);
     assert.ok(r.roles);
-    assert.ok(r.single.open.includes('folders') && !r.single.open.includes('catalog'));
-    assert.ok(r.single.clientHeight > r.cap + 0.5, 'a single open tree is not capped');
-    assert.deepEqual(r.reopened.filter((c) => c === 'folders' || c === 'catalog'), ['folders', 'catalog']);
   });
 }
 
-test('the cap check fails without the height rule (negative control)', { skip }, () => {
-  const r = run('h=700&break=1');
+test('the check fails when the column scroll is put back (negative control)', { skip }, () => {
+  const r = run('h=544&break=1');
   assert.equal(r.error, undefined, r.error);
-  assert.ok(r.both.folders > r.cap + 0.5, `expected an uncapped tree, got ${r.both.folders} vs ${r.cap}`);
+  assert.ok(r.combos.some((c) => c.columnScrollHeight > c.columnClientHeight), 'expected the column to scroll');
 });

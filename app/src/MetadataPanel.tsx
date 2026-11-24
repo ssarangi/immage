@@ -94,7 +94,7 @@ export function MetadataPanel({ image, text, onText, onMeta, onLocationSaved, on
              strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 15 6-6 6 6" /></svg>
       </div>
       {open && (
-        <>
+        <div className="meta-body">
         <div className="meta-grid">
           <span className="k">{t("dialogs.metadata.fileName")}</span><span className="v" title={image.filename}>{image.filename}</span>
           <span className="k">{t("dialogs.metadata.folder")}</span><span className="v" title={folder}>{baseName(folder)}</span>
@@ -128,7 +128,7 @@ export function MetadataPanel({ image, text, onText, onMeta, onLocationSaved, on
           ))}
         </div>
         <LocationEditor key={image.imgid} image={image} onSaved={onLocationSaved} />
-        </>
+        </div>
       )}
     </div>
   );

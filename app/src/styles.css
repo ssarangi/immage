@@ -101,7 +101,7 @@ button { font: inherit; color: inherit; }
 
 /* ------------------------------------------------------------ left */
 
-.left { overflow-y: auto; padding-bottom: 12px; }
+.left { overflow-y: auto; padding-bottom: 12px; container: left / size; }
 
 .group-label {
   margin: 14px 16px 6px;
@@ -760,7 +760,15 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 /* the left column's panels, inset and spaced as the right column's */
 /* the column scrolls, so its cards keep their height: shrunk, History's
    scrolling list spilled out of its card and its rows painted over each other */
-.left .panel { flex: none; margin: 8px 12px 0; }
+/* the column is as tall as the window: an open card is content-sized and shrinks (in proportion to its content) when
+   the column is full, scrolling inside its own body; a closed card is its header and never shrinks */
+.left .panel { flex: none; margin: 8px 12px 0; display: flex; flex-direction: column; }
+.left .panel:has(> :is(.meta-body, .kw-body, .folders-body, .cat-body, .history-list)) { flex: 0 1 auto; min-height: 78px; }
+.left .panel > .panel-title { flex: none; }
+.left .panel > :is(.meta-body, .kw-body, .folders-body, .cat-body, .history-list) { flex: 1 1 auto; min-height: 0; overflow-y: auto; max-height: none; }
+.left .navigator, .left .panel-head { flex: none; }
+/* too short for every open card's floor: the Navigator keeps its header and zoom buttons only */
+@container left (max-height: 600px) { .navigator .nav-image { display: none; } .navigator .nav-head { margin-bottom: 0; } }
 .left .panel + .panel { margin-top: 6px; }
 .meta-grid {
   display: grid;
@@ -3572,10 +3580,3 @@ html[data-scheme="light"] .strip-slot.grid::before { background: color-mix(in sr
   .pref-label { flex-basis: 160px; }
 }
 @media (max-width: 720px) { .prefs-note { display: none; } }
-
-/* with both trees open, each is held to about 38% of the Library panel (not less than 140px) and scrolls
-   inside itself; one open tree uses the panel's own scroll. --left-h is the aside's height (useHeightVar). */
-.left:has(.folders-body):has(.cat-body) :is(.folders-body, .cat-body) {
-  max-height: max(140px, calc(var(--left-h, 0px) * 0.38));
-  overflow-y: auto;
-}

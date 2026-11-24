@@ -66,6 +66,13 @@ The toolbar's **Find** button opens search and filters, including Immich
 search once it is set up, and its ⌄ opens your saved filters. It is a popup
 over the photo; in the grid view Find is instead the right-hand panel.
 
+The panel is as tall as the window and never scrolls as a whole. Open cards
+share the height: a short card keeps its natural size and a long one (the
+trees, Keywording with many keywords, a long History) gives up room and
+scrolls inside its own body, under its title. Each open card keeps at least
+about two rows. A folded card is only its title. In a very short window the
+Navigator shows just its title and zoom buttons so the open cards fit.
+
 Click a card's title to fold or unfold it. See [Library](library.md) and
 [History, undo and copying settings](history-and-sync.md).
 
@@ -173,9 +180,7 @@ the photo:
   opens one alongside. With it off, ⌥-click opens one alone. The Library
   cards on the left (Metadata, Keywording, Folders, Catalog, History) ignore
   it: a click opens or shuts only that card, and Folders and Catalog can be
-  open together. With both open, each tree takes at most about 38% of the
-  panel (never less than about 140 px) and scrolls inside itself; one open
-  tree uses the panel's own scroll.
+  open together; see The Library panel for how they share the height.
 - **Canvas** (Preferences › General) sets what is behind the photo, in
   full screen too: **Dark**, **Neutral Gray**, which judges tones without
   a dark surround, or **White**, which shows the photo as on a print. L

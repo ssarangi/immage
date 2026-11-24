@@ -87,7 +87,7 @@ import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, ty
 import { FolderTree, type Volume } from "./FolderTree";
 import { SectionStatus } from "./SectionStatus";
 import { headerKey } from "./CatalogCard";
-import { togglePanelSet, toggleLeftSet, useHeightVar } from "./panelToggle";
+import { togglePanelSet, toggleLeftSet } from "./panelToggle";
 import { useCatalogUi } from "./catalogUi";
 import { baseName, parentDir, within } from "./paths";
 import { isEngineExit, reopenPlan, reopening, START as ENGINE_START, step as engineStep, wait as engineWait,
@@ -3120,7 +3120,6 @@ export default function App() {
     try { for (const c of LEFT_CARDS) settings.set(`immage.${c}.open`, next.has(c) ? "1" : "0"); } catch { /* not kept */ }
     return next;
   });
-  useHeightVar(leftAside, "--left-h");
   const foldersOpen = leftOpen.has("folders");
   // Lightroom's Include Photos from Subfolders, for every folder shown
   const [includeSub, setIncludeSub] = useState(loadIncludeSubfolders);
