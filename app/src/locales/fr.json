@@ -3776,6 +3776,7 @@
   "people.suggest.moreLeft_one": "{count} de plus non affichée",
   "people.suggest.moreLeft_other": "{count} de plus non affichées",
   "people.suggest.looks": "Ressemble à {name}",
+  "people.scope.folderOnly": "Dossier",
   "people.face.aria": "Visage {i} sur {n}, {name}",
   "menu.faces": "Afficher les visages sur la photo",
   "dialogs.shortcuts.view.faces": "Afficher ou masquer les cadres de visages sur la photo ouverte (lorsque Personnes est activé)",

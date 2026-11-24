@@ -45,3 +45,19 @@ export function faceAt(list: readonly PhotoFace[], x: number, y: number): PhotoF
   }
   return best;
 }
+
+// a face as faces_photo_faces answers (fractions of the displayed picture, any of them null when the detector kept no
+// box), as the overlay draws it; a face without a box cannot be drawn and is left out
+export type BackendFace = {
+  face: number; x: number | null; y: number | null; w: number | null; h: number | null; person: number | null; name: string | null;
+  state: string; detector_confidence: number | null;
+};
+export function fromBackend(list: readonly BackendFace[]): PhotoFace[] {
+  const out: PhotoFace[] = [];
+  for (const f of list) {
+    if (f.x == null || f.y == null || f.w == null || f.h == null || !(f.w > 0) || !(f.h > 0)) continue;
+    const state = f.state === "confirmed" || f.state === "suggested" || f.state === "rejected" ? f.state : "unassigned";
+    out.push({ face: f.face, x: f.x, y: f.y, w: f.w, h: f.h, person: f.person, name: f.name, state, confidence: f.detector_confidence ?? 0 });
+  }
+  return out;
+}

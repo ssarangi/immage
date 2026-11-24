@@ -37,3 +37,31 @@ test('the label goes below a box at the top edge; the smallest box under a point
   assert.equal(faceAt([big, small], 0.6, 0.6).face, 1);
   assert.equal(faceAt([big, small], 0.9, 0.9), null);
 });
+
+const { fromBackend } = await import('../app/src/faceOverlayModel.ts');
+
+test('a reply shaped as faces_photo_faces answers: boxes kept, a face without a box left out, odd states made unassigned', () => {
+  // one real row of a RAW photo: fractions of the displayed picture, whatever the scan's 1024 x 684 size was
+  const reply = [
+    { face: 36, x: 0.3125, y: 0.2412, w: 0.1328, h: 0.2, person: null, name: null, state: 'unassigned', detector_confidence: 0.93, eyes: null },
+    { face: 37, x: 0.6, y: 0.3, w: 0.1, h: 0.15, person: 2, name: 'Maya', state: 'confirmed', detector_confidence: null, eyes: null },
+    { face: 38, x: null, y: null, w: null, h: null, person: null, name: null, state: 'unassigned', detector_confidence: 0.5, eyes: null },
+    { face: 39, x: 0.1, y: 0.1, w: 0, h: 0.1, person: null, name: null, state: 'unassigned', detector_confidence: 0.5, eyes: null },
+    { face: 40, x: 0.8, y: 0.1, w: 0.1, h: 0.1, person: null, name: null, state: 'weird', detector_confidence: 0.5, eyes: null },
+  ];
+  const got = fromBackend(reply);
+  assert.deepEqual(got.map((g) => g.face), [36, 37, 40]);
+  assert.deepEqual(got[0], { face: 36, x: 0.3125, y: 0.2412, w: 0.1328, h: 0.2, person: null, name: null, state: 'unassigned', confidence: 0.93 });
+  assert.equal(got[1].confidence, 0);
+  assert.equal(got[2].state, 'unassigned');
+  assert.deepEqual(boxStyle(got[0]), { left: '31.25%', top: '24.12%', width: '13.28%', height: '20%' });
+});
+
+test('the Shift+F action reads a ref, not the value of the render that built the key handler', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../app/src/App.tsx', import.meta.url), 'utf8');
+  const line = app.split('\n').find((l) => l.includes('"faces": () =>'));
+  assert.ok(line, 'no faces action');
+  assert.match(line, /facesAvailableRef\.current/);
+  assert.doesNotMatch(line, /\bfacesAvailable\b(?!Ref)/);
+});

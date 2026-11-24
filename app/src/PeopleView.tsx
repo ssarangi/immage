@@ -25,7 +25,7 @@ import {
 } from "./peopleModel";
 import {
   clearUndo, confirmTiles, deleteAllFaceData, groupFaces, ignoreTiles, failedPhotos, loadMoreIgnored, loadMoreUnknown, maybeFaces, mergeGroups, mergePeople, nameTiles, notPerson, notSame, personFaces,
-  refreshAll, renamePerson, restorePeople, retryFailed, unignoreFaces, setCover, togglePause, turnOff, turnOn, undoLast, usePeople, type NameTarget, type Scope,
+  refreshAll, renamePerson, scopeFolderPath, restorePeople, retryFailed, unignoreFaces, setCover, togglePause, turnOff, turnOn, undoLast, usePeople, type NameTarget, type Scope,
 } from "./peopleStore";
 import { settings } from "./settings";
 
@@ -335,8 +335,9 @@ export function PeopleView({ folder, hasCatalog, pack, packBusy = false, onPack,
     : scan.kind === "blocked" || scan.kind === "retrying" ? { label: t("people.scan.tryAgain"), run: retryFailed } : null;
 
   // what the scan covers, in words: the folder that was chosen, or the Catalog
-  const scopeFolder = settings.get("faces.scope") === "folder" ? settings.get("faces.scope_folder") : null;
-  const scopeText = scopeFolder ? t("people.scope.folder", { name: scopeFolder.split(/[\\/]/).filter(Boolean).pop() ?? scopeFolder }) : t("people.scope.catalog");
+  const folderScope = settings.get("faces.scope") === "folder";
+  const scopeFolder = scopeFolderPath(folder);
+  const scopeText = scopeFolder ? t("people.scope.folder", { name: scopeFolder.split(/[\\/]/).filter(Boolean).pop() ?? scopeFolder }) : folderScope ? t("people.scope.folderOnly") : t("people.scope.catalog");
   const scopeTitle = scopeFolder ?? t("people.scope.title");
   const sectionLabel = (x: Section) => t(`people.section.${x}`);
   const one = target.length === 1 ? target[0] : null;

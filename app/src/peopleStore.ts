@@ -10,6 +10,7 @@ import { useSyncExternalStore } from "react";
 import { commands } from "./commands";
 import type { ClusterRow, FaceFilter, FaceRow, FacesStatus, MergeSuggestion, PersonRow, Side } from "./bindings";
 import { settings } from "./settings";
+import { fromBackend } from "./faceOverlayModel";
 import { dropFaceSets, setFaceSource, type FaceFilter as PeopleQuery } from "./facesFilter";
 import { setScanJob } from "./background";
 import {
@@ -61,10 +62,7 @@ export type PeopleApi = {
 
 const real: PeopleApi = {
   personPhotos: (person, offset, limit) => commands.facesPersonPhotos(person, offset, limit),
-  photoFaces: async (path) => (await commands.facesPhotoFaces(path)).map((f) => ({
-    face: f.face, x: f.x ?? 0, y: f.y ?? 0, w: f.w ?? 0, h: f.h ?? 0, person: f.person, name: f.name,
-    state: f.state as PhotoFace["state"], confidence: f.detector_confidence ?? 0,
-  })),
+  photoFaces: async (path) => fromBackend(await commands.facesPhotoFaces(path)),
   filterPaths: (f) => commands.facesFilterPaths(f),
   status: () => commands.facesStatus(),
   paused: async () => (await commands.analysisStatus()).paused,
@@ -158,7 +156,7 @@ const READ_GAP_MS = 2000;
 let folderTotal: number | null = null;
 const scanCtx = (): ScanCtx => ({ folderScope: settings.get(SCOPE_KEY) === "folder", folderTotal });
 export function setScanFolderTotal(open: string | null, n: number) {
-  const next = open !== null && n > 0 && open === settings.get(SCOPE_FOLDER_KEY) ? n : null;
+  const next = open !== null && n > 0 && open === scopeFolderPath(open) ? n : null;
   if (next === folderTotal) return;
   folderTotal = next;
   if (state.status) applyStatus(state.status, state.paused);
@@ -442,6 +440,12 @@ export const maybeFaces = (id: number, limit = 200) => api.list({ kind: "suggest
 
 export type Scope = "catalog" | "folder";
 export const SCOPE_KEY = "faces.scope";
+// the folder a "folder" scope covers: the one stored when People was turned on, else the open one (the scope was set
+// without the page, as the settings file or an older build would), else none
+export function scopeFolderPath(open: string | null): string | null {
+  if (settings.get(SCOPE_KEY) !== "folder") return null;
+  return settings.get("faces.scope_folder") ?? open;
+}
 export const SCOPE_FOLDER_KEY = "faces.scope_folder";
 export const CONSENT_KEY = "faces.consent_at";
 

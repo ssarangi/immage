@@ -3776,6 +3776,7 @@
   "people.suggest.moreLeft_one": "{count} more not shown",
   "people.suggest.moreLeft_other": "{count} more not shown",
   "people.suggest.looks": "Looks like {name}",
+  "people.scope.folderOnly": "Folder",
   "people.face.aria": "Face {i} of {n}, {name}",
   "menu.faces": "Show faces on photo",
   "dialogs.shortcuts.view.faces": "Show or hide the face boxes on the open photo (when People is on)",

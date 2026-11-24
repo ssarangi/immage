@@ -73,7 +73,7 @@ function seed(): Db {
   }
   for (const f of faces) if (f.person === null && f.maybe === null && f.id % 53 === 0) f.state = "rejected";   // some "not a face"
   if (q.get("view") === "overlay") {   // one photo with four faces, for the overlay and the card
-    const g = "/synthetic/group.jpg";
+    const g = "/synthetic/Oct 12 - Nani Portraits/_DSC1096.ARW";
     add({ path: g, person: 1, state: "confirmed" }); add({ path: g, person: 2, state: "confirmed" }); add({ path: g, maybe: 2 }); add({ path: g });
   }
   for (const p of people) p.cover = faces.find((f) => f.person === p.id)?.id ?? null;
@@ -243,7 +243,7 @@ function Harness() {
       changed: () => listeners.forEach((l) => l.changed()),
     };
     (window as unknown as { __h: H }).__h = h;
-    if (folderScope) { settings.set("faces.scope", "folder"); settings.set("faces.scope_folder", "/synthetic/Shoot"); setScanFolderTotal("/synthetic/Shoot", 333); }
+    if (folderScope) { settings.set("faces.scope", "folder"); if (q.get("noscopefolder") !== "1") settings.set("faces.scope_folder", "/synthetic/Shoot"); setScanFolderTotal("/synthetic/Shoot", 333); }
     // grow=1: the scan goes on by itself (no event is ever sent: the poll alone must keep the view current), then ends
     let grown: ReturnType<typeof setInterval> | undefined;
     if (q.get("grow") === "1") {
@@ -287,7 +287,7 @@ function OverlayStage() {
   const [show, setShow] = useState(true);
   const [sel, setSel] = useState<number | null>(null);
   const [open, setOpen] = useState(true);
-  const path = "/synthetic/group.jpg";
+  const path = "/synthetic/Oct 12 - Nani Portraits/_DSC1096.ARW";
   useEffect(() => {
     const h = { suggestFor: () => {}, calls, scan, folderScope, grow: false, fake, db: () => db, setPack: () => {}, tick: () => {}, changed: () => {}, peopleState, setZoom, setShow, photo: path };
     (window as unknown as { __h: unknown }).__h = h;

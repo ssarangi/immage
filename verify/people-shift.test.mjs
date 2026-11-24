@@ -171,3 +171,13 @@ test('the face overlay follows the zoom, names on hover and focus, names and rej
   assert.ok(r.names.every((n) => /^Face \d of 4, /.test(n)), r.names.join('|'));
   assert.equal(r.ok, true);
 });
+
+test('the scope chip names the folder, also when only faces.scope was set (no folder stored)', { skip }, () => {
+  for (const extra of ['', '&noscopefolder=1']) {
+    const r = report(dump(`shift=1&state=scanning&folderscope=1&theme=dark${extra}`));
+    assert.equal(r.error, undefined, r.error);
+    assert.deepEqual(r.failures, []);
+    assert.equal(r.chip, 'Folder: Shoot');
+    assert.equal(r.strip[0], 'Finding faces: 36 of 333 photos');
+  }
+});

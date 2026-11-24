@@ -210,6 +210,9 @@ export default function App() {
   const [showFaces, setShowFaces] = useState(false);
   const [faceSel, setFaceSel] = useState<number | null>(null);
   const facesAvailable = useFacesOn();
+  // the key handler and its actions are built once: they read this, not the value of the render that built them
+  const facesAvailableRef = useRef(facesAvailable);
+  facesAvailableRef.current = facesAvailable;
   const folderRef = useRef(folder);
   folderRef.current = folder;
   // with pairs stacked, each raw's partners (set at render); every rating,
@@ -6192,7 +6195,7 @@ export default function App() {
       "auto-cull": () => { window.dispatchEvent(new CustomEvent("auto-cull-open")); },
       "scenes": () => { if (gridRef.current) { if (!scenesState().on) setPeopleOn(false); setScenesOn(!scenesState().on); } },
       // Shift+P from any view; pressed again it returns to the grid
-      "faces": () => { if (facesAvailable && !gridRef.current) setShowFaces((v) => !v); },
+      "faces": () => { if (facesAvailableRef.current && !gridRef.current) setShowFaces((v) => !v); },
       "people": () => {
         if (croppingRef.current) return;
         if (gridRef.current && peopleState().on) { setPeopleOn(false); return; }

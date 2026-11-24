@@ -17,7 +17,7 @@ export function PeopleCard({ path, open, onToggle, overlay, onOverlay, selected,
   path: string | null; open: boolean; onToggle: (alt: boolean) => void;
   overlay: boolean; onOverlay: (on: boolean) => void; selected: number | null; onSelect: (face: number | null) => void;
 }) {
-  const { faces, loading } = usePhotoFaces(path, open || overlay);
+  const { faces, loading } = usePhotoFaces(path, true);
   const scan = usePeople().scan;
   const status = scan.kind === "scanning" ? t("people.card.scanning", { done: formatNumber(scan.done) }) : t("people.card.upToDate");
   const count = faces.length;
@@ -26,7 +26,7 @@ export function PeopleCard({ path, open, onToggle, overlay, onOverlay, selected,
       <div className={`panel-title${open ? " open" : ""}`} onClick={(e) => onToggle(e.altKey)} role="button" tabIndex={0} aria-expanded={open}
            onKeyDown={(e) => headerKey(e, onToggle)}>
         <span>{t("people.card.title")}</span>
-        <span className="faces-head-note">{path ? t("people.card.count", { n: count, count: formatNumber(count) }) : ""}</span>
+        <span className="faces-head-note">{path && !loading ? t("people.card.count", { n: count, count: formatNumber(count) }) : ""}</span>
         <svg className={`chevron${open ? " open" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
       </div>
       {open && (

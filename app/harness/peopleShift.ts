@@ -95,6 +95,9 @@ async function folderRun(out: Record<string, unknown>, fail: (m: string) => void
   await frames(6);
   const first = text();
   out.strip = [first];
+  const chip = $(".people-scope")?.textContent ?? "";
+  out.chip = chip;
+  if (chip !== "Folder: Shoot") fail(`scope chip says "${chip}"`);
   if (!/^Finding faces: 36 of 333 photos$/.test(first)) fail(`folder scope: the strip says "${first}"`);
   if (first.includes("?") || first.includes("...")) fail(`folder scope: the strip shows a placeholder: "${first}"`);
   const job = scanJob(peopleState().scan);
