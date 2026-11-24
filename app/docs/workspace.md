@@ -195,7 +195,7 @@ the photo:
 The **Edit**, **Grid** and **Scenes** tabs in the top strip, right of the menus (centred
 in the strip on macOS), choose the view; in a narrow window they show icons only.
 **Edit** and **Grid** go between the filmstrip and the grid as the rail's
-Library button and G do, and **Scenes** shows the grid as a timeline of bursts.
+Library button and G do, and **Scenes** shows the grid as a timeline of bursts. **People** (Shift+P) shows the faces found in your photos; see [People](people.md).
 The arrow keys, Home and End move between the tabs. The toolbar under the filmstrip
 in the grid has has the **Loupe** and **Auto Cull...**, which opens
 [Auto cull](library.md#auto-cull) (**Review cull** once a plan exists). It also has buttons to show or hide the

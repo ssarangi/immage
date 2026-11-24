@@ -20,7 +20,6 @@ import "../src/styles.css";
 import { BUILTIN_THEMES, THEME_TOKENS } from "../src/themes";
 import { TitleStrip, VIEW_TABS, type ViewMode, type ViewTab } from "../src/ViewTabs";
 import { MENUS } from "../src/menu";
-import { EditViewIcon } from "../src/icons";
 
 const q = new URLSearchParams(location.search);
 const theme = BUILTIN_THEMES.find((t) => t.id === q.get("theme")) ?? BUILTIN_THEMES[0];
@@ -46,7 +45,8 @@ if (brk === "overlap") {
 }
 
 type H = { set: (p: { view?: ViewMode; canScenes?: boolean }) => void; width: (w: number) => void; four: (on: boolean) => void; badge: (on: boolean) => void };
-const four = (badge: boolean): ViewTab[] => [...VIEW_TABS, { badge, id: "people" as ViewMode, label: "viewTabs.grid", title: "viewTabs.gridTitle", icon: EditViewIcon, shortcut: "⇧P" }];
+const three: ViewTab[] = VIEW_TABS.filter((x) => x.id !== "people");   // the strip before People
+const four = (badge: boolean): ViewTab[] => VIEW_TABS.map((x) => (x.id === "people" ? { ...x, badge } : x));
 
 function Harness() {
   const [view, setView] = useState<ViewMode>("grid");
@@ -64,7 +64,7 @@ function Harness() {
   }, []);
   return (
     <div className="window" style={{ position: "fixed", top: 0, left: 0, width, height: 120 }}>
-      <TitleStrip mac={mac} menus={menus} disabled={new Set()} onAction={noop} view={view} onView={setView} canScenes={canScenes} tabs={more ? four(badge) : undefined} />
+      <TitleStrip mac={mac} menus={menus} disabled={new Set()} onAction={noop} view={view} onView={setView} canScenes={canScenes} tabs={more ? four(badge) : three} />
       {brk === "drag" && <span data-tauri-drag-region style={{ position: "absolute", top: 0, left: 0, right: 0, height: 34 }} />}
     </div>
   );

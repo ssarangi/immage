@@ -11,7 +11,19 @@ Improvements
   SFace recognizer, about 39 MB) under Preferences > AI models can find the faces in
   your photos on this computer and group the ones that look alike. It is off until
   you turn it on, nothing is uploaded, and all face data can be deleted at any
-  time. People view to follow.
+  time.
+- **People:** a fourth view, **People** (also **View > People** and Shift+P), shows
+  the faces found in your photos. Until you turn it on it is a card that installs
+  the Faces model, asks what to scan and records your consent: face data is
+  biometric, stays on this computer and can be deleted in one click. Then
+  **People**, **To review**, **Unassigned** and **Ignored** sections hold the
+  named people, the groups of faces that look alike, single faces and ignored
+  people, in a grid that stays fast with thousands of faces. Select faces like
+  photos (click, Cmd/Ctrl, Shift, drag a rectangle, Cmd/Ctrl+A), press N or just
+  start typing to name a group, merge, rename, ignore and choose a cover, and
+  confirm or reject a suggestion (shown dashed until you confirm it). Every change
+  can be undone for five seconds. The scan appears under the photo and in the view,
+  and the People tab shows a dot when faces need review.
 - **Library panel:** the Metadata, Keywording, Folders, Catalog and History cards
   now always open independently, so Folders and Catalog can be open together;
   Focus mode applies only to the Edit view's tool panels, Presets and Advanced
@@ -22,7 +34,7 @@ Improvements
   scroll under the Include subfolders switch and above the Add folder button
   (and the Catalog's progress card), and in Keywording only the Auto-keywords
   chips scroll, under the keyword chips, the input and the group's title row.
-- **View tabs:** the views are now **Edit**, **Grid** and **Scenes** tabs in the
+- **View tabs:** the views are now **Edit**, **Grid**, **Scenes** and **People** tabs in the
   window's top strip, next to the menus, instead of a small switch in the bottom
   toolbar; they show icons only in a narrow window, and the arrow keys move
   between them. The shortcuts and **View > Scenes** are unchanged.

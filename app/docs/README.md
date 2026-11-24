@@ -56,6 +56,8 @@ is also on the [Immage website](https://immage.photo/guide/).
   and duplicate photos in a shoot and review them, ask Google Gemini for a
   critique of a photo, or describe photos in words (the options are in
   [Preferences > Culling](preferences.md#culling))
+- [People](people.md): find, name and review the faces in your photos, on this
+  computer only
 - [Statistics](statistics.md): your cameras, lenses, exposure, when and where
   you shoot, and the frames you rate highest; click anything to filter
 - [Catalog](catalog.md): folders Immage has indexed, beside your Folders, with

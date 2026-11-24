@@ -15,6 +15,8 @@ export const GridViewIcon = () => icon(<><rect x="3.5" y="3.5" width="7" height=
   <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></>);
 export const ScenesViewIcon = () => icon(<><path d="M3.5 6h6M3.5 12h6M3.5 18h6" /><rect x="12.5" y="4" width="3.5" height="4" rx="1" /><rect x="17.5" y="4" width="3.5" height="4" rx="1" />
   <rect x="12.5" y="10" width="3.5" height="4" rx="1" /><rect x="12.5" y="16" width="3.5" height="4" rx="1" /><rect x="17.5" y="16" width="3.5" height="4" rx="1" /></>);
+// People: a head and shoulders inside a face-box's corner marks
+export const PeopleViewIcon = () => icon(<><circle cx="12" cy="9.5" r="3.2" /><path d="M6.2 19.5c.4-3.2 2.6-5 5.8-5s5.4 1.8 5.8 5" /><path d="M3.5 8V4.5H7M17 4.5h3.5V8M3.5 16v3.5H7M17 19.5h3.5V16" /></>);
 // Auto Cull: a wand with a spark
 export const WandIcon = () => icon(<><path d="m4 20 11-11" /><path d="m13.5 7.5 3 3" /><path d="M18.5 3v3M17 4.5h3M20.5 10v2M19.5 11h2" /></>);
 export const MagnifierIcon = () => icon(<><circle cx="10.5" cy="10.5" r="6.5" /><path d="m15.5 15.5 5 5" /><path d="M8 10.5h5M10.5 8v5" /></>);

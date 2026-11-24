@@ -20,7 +20,7 @@ export type Job = {
   done: number;
   total: number;           // 0 for work with no count, as a denoise
   stage: string | null;    // past the count, as a panorama's "blending"
-  cancel: "export" | "merge" | "move" | "cull" | null;   // the kind of command that stops it, if any
+  cancel: "export" | "merge" | "move" | "cull" | "faces" | null;   // the kind of command that stops it, if any
   stopping: boolean;
   summary: string | null;  // set once it is over
   failed: boolean;
@@ -171,9 +171,22 @@ export function runInBackground<R>(what: string, run: () => Promise<R>, summariz
 export function stopJob(job: Job) {
   if (!job.cancel) return;
   update(job.id, { stopping: true });
-  void (job.cancel === "export" ? commands.exportCancel(job.id)
+  void (job.cancel === "faces" ? commands.analysisPause(true)
+    : job.cancel === "export" ? commands.exportCancel(job.id)
     : job.cancel === "cull" ? commands.cullCancel(job.id)
     : job.cancel === "move" ? commands.moveCancel(job.id) : commands.mergeCancel(job.id));
+}
+
+// the face scan (peopleStore.ts) as an activity line: its count, and Stop, which pauses it (what was found
+// is kept; Resume is in the People view). `null` removes the line.
+const SCAN_JOB = -4201;
+export function setScanJob(p: { done: number; total: number; paused: boolean } | null) {
+  if (!p) { if (jobs.some((j) => j.id === SCAN_JOB)) dismissJob(SCAN_JOB); return; }
+  const what = t(p.paused ? "people.activity.paused" : "people.activity.what");
+  if (!jobs.some((j) => j.id === SCAN_JOB)) {
+    jobs = [...jobs, { id: SCAN_JOB, what, done: p.done, total: p.total, stage: null, cancel: p.paused ? null : "faces", stopping: false, summary: null, failed: false, action: null }];
+    emit();
+  } else update(SCAN_JOB, { what, done: p.done, total: p.total, cancel: p.paused ? null : "faces", stopping: false });
 }
 
 export function dismissJob(id: number) {

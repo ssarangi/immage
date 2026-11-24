@@ -134,6 +134,9 @@ import { PerfHud } from "./PerfHud";
 import { GridCullingWithScenes } from "./SceneLightbox";
 import "./scenes.css";
 import { ScenesView } from "./ScenesView";
+import { PeoplePane } from "./PeoplePane";
+import "./people.css";
+import { peopleState, setPeopleOn, startPeople, usePeopleBadge, usePeopleOn } from "./peopleStore";
 import { SceneRules } from "./SceneRules";
 import { scenesState, setScenesOn, useScenesOn } from "./scenesStore";
 import { KeywordingPanel } from "./Keywording";
@@ -6178,7 +6181,13 @@ export default function App() {
       },
       "critique": () => { if (gridRef.current) window.dispatchEvent(new CustomEvent("grid-critique-open", { detail: {} })); },
       "auto-cull": () => { window.dispatchEvent(new CustomEvent("auto-cull-open")); },
-      "scenes": () => { if (gridRef.current) setScenesOn(!scenesState().on); },
+      "scenes": () => { if (gridRef.current) { if (!scenesState().on) setPeopleOn(false); setScenesOn(!scenesState().on); } },
+      // Shift+P from any view; pressed again it returns to the grid
+      "people": () => {
+        if (croppingRef.current) return;
+        if (gridRef.current && peopleState().on) { setPeopleOn(false); return; }
+        setScenesOn(false); setPeopleOn(true); setGrid(true);
+      },
       "culling-preview": () => { if (gridRef.current) window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: {} })); },
       "info-overlay": () => { if (session.current) setInfoMode((m) => (m + 1) % 3); },
       "canvas": () => {
@@ -6280,7 +6289,9 @@ export default function App() {
       if ((e.key === "g" || e.key === "G") && !croppingRef.current) { run("grid"); return; }
       // Shift+S: Scenes, the grid's bursts on a timeline (plain S is the soft proof)
       if (e.shiftKey && (e.key === "S" || e.key === "s") && gridRef.current && !croppingRef.current) { run("scenes"); return; }
-      if (e.key === "Escape" && gridRef.current) { if (scenesState().on) setScenesOn(false); else setGrid(false); return; }
+      // Shift+P: People, the faces in the photos, from any view
+      if (e.shiftKey && (e.key === "P" || e.key === "p") && !croppingRef.current) { run("people"); return; }
+      if (e.key === "Escape" && gridRef.current) { if (peopleState().on) setPeopleOn(false); else if (scenesState().on) setScenesOn(false); else setGrid(false); return; }
       if (e.key === "\\" && !croppingRef.current) { setBaModeRef.current("off"); setBefore(!beforeRef.current); return; }
       if ((e.key === "y" || e.key === "Y") && !croppingRef.current) { run("before-after"); return; }
       if ((e.key === "c" || e.key === "C") && !croppingRef.current) { run("compare"); return; }
@@ -6416,13 +6427,19 @@ export default function App() {
   // the view tabs in the top strip
   const changeView = (v: ViewMode) => {
     if (croppingRef.current) return;
-    if (v === "edit") { setGrid(false); return; }
+    if (v === "edit") { setPeopleOn(false); setGrid(false); return; }
     setScenesOn(v === "scenes");
+    setPeopleOn(v === "people");
     setGrid(true);
   };
   const hasCullingPhotos = grid && shown.some((i) => !isRemote(i));
   const scenesFlag = useScenesOn();
   const scenesOn = grid && scenesFlag;
+  const peopleFlag = usePeopleOn();
+  const peopleOn = grid && peopleFlag;
+  const peopleBadge = usePeopleBadge();
+  const viewNow: ViewMode = peopleOn ? "people" : scenesOn ? "scenes" : grid ? "grid" : "edit";
+  useEffect(() => startPeople(), []);
   const hasPhoto = current !== null;
   const disabledMenuActions = useMemo(
     () => disabledViewActions(grid, hasPhoto, hasCullingPhotos, cropping, preview),
@@ -6793,7 +6810,7 @@ export default function App() {
         the window and leaves room for the traffic lights */}
     {/* full screen has no traffic lights to hold, and the photo wants the room */}
     {!fullscreen && <TitleStrip mac={IS_MAC} menus={OTHER_MENUS} disabled={disabledMenuActions} onAction={runMenuAction}
-                                view={scenesOn ? "scenes" : grid ? "grid" : "edit"} onView={changeView}
+                                view={viewNow} onView={changeView} badges={{ people: peopleBadge }}
                                 canScenes={shown.some((i) => !isRemote(i))} />}
     <div className={`app${sliding ? " sliding" : ""}`} style={{
       gridTemplateColumns: preview ? "0px 0px minmax(0, 1fr) 0px 0px 0px 0px"
@@ -7228,7 +7245,7 @@ export default function App() {
                         onChange={(v) => setLayout((l) => ({ ...l, stripHeight: v }))} />
             )}
             {/* stays mounted under Scenes, hidden but laid out, so the grid's scroll and thumbnails are as left */}
-            <div className="grid-host" style={scenesOn ? { visibility: "hidden" } : undefined} aria-hidden={scenesOn || undefined}>
+            <div className="grid-host" style={scenesOn || peopleOn ? { visibility: "hidden" } : undefined} aria-hidden={scenesOn || peopleOn || undefined}>
             <Filmstrip images={cells} partners={partners} pending={pending}
                        empty={immich ? (immich.busy ? "searching photos…" : "no photos match the search")
                               : reading ? "reading the folder…"
@@ -7256,6 +7273,7 @@ export default function App() {
                        onMeta={(i, fields) => rateSelection(i, fields)} />
             </div>
             {scenesOn && <div className="scenes-host"><ScenesView entries={shown} onMeta={(i, fields) => void setMeta(i.imgid, fields)} /></div>}
+            {peopleOn && <div className="people-host"><PeoplePane folder={folder} /></div>}
           </div>
         </div>
         </div>
@@ -7278,7 +7296,7 @@ export default function App() {
                            title={t("app.compare.hint")}
                            onClick={toggleCompare}><CompareIcon /></button>
                  </>}
-                 view={scenesOn ? "scenes" : grid ? "grid" : "edit"}
+                 view={viewNow}
                  review={cull.plan ? { count: cull.plan.session.rejectCount } : null}
                  onReview={() => { setCull({ open: true }); revealRightPanel(); }}
                  // in the grid the zoom bar sizes the thumbnails; the photo's

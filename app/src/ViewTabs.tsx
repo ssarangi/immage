@@ -2,15 +2,15 @@
 // Copyright (C) 2026 the Immage authors
 
 // the view tabs in the window's top strip: the ways to look at the same photos. Adding a
-// view (People is planned) is one entry in VIEW_TABS and its three strings.
+// view is one entry in VIEW_TABS and its three strings.
 import { useRef } from "react";
 import { t } from "./i18n";
 import { keys } from "./keys";
 import { MenuBar } from "./MenuBar";
 import type { ActionId, Menu } from "./menu";
-import { EditViewIcon, GridViewIcon, ScenesViewIcon } from "./icons";
+import { EditViewIcon, GridViewIcon, PeopleViewIcon, ScenesViewIcon } from "./icons";
 
-export type ViewMode = "edit" | "grid" | "scenes";
+export type ViewMode = "edit" | "grid" | "scenes" | "people";
 
 export type ViewTab = {
   id: ViewMode;
@@ -18,7 +18,7 @@ export type ViewTab = {
   title: string;                       // locale key: what it shows, before the shortcut
   icon: () => React.ReactNode;
   shortcut: string;                    // shown in the tooltip, as the keyboard help writes it
-  badge?: boolean;                     // a needs-review dot (People, later): takes no width
+  badge?: boolean;                     // a needs-review dot, when the `badges` prop does not say: takes no width
   needs?: "scenes";                    // what must be true for the tab to be enabled
 };
 
@@ -26,10 +26,11 @@ export const VIEW_TABS: ViewTab[] = [
   { id: "edit", label: "viewTabs.edit", title: "viewTabs.editTitle", icon: EditViewIcon, shortcut: "G / Esc" },
   { id: "grid", label: "viewTabs.grid", title: "viewTabs.gridTitle", icon: GridViewIcon, shortcut: "G" },
   { id: "scenes", label: "viewTabs.scenes", title: "viewTabs.scenesTitle", icon: ScenesViewIcon, shortcut: "⇧S", needs: "scenes" },
+  { id: "people", label: "viewTabs.people", title: "viewTabs.peopleTitle", icon: PeopleViewIcon, shortcut: "⇧P" },
 ];
 
-export function ViewTabs({ view, onView, canScenes, tabs = VIEW_TABS }: {
-  view: ViewMode; onView: (v: ViewMode) => void; canScenes: boolean; tabs?: ViewTab[];
+export function ViewTabs({ view, onView, canScenes, tabs = VIEW_TABS, badges }: {
+  view: ViewMode; onView: (v: ViewMode) => void; canScenes: boolean; tabs?: ViewTab[]; badges?: Partial<Record<ViewMode, boolean>>;
 }) {
   const list = useRef<HTMLDivElement>(null);
   const off = (tab: ViewTab) => tab.needs === "scenes" && !canScenes;
@@ -60,7 +61,7 @@ export function ViewTabs({ view, onView, canScenes, tabs = VIEW_TABS }: {
         const on = view === tab.id, label = t(tab.label);
         return (
           <button key={tab.id} type="button" role="tab" className="view-tab" id={`view-tab-${tab.id}`} data-view={tab.id}
-                  data-badge={tab.badge || undefined} aria-selected={on} aria-disabled={off(tab) || undefined} aria-label={label}
+                  data-badge={(badges?.[tab.id] ?? tab.badge) || undefined} aria-selected={on} aria-disabled={off(tab) || undefined} aria-label={label}
                   tabIndex={stop === tab.id ? 0 : -1}
                   title={`${t(tab.title)} (${keys(tab.shortcut)})`}
                   onClick={() => { if (!off(tab)) onView(tab.id); }}>
@@ -77,7 +78,7 @@ export function ViewTabs({ view, onView, canScenes, tabs = VIEW_TABS }: {
 // title and the box around the tabs drag the window: a drag region over the tabs would eat clicks.
 export function TitleStrip({ mac, menus, disabled, onAction, ...tabs }: {
   mac: boolean; menus: Menu[]; disabled: ReadonlySet<ActionId>; onAction: (id: ActionId) => void;
-  view: ViewMode; onView: (v: ViewMode) => void; canScenes: boolean; tabs?: ViewTab[];   // tabs: the harness adds a 4th
+  view: ViewMode; onView: (v: ViewMode) => void; canScenes: boolean; tabs?: ViewTab[]; badges?: Partial<Record<ViewMode, boolean>>;
 }) {
   return (
     <div className={`titlebar${mac ? "" : " with-menus"}`} data-tauri-drag-region>

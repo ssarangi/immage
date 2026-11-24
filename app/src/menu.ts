@@ -13,7 +13,7 @@ export type ActionId =
   | "import" | "add-folder" | "export" | "print" | "quit"
   | "undo" | "redo" | "cut" | "copy" | "paste" | "select-all"
   | "copy-settings" | "paste-settings" | "paste-previous" | "preferences"
-  | "auto-cull" | "scenes" | "critique" | "virtual-copy" | "start-over" | "rotate-left" | "rotate-right" | "hdr-merge" | "pano-merge"
+  | "auto-cull" | "scenes" | "people" | "critique" | "virtual-copy" | "start-over" | "rotate-left" | "rotate-right" | "hdr-merge" | "pano-merge"
   | "crop" | "heal" | "wb-picker"
   | "rate-0" | "rate-1" | "rate-2" | "rate-3" | "rate-4" | "rate-5"
   | "label-red" | "label-yellow" | "label-green" | "label-blue" | "reject"
@@ -35,7 +35,7 @@ export const ACTION_IDS: readonly ActionId[] = [
   "import", "add-folder", "export", "print", "quit",
   "undo", "redo", "cut", "copy", "paste", "select-all",
   "copy-settings", "paste-settings", "paste-previous", "preferences",
-  "auto-cull", "scenes", "critique", "virtual-copy", "start-over", "rotate-left", "rotate-right", "hdr-merge", "pano-merge",
+  "auto-cull", "scenes", "people", "critique", "virtual-copy", "start-over", "rotate-left", "rotate-right", "hdr-merge", "pano-merge",
   "crop", "heal", "wb-picker",
   "rate-0", "rate-1", "rate-2", "rate-3", "rate-4", "rate-5",
   "label-red", "label-yellow", "label-green", "label-blue", "reject",
@@ -119,6 +119,7 @@ export const MENUS: Menu[] = [
       item("culling-preview", t("menu.culling-preview"), "F"),
       item("grid", t("menu.grid"), "G"),
       item("scenes", t("menu.scenes"), "⇧S"),
+      item("people", t("menu.people"), "⇧P"),
       item("before-after", t("menu.before-after"), "Y"),
       item("compare", t("menu.compare"), "C"),
       item("stats", t("menu.stats")), sep(),
