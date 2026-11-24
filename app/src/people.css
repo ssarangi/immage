@@ -214,3 +214,22 @@ html[data-scheme="light"] .people-view { background: color-mix(in srgb, var(--wi
 .person-tab[aria-selected="true"] { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
 .person-photos { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .people-state-line { margin: 16px; color: var(--text-2); }
+
+/* the face boxes over the photo: the layer is the picture's size, a box a percentage of it; labels and outlines paint, they never size */
+.face-layer { position: absolute; inset: 0; pointer-events: none; }
+.face-box {
+  position: absolute; box-sizing: border-box; padding: 0; border: 0; border-radius: 4px; background: none; pointer-events: auto; cursor: pointer;
+  outline: 2px solid rgba(var(--guide), .9); outline-offset: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, .55), inset 0 0 0 1px rgba(0, 0, 0, .35);
+}
+.face-box[data-state="suggested"] { outline-style: dashed; }
+.face-box[data-state="unassigned"] { outline-style: dotted; outline-color: rgba(var(--guide), .7); }
+.face-box:hover, .face-box:focus-visible, .face-box.selected { outline-width: 3px; }
+.face-box:focus-visible { outline-color: var(--focus, #fff); }
+.face-label {
+  position: absolute; inset-inline-start: 0; bottom: 100%; margin-bottom: 4px; padding: 2px 6px; border-radius: 4px; white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis;
+  background: color-mix(in srgb, var(--card) 88%, transparent); color: var(--text); font-size: var(--fs-small); line-height: 16px; opacity: 0; pointer-events: none;
+}
+.face-box[data-side="below"] .face-label { bottom: auto; top: 100%; margin-bottom: 0; margin-top: 4px; }
+.face-box:hover .face-label, .face-box:focus-visible .face-label, .face-box.selected .face-label { opacity: 1; }
+.face-pop-actions { display: flex; gap: 6px; margin-top: 8px; }
+

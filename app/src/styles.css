@@ -766,9 +766,9 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 /* the column is as tall as the window: an open card is content-sized and shrinks (in proportion to its content) when
    the column is full, scrolling inside its own body; a closed card is its header and never shrinks */
 .left .panel { flex: none; margin: 8px 12px 0; display: flex; flex-direction: column; }
-.left .panel:has(> :is(.meta-body, .kw-body, .folders-body, .cat-body, .history-list)) { flex: 0 1 auto; min-height: 78px; }
+.left .panel:has(> :is(.meta-body, .kw-body, .folders-body, .cat-body, .history-list, .faces-body)) { flex: 0 1 auto; min-height: 78px; }
 .left .panel > .panel-title { flex: none; }
-.left .panel > :is(.meta-body, .kw-body, .folders-body, .cat-body, .history-list) { flex: 1 1 auto; min-height: 0; overflow-y: auto; max-height: none; }
+.left .panel > :is(.meta-body, .kw-body, .folders-body, .cat-body, .history-list, .faces-body) { flex: 1 1 auto; min-height: 0; overflow-y: auto; max-height: none; }
 .left .navigator, .left .panel-head { flex: none; }
 /* inside a card only the content meant to scroll does: the Folders and Catalog trees scroll under their fixed
    switch, Add folder button and footer; Keywording's Auto-keywords chips scroll under its fixed chips, input,
@@ -3662,3 +3662,21 @@ html[data-scheme="light"] .strip-slot.grid::before { background: color-mix(in sr
   .pref-label { flex-basis: 160px; }
 }
 @media (max-width: 720px) { .prefs-note { display: none; } }
+
+/* the Library column's People card: chips, the switch and a status line, the chips scrolling inside the card */
+.faces-body { display: flex; flex-direction: column; gap: 8px; padding: 0 14px 12px; font-size: var(--fs-small); }
+.faces-chips { flex: 1 1 auto; min-height: 36px; max-height: 160px; overflow-y: auto; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; }
+.faces-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; max-width: 100%; padding: 0 8px 0 2px; border: 0; border-radius: 14px; background: var(--inset); color: var(--text); cursor: pointer; font-size: var(--fs-small); }
+.faces-chip:hover { background: var(--hover); }
+.faces-chip.selected { box-shadow: inset 0 0 0 2px var(--accent); }
+.faces-chip[data-state="suggested"] { outline: 1px dashed var(--text-2); outline-offset: -1px; }
+.faces-chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.faces-crop { position: relative; flex: none; width: 24px; height: 24px; border-radius: 12px; overflow: hidden; background: var(--hover); }
+.faces-crop img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.faces-empty { color: var(--text-2); line-height: 28px; }
+.faces-switch { flex: none; display: flex; align-items: center; gap: 8px; height: 28px; color: var(--text-2); cursor: pointer; }
+.faces-switch span { flex: 1 1 auto; }
+.faces-status { flex: none; height: 18px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.faces-head-note { margin-inline-start: auto; margin-inline-end: 8px; color: var(--text-2); font-weight: 400; font-size: var(--fs-small); }
+/* the People card is the sixth card of the column: a lower floor than the others, so all six still fit a 1600x1000 window */
+.left .panel.faces-panel:has(> .faces-body) { min-height: 56px; }

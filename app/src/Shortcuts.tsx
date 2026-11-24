@@ -38,6 +38,7 @@ const GROUPS: Group[] = [
 ["F", t("dialogs.shortcuts.view.entry1")],
 ["⇧S", t("dialogs.shortcuts.view.scenes")],
 ["⇧P", t("dialogs.shortcuts.view.people")],
+["⇧F", t("dialogs.shortcuts.view.faces")],
 ["K", t("dialogs.shortcuts.view.entry2")],
 ["L", t("dialogs.shortcuts.view.entry3")],
 ["Tab", t("dialogs.shortcuts.view.entry4")],

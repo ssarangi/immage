@@ -162,3 +162,12 @@ test('a named group leaves To review at once and for good, the box says what is 
   assert.match(r.nameTitle, /^Name this group \(\d+ faces?\)$/);
   assert.equal(r.ctrlZ.after, r.ctrlZ.before + 1);
 });
+
+test('the face overlay follows the zoom, names on hover and focus, names and rejects faces; the card lists them and selects', { skip }, () => {
+  const r = report(dump('shift=1&view=overlay&theme=dark', 1440, 900, [], 120000));
+  assert.equal(r.error, undefined, r.error);
+  assert.deepEqual(r.failures, []);
+  assert.equal(r.boxes, 4);
+  assert.ok(r.names.every((n) => /^Face \d of 4, /.test(n)), r.names.join('|'));
+  assert.equal(r.ok, true);
+});

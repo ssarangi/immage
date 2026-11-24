@@ -135,10 +135,12 @@ import { GridCullingWithScenes } from "./SceneLightbox";
 import "./scenes.css";
 import { ScenesView } from "./ScenesView";
 import { PeoplePane } from "./PeoplePane";
+import { FaceOverlay } from "./FaceOverlay";
+import { PeopleCard } from "./PeopleCard";
 import { NO_FACES, wantFaceSets } from "./facesFilter";
 import { useFaceSetsVersion } from "./useFaceSets";
 import "./people.css";
-import { peopleState, setPeopleOn, setScanFolderTotal, startPeople, usePeopleBadge, usePeopleOn } from "./peopleStore";
+import { peopleState, setPeopleOn, setScanFolderTotal, useFacesOn, startPeople, usePeopleBadge, usePeopleOn } from "./peopleStore";
 import { SceneRules } from "./SceneRules";
 import { scenesState, setScenesOn, useScenesOn } from "./scenesStore";
 import { KeywordingPanel } from "./Keywording";
@@ -203,6 +205,11 @@ export default function App() {
   useAgxProfiles();
   perf.count("react.appRenderAttempts");
   const [folder, setFolder] = useState<string | null>(null);
+  const faceBox = useRef<HTMLDivElement>(null);
+  // the face boxes over the open photo (Shift+F), and the face the Library card picked
+  const [showFaces, setShowFaces] = useState(false);
+  const [faceSel, setFaceSel] = useState<number | null>(null);
+  const facesAvailable = useFacesOn();
   const folderRef = useRef(folder);
   folderRef.current = folder;
   // with pairs stacked, each raw's partners (set at render); every rating,
@@ -2191,7 +2198,7 @@ export default function App() {
   const [grainLast, setGrainLast] = useState(false);
   const vignetteGuides = rightMode === "adjust" && openPanels.has("effects") && !!values.vig_amount && !grainLast
     && !!current && !cropping && !preview;
-  useEffect(() => { placeLayers(); }, [masksMode, healMode, current, cropping, vignetteGuides]);
+  useEffect(() => { placeLayers(); }, [masksMode, healMode, current, cropping, vignetteGuides, showFaces, facesAvailable]);
   // the guides also show while a slider of the vignette's shape moves (not
   // Amount): until the button comes up after a drag, or a moment after a
   // wheel notch or a typed value
@@ -2534,7 +2541,7 @@ export default function App() {
       layerStyle(hc, "height", `${(f.h * z) / dpr}px`);
     }
     // the mask editor and the zone overlay cover the whole image, wherever it is
-    for (const mb of [maskBox.current, zoneBox.current, detailBox.current, guideBox.current, negBox.current, checkerBox.current]) {
+    for (const mb of [maskBox.current, zoneBox.current, detailBox.current, guideBox.current, negBox.current, checkerBox.current, faceBox.current]) {
       if (!mb) continue;
       layerStyle(mb, "left", `${ox / dpr}px`);
       layerStyle(mb, "top", `${oy / dpr}px`);
@@ -6185,6 +6192,7 @@ export default function App() {
       "auto-cull": () => { window.dispatchEvent(new CustomEvent("auto-cull-open")); },
       "scenes": () => { if (gridRef.current) { if (!scenesState().on) setPeopleOn(false); setScenesOn(!scenesState().on); } },
       // Shift+P from any view; pressed again it returns to the grid
+      "faces": () => { if (facesAvailable && !gridRef.current) setShowFaces((v) => !v); },
       "people": () => {
         if (croppingRef.current) return;
         if (gridRef.current && peopleState().on) { setPeopleOn(false); return; }
@@ -6267,6 +6275,8 @@ export default function App() {
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Shift+F: the face boxes over the open photo
+      if (e.shiftKey && (e.key === "F" || e.key === "f") && !croppingRef.current) { e.preventDefault(); run("faces"); return; }
       // the preview is for looking: F or Escape leaves it, and only the keys
       // that look, rate or move to another photo work in it
       // the key is marked used: macOS beeps at one left unhandled while the
@@ -6855,6 +6865,8 @@ export default function App() {
                          open={leftOpen.has("keywording")} onToggle={(alt) => toggleLeft("keywording", alt)}
                          onAdd={(names) => void setPhotoKeywords(names, [])}
                          onRemove={(name) => void setPhotoKeywords([], [name])} />
+        {facesAvailable && <PeopleCard path={currentEntry?.path ?? null} open={leftOpen.has("people")} onToggle={(alt) => toggleLeft("people", alt)}
+                                       overlay={showFaces} onOverlay={setShowFaces} selected={faceSel} onSelect={setFaceSel} />}
         {/* a card as Metadata and Keywording are, open until folded, and
             kept as it was left */}
         <div className="panel folders-panel" data-tour="folders">
@@ -7010,6 +7022,11 @@ export default function App() {
             {perfHud && current && <PerfHud onClose={() => { setPerfHud(false); perf.enable(false); }} />}
             <canvas ref={hoverCanvas} className={`hover-preview${(hoverShown === "tiles" && tilesShown)
                       || (hoverShown === "panel" && rightMode === "adjust" && !cropping) ? "" : " off"}`} />
+            {showFaces && facesAvailable && currentEntry && !cropping && !preview && full.current && (
+              <div className="mask-box face-box-layer" ref={faceBox}>
+                <FaceOverlay path={currentEntry.path} selected={faceSel} onSelect={setFaceSel} />
+              </div>
+            )}
             {masksMode && current && !cropping && !preview && full.current && (
               <div className="mask-box" ref={maskBox}>
                 <MaskOverlay boxRef={maskBox} image={full.current} region={shownRegion}
@@ -8036,7 +8053,7 @@ const NEG_PICK_LABELS: Record<NegPick, string> = {
 // immage.<id>.open
 // the most photos whose keywords the Keywording card reads together
 const KEYWORD_SELECTION = 50;
-const LEFT_CARDS = ["metadata", "keywording", "folders", "catalog", "history"] as const;
+const LEFT_CARDS = ["metadata", "keywording", "people", "folders", "catalog", "history"] as const;
 type LeftCard = typeof LEFT_CARDS[number];
 const RIGHT_TITLES: Record<RightMode, string> = { adjust: t("app.panel.adjustments"), presets: t("app.panel.presets"), masks: t("app.panel.masks"), heal: t("app.panel.heal"),
                                                   zones: t("app.panel.zoneSystem"), film: t("app.panel.filmSimulation"), negative: t("app.panel.negative"),

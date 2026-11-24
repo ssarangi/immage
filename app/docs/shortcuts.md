@@ -63,6 +63,7 @@ In full screen preview, Z, ⌘= ⌘-, Y, X, I, L, \, 0-9 and ← → still work.
 | X | Reject |
 | ⇧⌘G | Critique with Gemini the photo under the pointer or the selection, in the grid |
 | ⇧P | Show People (the faces in your photos), from any view, or go back to the grid. In it: arrows move, N or a letter names the selected groups, ⌘A selects all, M merges, I ignores, F2 renames, Backspace marks "not a face" or "not them" |
+| ⇧F | Show or hide the face boxes on the open photo in the editor (when People is on) |
 | ⇧S | In the grid: show the photos as Scenes (a timeline of bursts), or go back to the grid |
 | A X U | In Scenes: accept, reject or clear the scene's best frame (⇧ for the whole scene); in a scene's preview, the frame shown |
 | N ⇧N | In a scene's preview: the next or previous scene |

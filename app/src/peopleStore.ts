@@ -131,6 +131,7 @@ export type PeopleState = {
   paused: boolean;
   scan: ScanView;
   loaded: boolean;                   // the lists have been read once
+  tick: number;                      // bumped whenever the faces changed (naming, a scan), for what shows one photo's faces
   suggestions: MergeSuggestion[];    // pairs the backend thinks are one person (never acted on by itself)
   data: PeopleData;
   undo: (UndoEntry & { id: number }) | null;
@@ -140,7 +141,7 @@ export type PeopleState = {
 
 const EMPTY_DATA: PeopleData = { people: [], groups: [], unknown: [], unknownMore: false, ignoredFaces: [], ignoredMore: false };
 const NO_STATUS_SCAN: ScanView = { kind: "off", done: 0, total: null, left: null, reason: null };
-const EMPTY: PeopleState = { on: false, status: null, failed: false, paused: false, scan: NO_STATUS_SCAN, loaded: false, suggestions: [], data: EMPTY_DATA, undo: null, error: "", busy: false };
+const EMPTY: PeopleState = { on: false, status: null, failed: false, paused: false, scan: NO_STATUS_SCAN, loaded: false, tick: 0, suggestions: [], data: EMPTY_DATA, undo: null, error: "", busy: false };
 
 let state: PeopleState = EMPTY;
 const listeners = new Set<() => void>();
@@ -275,7 +276,7 @@ export function holdRefresh(on: boolean) {
 export function startPeople(): () => void {
   void refreshStatus();
   const stop = api.subscribe(
-    () => { dropFaceSets(); if (state.on) { dirty = true; schedule(READ_GAP_MS); } else void refreshStatus(); },
+    () => { dropFaceSets(); setPeople({ tick: state.tick + 1 }); if (state.on) { dirty = true; schedule(READ_GAP_MS); } else void refreshStatus(); },
     (p) => {
       if (!state.status) return;
       applyStatus({ ...state.status, scanned: p.scanned, pending: p.pending, faces_found: p.faces_found }, state.paused);
@@ -325,7 +326,7 @@ async function change(local: (d: PeopleData) => PeopleData, call: () => Promise<
     setPeople({ data: before, error: String(e) });
   } finally {
     dropFaceSets();
-    setPeople({ busy: false });
+    setPeople({ busy: false, tick: state.tick + 1 });
     void refreshAll(true);
   }
 }

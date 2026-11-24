@@ -34,7 +34,7 @@ if (q.get("break") === "2") {
 }
 const H = Number(q.get("h") ?? 700);
 
-const CARDS = ["metadata", "keywording", "folders", "catalog", "history"] as const;
+const CARDS = ["metadata", "keywording", "people", "folders", "catalog", "history"] as const;
 type Card = typeof CARDS[number];
 const rows = (n: number) => Array.from({ length: n }, (_, i) => <div key={i} style={{ height: 28, padding: "0 12px" }}>row {i}</div>);
 let setOpenFromTest: (s: Set<Card>) => void = () => {};
@@ -66,6 +66,10 @@ function Harness() {
         </div>
         <div className="kw-label">Recent</div>
         <div className="kw-recent">{["a", "b", "c"].map((k) => <button key={k}>{k}</button>)}</div></div>)}
+      {card("people", "faces-panel", <div className="faces-body">
+        <div className="faces-chips" role="list">{Array.from({ length: 30 }, (_, i) => <button key={i} type="button" role="listitem" className="faces-chip"><span className="faces-crop" /><span>Person {i}</span></button>)}</div>
+        <label className="faces-switch"><span>Show faces on photo</span><input type="checkbox" className="switch" /></label>
+        <div className="faces-status" role="status">Up to date</div></div>)}
       {card("folders", "folders-panel", <div className="folders-body">
         <label className="sub-toggle"><span>Include subfolders</span><input type="checkbox" className="switch" defaultChecked /></label>
         <div className="ftree folders" role="tree">{Array.from({ length: 60 }, (_, i) => <div key={i} className="folder-row" style={{ height: 28 }}>folder {i}</div>)}</div>
@@ -88,7 +92,7 @@ const top = (el: Element) => Math.round(el.getBoundingClientRect().top * 100) / 
 const openSet = () => CARDS.filter((c) => head(c).getAttribute("aria-expanded") === "true");
 
 const COMBOS: Card[][] = [[], ["folders"], ["catalog"], ["folders", "catalog"], ["metadata", "keywording"],
-  ["metadata", "keywording", "folders", "catalog"], [...CARDS]];
+  ["people"], ["metadata", "people", "keywording"], ["metadata", "keywording", "folders", "catalog"], [...CARDS]];
 
 async function run() {
   await tick(5);
@@ -99,15 +103,15 @@ async function run() {
     const a = aside();
     const bodies = set.map((id) => {
       const b = body(id)!, cs = getComputedStyle(b);
-      const inner = b.querySelector<HTMLElement>(".ftree, .kw-auto-body");
+      const inner = b.querySelector<HTMLElement>(".ftree, .kw-auto-body, .faces-chips");
       const ht = head(id);
       return { id, clientHeight: b.clientHeight, scrollHeight: b.scrollHeight, overflowY: cs.overflowY,
         headerTop: top(ht), scrolls: b.scrollHeight > b.clientHeight + 1 || (!!inner && inner.scrollHeight > inner.clientHeight + 1) };
     });
     // a scrolled body keeps its header where it was
-    const tall = set.find((id) => id === "folders" || id === "catalog" || id === "keywording");
+    const tall = set.find((id) => id === "folders" || id === "catalog" || id === "keywording" || id === "people");
     let headerStaysOnScroll = true;
-    if (tall) { const t0 = top(head(tall)); body(tall)!.scrollTop = 200; body(tall)!.querySelector<HTMLElement>(".ftree, .kw-auto-body")!.scrollTop = 200; headerStaysOnScroll = top(head(tall)) === t0; }
+    if (tall) { const t0 = top(head(tall)); body(tall)!.scrollTop = 200; body(tall)!.querySelector<HTMLElement>(".ftree, .kw-auto-body, .faces-chips")!.scrollTop = 200; headerStaysOnScroll = top(head(tall)) === t0; }
     combos.push({ set, columnScrollHeight: a.scrollHeight, columnClientHeight: a.clientHeight, bodies, headerStaysOnScroll });
   }
   out.combos = combos;
@@ -116,8 +120,8 @@ async function run() {
     setOpenFromTest(new Set(open)); await tick();
     const card = document.querySelector<HTMLElement>(`[data-card=${id}]`)!, b = body(id)!;
     const sels = id === "folders" ? [".sub-toggle", "button.folder.add"] : id === "catalog" ? ["button.folder.add", ".cat-footer"]
-      : ["[data-own]", ".kw-add", ".kw-auto-head", ".kw-recent"];
-    const scroller = b.querySelector<HTMLElement>(id === "keywording" ? ".kw-auto-body" : ".ftree")!;
+      : id === "people" ? [".faces-switch", ".faces-status"] : ["[data-own]", ".kw-add", ".kw-auto-head", ".kw-recent"];
+    const scroller = b.querySelector<HTMLElement>(id === "keywording" ? ".kw-auto-body" : id === "people" ? ".faces-chips" : ".ftree")!;
     const rel = () => sels.map((sel) => top(b.querySelector(sel)!) - top(card));
     const before = rel();
     scroller.scrollTop = scroller.scrollHeight; await tick(2);
@@ -129,8 +133,9 @@ async function run() {
       scrollerHeight: scroller.clientHeight, bodyH: b.clientHeight, bodySH: b.scrollHeight, cardH: card.clientHeight, asideH: aside().clientHeight };
   };
   const fixedRuns = [];
-  for (const id of ["folders", "catalog", "keywording"] as Card[]) fixedRuns.push(await fixedCase([id], id));
+  for (const id of ["folders", "catalog", "keywording", "people"] as Card[]) fixedRuns.push(await fixedCase([id], id));
   for (const id of ["folders", "catalog", "keywording"] as Card[]) fixedRuns.push(await fixedCase(["keywording", "folders", "catalog"], id));
+  fixedRuns.push(await fixedCase(["people", "keywording", "folders", "catalog"], "people"));
   out.fixed = fixedRuns;
   // toggling a card moves no header above it while the column has room (cards above keep their size); when it is
   // full, cards above share the height and their sizes change, so only the Navigator and the first header are fixed

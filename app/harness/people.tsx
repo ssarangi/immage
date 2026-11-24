@@ -24,6 +24,9 @@ import "../src/styles.css";
 import { BUILTIN_THEMES, THEME_TOKENS } from "../src/themes";
 import type { ClusterRow, FaceFilter, FaceRow, FacesStatus, MergeSuggestion, PackInfo, PersonRow, Side } from "../src/bindings";
 import { PeopleView } from "../src/PeopleView";
+import { FaceOverlay } from "../src/FaceOverlay";
+import { PeopleCard } from "../src/PeopleCard";
+import { runOverlayTest } from "./facesOverlayTest";
 import { settings } from "../src/settings";
 import { peopleState, refreshAll, resetPeople, setPeopleApi, setPeopleOn, setScanFolderTotal, startPeople, type PeopleApi } from "../src/peopleStore";
 import { runPeopleShift } from "./peopleShift";
@@ -69,6 +72,10 @@ function seed(): Db {
     if (cluster % 3 === 0) { for (let k = 0; k < 2 && left > 0; k++) { add({}); left--; } }   // singles with no group
   }
   for (const f of faces) if (f.person === null && f.maybe === null && f.id % 53 === 0) f.state = "rejected";   // some "not a face"
+  if (q.get("view") === "overlay") {   // one photo with four faces, for the overlay and the card
+    const g = "/synthetic/group.jpg";
+    add({ path: g, person: 1, state: "confirmed" }); add({ path: g, person: 2, state: "confirmed" }); add({ path: g, maybe: 2 }); add({ path: g });
+  }
   for (const p of people) p.cover = faces.find((f) => f.person === p.id)?.id ?? null;
   return { faces, people, nextPerson: people.length + 1 };
 }
@@ -133,7 +140,7 @@ const fake: PeopleApi = {
     return wait({ paths: all.slice(offset, offset + limit), total: all.length });
   },
   photoFaces: (path) => wait(db.faces.filter((f) => f.path === path && f.state !== "rejected").map((f, i) => ({
-    face: f.id, x: 0.2 + 0.25 * i, y: 0.2 + (f.id % 5) * 0.05, w: 0.2, h: 0.28, person: f.person, name: db.people.find((p) => p.id === f.person)?.name ?? null,
+    face: f.id, x: 0.1 + 0.22 * i, y: 0.2 + (f.id % 5) * 0.05, w: 0.16, h: 0.28, person: f.person ?? f.maybe, name: db.people.find((p) => p.id === (f.person ?? f.maybe))?.name ?? null,
     state: f.person !== null ? "confirmed" as const : f.maybe !== null ? "suggested" as const : "unassigned" as const, confidence: 0.9,
   }))),
   photoSets: () => wait({ withFaces: db.faces.filter((f) => f.state !== "rejected").map((f) => f.path),
@@ -261,4 +268,37 @@ function Harness() {
     </div>
   );
 }
-createRoot(document.getElementById("root")!).render(<Harness />);
+// ?view=overlay: a photo at 600 x 400 (times the zoom) under the real overlay, beside the Library column's People card
+function OverlayStage() {
+  const [zoom, setZoom] = useState(1);
+  const [show, setShow] = useState(true);
+  const [sel, setSel] = useState<number | null>(null);
+  const [open, setOpen] = useState(true);
+  const path = "/synthetic/group.jpg";
+  useEffect(() => {
+    const h = { suggestFor: () => {}, calls, scan, folderScope, grow: false, fake, db: () => db, setPack: () => {}, tick: () => {}, changed: () => {}, peopleState, setZoom, setShow, photo: path };
+    (window as unknown as { __h: unknown }).__h = h;
+    scan.enabled = true; scan.installed = true;
+    const stop = startPeople();
+    resetPeople({ on: false });
+    void refreshAll(true).then(() => {
+      document.body.dataset.ready = "1";
+      if (q.get("shift") === "1") void runOverlayTest().then((r) => r, (e) => ({ ok: false, error: String(e?.stack ?? e) }))
+        .then((r) => { const el = document.getElementById("shift-report")!; el.textContent = JSON.stringify(r); el.dataset.done = "1"; });
+    });
+    return stop;
+  }, []);
+  return (
+    <div className="ov-stage" style={{ display: "flex", width: 1200, height: 760 }}>
+      <aside className="left" style={{ width: 300, height: 760 }}>
+        <PeopleCard path={path} open={open} onToggle={() => setOpen(!open)} overlay={show} onOverlay={setShow} selected={sel} onSelect={setSel} />
+      </aside>
+      <div style={{ position: "relative", flex: 1, overflow: "hidden", background: "#222" }}>
+        <div style={{ position: "absolute", left: 20, top: 20, width: 560 * zoom, height: 380 * zoom, background: "linear-gradient(135deg,#456,#223)" }}>
+          {show && <div className="mask-box" style={{ position: "absolute", inset: 0 }}><FaceOverlay path={path} selected={sel} onSelect={setSel} /></div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+createRoot(document.getElementById("root")!).render(q.get("view") === "overlay" ? <OverlayStage /> : <Harness />);

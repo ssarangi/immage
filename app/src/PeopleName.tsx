@@ -14,9 +14,9 @@ import type { NameTarget } from "./peopleStore";
 
 const W = 260, ROW = 30, HEAD = 74;
 
-export function NamePopover({ o, index, count, group, seed, people, onPick, onClose }: {
+export function NamePopover({ o, index, count, group, seed, people, onPick, onClose, extra }: {
   o: GridOverlay; index: number; count: number; group: boolean; seed: string; people: PersonRow[];
-  onPick: (to: NameTarget, next: boolean) => void; onClose: () => void;
+  onPick: (to: NameTarget, next: boolean) => void; onClose: () => void; extra?: React.ReactNode;
 }) {
   const [q, setQ] = useState(seed);
   const [hi, setHi] = useState(0);
@@ -62,6 +62,7 @@ export function NamePopover({ o, index, count, group, seed, people, onPick, onCl
         ))}
         {!options.length && <li aria-disabled="true"><span>{t("people.name.type")}</span></li>}
       </ul>
+      {extra}
     </div>
   );
 }

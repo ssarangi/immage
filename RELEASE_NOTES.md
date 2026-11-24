@@ -36,6 +36,10 @@ Improvements
   two people who may be one, to merge, to mark as not the same (remembered) or to
   dismiss; nothing is applied by itself. Two or more selected groups can be joined
   with Merge groups.
+- **Faces on the photo:** Shift+F (View > Show faces on photo) draws a box around each face
+  on the open photo, following zoom and pan, with the name on hover; click a face to name it,
+  reassign it or mark it **Not Maya** or **Not a face**. A **People** card in the Library column
+  lists the photo's faces as chips.
 - **Person page:** double-click a person in People to open their page: their photos in the
   app's grid (with **Open in Grid**, which sets Find's People filter), and their faces to
   confirm, reject (**Not Maya**, **Not a face**) or choose as cover.
