@@ -192,10 +192,12 @@ the photo:
   a dark surround, or **White**, which shows the photo as on a print. L
   steps through them.
 
-The toolbar under the filmstrip starts with the **Edit | Grid | Scenes** switch:
+The **Edit**, **Grid** and **Scenes** tabs in the top strip, right of the menus (centred
+in the strip on macOS), choose the view; in a narrow window they show icons only.
 **Edit** and **Grid** go between the filmstrip and the grid as the rail's
 Library button and G do, and **Scenes** shows the grid as a timeline of bursts.
-In the grid it also has the **Loupe** and **Auto Cull...**, which opens
+The arrow keys, Home and End move between the tabs. The toolbar under the filmstrip
+in the grid has has the **Loupe** and **Auto Cull...**, which opens
 [Auto cull](library.md#auto-cull) (**Review cull** once a plan exists). It also has buttons to show or hide the
 Library panel and the filmstrip. In Grid view, the **Find panel** button
 shows or hides Find. In the photo editing view, the **Adjustments panel**

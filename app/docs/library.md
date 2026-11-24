@@ -377,10 +377,9 @@ opened in Immage before version 0.23.2 count their New Photos settings as
 an edit until you reset them.
 
 Press G, click **Library** on the rail at the right edge, below
-**Import**, or click **Grid** in the **Edit | Grid | Scenes** switch at the left
-of the toolbar under the filmstrip, for **Grid** view: the whole folder at once.
+**Import**, or click the **Grid** tab in the top strip, for **Grid** view: the whole folder at once.
 Double-click a photo to open it and go back to the filmstrip. G, Esc or
-**Edit** in the switch also goes back. The switch is one control for the three
+**Edit** in the tabs also goes back. The tabs are one control for the three
 views of the same photos: **Edit** (the open photo with its filmstrip),
 **Grid**, and **Scenes**, a timeline of bursts ([Scenes](#scenes)). Clicking
 **Grid** or **Scenes** from Edit opens that view directly. At the right of the
@@ -705,7 +704,7 @@ It groups the photos of the folder you have open (its subfolders too while
 by time but never share a scene, so two folders' bursts that overlap stay
 separate. Scenes never moves, renames or deletes a photo.
 
-Switch with the **Edit | Grid | Scenes** control in the toolbar, **View > Scenes**, or
+Switch with the **Scenes** tab in the top strip, **View > Scenes**, or
 **Shift+S** in the grid. **Esc** or **Grid** goes back; the grid keeps its
 scroll position and selection.
 

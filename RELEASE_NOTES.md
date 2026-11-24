@@ -17,7 +17,11 @@ Improvements
   scroll under the Include subfolders switch and above the Add folder button
   (and the Catalog's progress card), and in Keywording only the Auto-keywords
   chips scroll, under the keyword chips, the input and the group's title row.
-- **Scenes:** the toolbar's new **Edit | Grid | Scenes** switch (Scenes is also **View > Scenes**
+- **View tabs:** the views are now **Edit**, **Grid** and **Scenes** tabs in the
+  window's top strip, next to the menus, instead of a small switch in the bottom
+  toolbar; they show icons only in a narrow window, and the arrow keys move
+  between them. The shortcuts and **View > Scenes** are unchanged.
+- **Scenes:** the **Scenes** view (also **View > Scenes**
   and Shift+S). Scenes shows the open folder as a vertical timeline of time
   blocks, grouped by day, each a row of scene cards: bursts grouped by capture
   time (to the tenth of a second where the camera recorded it) and by how the

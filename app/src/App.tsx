@@ -119,7 +119,7 @@ import { ShortcutsDialog } from "./Shortcuts";
 import { SupportBundleDialog, supportValues, type SupportValues } from "./SupportBundleDialog";
 import { cmd, fieldKeeps, IS_MAC, keys } from "./keys";
 import { chordAction } from "./actions";
-import { MenuBar } from "./MenuBar";
+import { TitleStrip, type ViewMode } from "./ViewTabs";
 import { disabledViewActions, forPlatform, MENUS, nativeSpec, type ActionId } from "./menu";
 import { perf } from "./perf";
 import { renderDimensions } from "./renderDimensions";
@@ -6413,6 +6413,13 @@ export default function App() {
   const cull = useCull();
   const culling = grid && cull.open && cull.plan !== null;
   const shown = culling ? reviewOrder(shownListed, cull.decisions, cull.chip) : shownListed;
+  // the view tabs in the top strip
+  const changeView = (v: ViewMode) => {
+    if (croppingRef.current) return;
+    if (v === "edit") { setGrid(false); return; }
+    setScenesOn(v === "scenes");
+    setGrid(true);
+  };
   const hasCullingPhotos = grid && shown.some((i) => !isRemote(i));
   const scenesFlag = useScenesOn();
   const scenesOn = grid && scenesFlag;
@@ -6785,7 +6792,9 @@ export default function App() {
     {/* the window's title bar is hidden (tauri.conf.json); this strip moves
         the window and leaves room for the traffic lights */}
     {/* full screen has no traffic lights to hold, and the photo wants the room */}
-    {!fullscreen && <div className={`titlebar${!IS_MAC ? " with-menus" : ""}`} data-tauri-drag-region><span data-tauri-drag-region>Immage</span>{!IS_MAC && <MenuBar menus={OTHER_MENUS} disabled={disabledMenuActions} onAction={runMenuAction} />}</div>}
+    {!fullscreen && <TitleStrip mac={IS_MAC} menus={OTHER_MENUS} disabled={disabledMenuActions} onAction={runMenuAction}
+                                view={scenesOn ? "scenes" : grid ? "grid" : "edit"} onView={changeView}
+                                canScenes={shown.some((i) => !isRemote(i))} />}
     <div className={`app${sliding ? " sliding" : ""}`} style={{
       gridTemplateColumns: preview ? "0px 0px minmax(0, 1fr) 0px 0px 0px 0px"
         : `${docked.left ? layout.leftWidth : 0}px ${docked.left ? 8 : 0}px minmax(0, 1fr)`
@@ -7270,13 +7279,6 @@ export default function App() {
                            onClick={toggleCompare}><CompareIcon /></button>
                  </>}
                  view={scenesOn ? "scenes" : grid ? "grid" : "edit"}
-                 onView={(v) => {
-                   if (croppingRef.current) return;
-                   if (v === "edit") { setGrid(false); return; }
-                   setScenesOn(v === "scenes");
-                   setGrid(true);
-                 }}
-                 canScenes={shown.some((i) => !isRemote(i))}
                  review={cull.plan ? { count: cull.plan.session.rejectCount } : null}
                  onReview={() => { setCull({ open: true }); revealRightPanel(); }}
                  // in the grid the zoom bar sizes the thumbnails; the photo's

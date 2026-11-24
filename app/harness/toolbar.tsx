@@ -37,7 +37,7 @@ document.body.style.background = "var(--window)";
 document.body.style.margin = "0";
 if (q.get("break") === "1") {   // a deliberately bad style: the checks must catch it (negative control)
   const st = document.createElement("style");
-  st.textContent = ".toolbar { margin-top: 9px !important; } .tool.on, .view-switch button[aria-checked=\"true\"] { padding-inline: 14px; } .tool.pill.review { width: 140px; }";
+  st.textContent = ".toolbar { margin-top: 9px !important; } .tool.on, .tool.pill.review { width: 140px; }";
   document.head.append(st);
 }
 if (q.get("nat") === "1") { const st = document.createElement("style"); st.textContent = ".toolbar { width: max-content !important; }"; document.head.append(st); }
@@ -80,7 +80,7 @@ function Harness() {
                    <button className="tool" title="Undo"><UndoIcon /></button><button className="tool" title="Redo"><UndoIcon redo /></button>
                    <span className="sep" />
                    <button className="tool view" title="Before and after"><BeforeAfterIcon /></button><button className="tool view" title="Compare"><CompareIcon /></button></>}
-                 view={cfg.view} onView={(v) => setCfg((c) => ({ ...c, view: v }))} canScenes
+                 view={cfg.view}
                  review={cfg.cull === "pending" ? { count: 14 } : null} onReview={noop}
                  zoomBar={grid ? <GridZoomBar size={230} min={100} max={400} standard={230} onSize={noop} />
                    : <ZoomBar disabled={false} register={() => noop} onZoom={noop} onToggle={noop} fit={() => 1} />}

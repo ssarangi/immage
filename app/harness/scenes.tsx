@@ -23,7 +23,8 @@ import { BUILTIN_THEMES, THEME_TOKENS } from "../src/themes";
 import type { ImageEntry } from "../src/library";
 import { CullLightbox, LightboxHead, StageArrows } from "../src/CullLightbox";
 import { CullSide, NO_SEL, type Crit, type Tab } from "../src/CullInspector";
-import { ViewSwitch, ScenesView } from "../src/ScenesView";
+import { ScenesView } from "../src/ScenesView";
+import { ViewTabs } from "../src/ViewTabs";
 import { SceneRules } from "../src/SceneRules";
 import { useSceneLightbox } from "../src/SceneLightbox";
 import { setThumbSource } from "../src/SceneThumb";
@@ -211,7 +212,7 @@ function Harness() {
   return <>
     <div className="harness-app" style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column" }}>
       <div className="harness-toolbar" style={{ flex: "none", height: 44, display: "flex", alignItems: "center", gap: 12, padding: "0 16px", background: "var(--panel)" }}>
-        <ViewSwitch view="scenes" onView={noop} canScenes />
+        <ViewTabs view="scenes" onView={noop} canScenes />
       </div>
       <div className="strip-slot grid" style={{ position: "relative", inset: "auto", flex: 1, minHeight: 0, display: "block" }}>
         <div style={{ position: "relative", height: "100%" }}>

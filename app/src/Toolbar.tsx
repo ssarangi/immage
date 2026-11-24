@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
-import { ViewSwitch, type ViewMode } from "./ScenesView";
+import type { ViewMode } from "./ViewTabs";
 import { BanIcon, FilterIcon, MagnifierIcon, PanelIcon, ResetIcon, SlidersIcon, StarIcon, WandIcon } from "./icons";
 import { effectiveFilter, clearAll, findCount, serverPickers, setStars, withFilter, type FindState } from "./findModel";
 import { LABEL_COLORS } from "./library";
@@ -102,12 +102,10 @@ export function GridZoomBar({ size, min, max, standard, onSize }: {
 // the bar under the filmstrip: rate and reject the open image, filter the
 // folder, and show or hide the side panels and the filmstrip
 export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind, onFindMenu, savedMenu,
-                   layout, zoomBar, viewTools, onLayout, ref, pin, view, onView, canScenes, review, onReview, rightPanel }: {
+                   layout, zoomBar, viewTools, onLayout, ref, pin, view, review, onReview, rightPanel }: {
   ref: React.RefObject<HTMLDivElement | null>;
   viewTools: React.ReactNode;               // undo, redo, before/after, compare
-  view: ViewMode;                           // Edit (the open photo), Grid or Scenes: the Loupe and Auto Cull act in the last two
-  onView: (v: ViewMode) => void;
-  canScenes: boolean;                       // the folder lists a local photo to group
+  view: ViewMode;                           // the current view (switched by the tabs in the top strip): the Loupe and Auto Cull act in the last two
   review: { count: number } | null;         // an Auto Cull plan waits: its photos to reject
   onReview: () => void;                     // opens the Cull panel on that plan
   pin: React.ReactNode;
@@ -195,9 +193,6 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
     e.preventDefault();
     const next = all[to];
     next.focus();
-    // arrows inside the view switch select, as in any radio group
-    if (target.getAttribute("role") === "radio" && next.getAttribute("role") === "radio" && next.closest("[role=radiogroup]") === target.closest("[role=radiogroup]")
-        && next.getAttribute("aria-disabled") !== "true" && (e.key === "ArrowRight" || e.key === "ArrowLeft")) next.click();
   };
   const rejectTitle = t(f.rejected === "all" ? "library.toolbar.hideRejected" : f.rejected === "hide" ? "library.toolbar.rejectedHidden" : "library.toolbar.onlyRejected");
   const editedTitle = t(f.edited === "all" ? "library.toolbar.onlyEdited" : f.edited === "edited" ? "library.toolbar.editedOnly" : "library.toolbar.onlyUnedited");
@@ -221,8 +216,6 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
   return (
     <div className="toolbar" ref={setRef} role="toolbar" aria-label={t("library.toolbar.label")} aria-orientation="horizontal"
          onKeyDown={onKeyDown} onFocusCapture={onFocus}>
-      <ViewSwitch view={view} onView={onView} canScenes={canScenes} />
-      <span className="sep" role="separator" aria-orientation="vertical" />
       <div className={`tool-group filter${filtering ? " active" : ""}`}>
         <button className={`tool${filtering ? " on" : ""}`} aria-label={filtering ? t("library.toolbar.clearFilters") : t("library.toolbar.noFilters")}
                 title={filtering ? t("library.toolbar.clearFilters") : t("library.toolbar.noFilters")}

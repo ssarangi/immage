@@ -283,7 +283,7 @@ Catalog benchmark: [catalog_bench.rs](../../src-tauri/src/catalog_bench.rs) is `
 Bottom toolbar: [Toolbar.tsx](../../src/Toolbar.tsx) is the second row of the `.center` grid in
 styles.css (the first is `.center-stage`: viewer, filmstrip, grid, status pills), so no height is
 measured in script; `.center` is a size container and the bar adapts with `@container center` rules.
-`ViewSwitch` (Edit | Grid | Scenes) is in [ScenesView.tsx](../../src/ScenesView.tsx); the page
+The view tabs (Edit | Grid | Scenes) are no longer in this bar: `VIEW_TABS`, `ViewTabs` and `TitleStrip` (the top strip: title, [MenuBar.tsx](../../src/MenuBar.tsx) menus, tabs; on macOS no menus) are in [ViewTabs.tsx](../../src/ViewTabs.tsx), checked by `app/harness/viewtabs.html` and [view-tabs-shift.test.mjs](../../../verify/view-tabs-shift.test.mjs). The page
 [harness/toolbar.html](../../harness/toolbar.html) shows the real bar in the real column, and
 [toolbar-shift.test.mjs](../../../verify/toolbar-shift.test.mjs) checks it: geometry against the grid surface,
 no sideways scroll from 680px, no movement when the view or state changes, one tab stop, names. The

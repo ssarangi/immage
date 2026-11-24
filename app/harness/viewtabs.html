@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later
+     Copyright (C) 2026 the Immage authors -->
+<!-- Dev-only harness: the real TitleStrip (menus and view tabs) in a plain browser
+     (npm run dev, then /harness/viewtabs.html?w=900). Not an entry of the production build.
+     See viewtabs.tsx for the parameters. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>View tabs harness</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <pre id="tabs-report" hidden></pre>
+    <script type="module" src="/harness/viewtabs.tsx"></script>
+  </body>
+</html>
