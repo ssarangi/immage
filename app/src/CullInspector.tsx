@@ -7,7 +7,7 @@
 // numbered badges and the blurry region are drawn by CullOverlay over the photo.
 // Nothing here changes the size of a row, badge or tab when it is hovered,
 // focused or pinned: those states only paint (background, ring, outline).
-import { CircleAlert, CircleMinus, Check, ChevronDown, KeyRound, Minus, Pin, RotateCcw, Sparkles } from "lucide-react";
+import { CircleAlert, CircleMinus, EyeOff, Check, ChevronDown, KeyRound, Minus, Pin, RotateCcw, Sparkles } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { commands, type CullChange, type CullDecision, type CullStatus, type GeminiCritique } from "./bindings";
 import { reasonOf, withDecision } from "./cullModel";
@@ -292,10 +292,12 @@ export function CullSide({ image, tab, onTab, crit, sel, onSel, onChanges, onOpe
         <h3 className="cull-group">{t("cull.inspector.why")} <span className="cull-count">{formatNumber(d.factors.length)}</span></h3>
         <ul className="cull-factors">
           {d.factors.map((f) => {
-            const kind = f.impact === "reject" ? "no" : f.impact === "supporting" ? "ok" : "cx";
+            // closed eyes (backend: impact "supporting") lower the score: a warning glyph, never a tick; the text is the backend's
+            const eye = f.id === "eye_state" && f.impact === "supporting";
+            const kind = f.impact === "reject" ? "no" : f.impact === "supporting" && !eye ? "ok" : "cx";
             return <li key={f.id}>
-              <span className={`cull-glyph ${kind}`} role="img" aria-label={t(`cull.impact.${kind === "no" ? "reject" : kind === "ok" ? "supporting" : "context"}`)}>
-                {kind === "no" ? <CircleMinus size={18} /> : kind === "ok" ? <Check size={18} /> : <Minus size={18} />}</span>
+              <span className={`cull-glyph ${eye ? "cx warn" : kind}`} role="img" aria-label={eye ? f.label : t(`cull.impact.${kind === "no" ? "reject" : kind === "ok" ? "supporting" : "context"}`)}>
+                {eye ? <EyeOff size={18} /> : kind === "no" ? <CircleMinus size={18} /> : kind === "ok" ? <Check size={18} /> : <Minus size={18} />}</span>
               <div><strong>{f.label}</strong><span className="cull-note">{f.detail}</span></div>
             </li>;
           })}

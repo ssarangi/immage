@@ -97,3 +97,13 @@ test('a Gemini search sets the words, the filter, a matching camera and the labe
   assert.deepEqual(next.filter.keywords, ['keep']);
   assert.deepEqual(unmapped, ['people', 'Zeiss 50']);
 });
+
+test('the cull defaults carry the faces options: on by default, main subject, anything else falls back', () => {
+  assert.equal(DEFAULT_SETTINGS.useFaces, true);
+  assert.equal(DEFAULT_SETTINGS.eyeMode, 'mainSubject');
+  const kept = parseDefaults(JSON.stringify({ useFaces: false, eyeMode: 'anyFace' }));
+  assert.deepEqual([kept.useFaces, kept.eyeMode], [false, 'anyFace']);
+  const odd = parseDefaults(JSON.stringify({ useFaces: 'yes', eyeMode: 'both' }));
+  assert.deepEqual([odd.useFaces, odd.eyeMode], [true, 'mainSubject']);
+  assert.deepEqual([parseDefaults(null).useFaces, parseDefaults('not json').eyeMode], [true, 'mainSubject']);
+});

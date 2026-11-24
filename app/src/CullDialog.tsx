@@ -5,6 +5,7 @@
 // analysis goes on in the activity line (background.ts runCull), which names
 // the photo it is on and stops it. The starting values are Preferences >
 // Culling's.
+import { useFacesOn, usePeople } from "./peopleStore";
 import { useEffect, useRef, useState } from "react";
 import type { CullSettings } from "./bindings";
 import { loadCullDefaults } from "./cullDefaults";
@@ -21,6 +22,8 @@ export function CullDialog({ count, selected, label, aiReady, onRun, onClose, on
   onOpenPrefs: () => void;    // Preferences > Culling
 }) {
   const [v, setV] = useState<CullDefaults>(loadCullDefaults);
+  const facesOn = useFacesOn();
+  const eyes = usePeople().status?.eyes_available ?? false;
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => { box.current?.querySelector<HTMLElement>("button.primary")?.focus(); }, []);
   const set = (p: Partial<CullDefaults>) => setV((o) => ({ ...o, ...p }));
@@ -28,6 +31,8 @@ export function CullDialog({ count, selected, label, aiReady, onRun, onClose, on
   const run = () => onRun({
     shootType: v.shootType, duplicateRatio: v.duplicateRatio, highlightPercent: v.highlightPercent,
     blurThreshold: v.blurThreshold, similarityThreshold: v.similarityThreshold, groupSimilar: true, filterBlurry: true,
+    // faces only count while Faces is on; the backend ignores them otherwise, but the choice is kept as the user made it
+    useFaces: v.useFaces, eyeMode: v.eyeMode,
   });
   return <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     onKeyDown={(e) => {
@@ -75,6 +80,15 @@ export function CullDialog({ count, selected, label, aiReady, onRun, onClose, on
             <span className="pref-hint">{t("cull.dialog.similarityHint")}</span>
           </div>
         </details>
+        {facesOn && <div className="cull-field cull-faces">
+          <label className="cull-check"><input type="checkbox" checked={v.useFaces} onChange={(e) => set({ useFaces: e.target.checked })} />{t("cull.dialog.useFaces")}</label>
+          <span id="cull-eyes-label">{t("cull.dialog.eyes")}</span>
+          <div className="segmented small" role="group" aria-labelledby="cull-eyes-label">
+            {(["mainSubject", "anyFace"] as const).map((k) => <button key={k} type="button" className={v.eyeMode === k ? "active" : ""} disabled={!v.useFaces}
+              aria-pressed={v.eyeMode === k} onClick={() => set({ eyeMode: k })}>{t(`cull.eyes.mode.${k}`)}</button>)}
+          </div>
+          <span className="pref-hint">{t("cull.dialog.eyesHint")}{eyes ? "" : ` ${t("cull.dialog.eyesNone")}`}</span>
+        </div>}
         <p className="note-plain cull-ai-note" role="note">
           {aiReady ? t("cull.dialog.aiReady") : <>{t("cull.dialog.aiOff")} <button type="button" className="link-button" onClick={onOpenPrefs}>{t("cull.dialog.aiSetUp")}</button></>}
         </p>

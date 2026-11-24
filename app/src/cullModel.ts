@@ -27,10 +27,12 @@ export type CullDefaults = {
   blurThreshold: number; similarityThreshold: number;
   // what Apply gives the highlights: a minimum rating (0 none) and a color label bit (0 none)
   highlightRating: number; highlightLabel: number;
+  // faces in the score (pose, closed eyes) and whose eyes count: the main subject's or any face's
+  useFaces: boolean; eyeMode: "mainSubject" | "anyFace";
 };
 export const DEFAULT_SETTINGS: CullDefaults = {
   shootType: "general", duplicateRatio: "moderate", highlightPercent: 15, blurThreshold: 100, similarityThreshold: 28,
-  highlightRating: 0, highlightLabel: 0,
+  highlightRating: 0, highlightLabel: 0, useFaces: true, eyeMode: "mainSubject",
 };
 
 // a stored value, kept to what the dialog could have set; anything else is the default
@@ -48,6 +50,8 @@ export function parseDefaults(raw: string | null | undefined): CullDefaults {
     similarityThreshold: Math.round(num(v.similarityThreshold, 0, 512, d.similarityThreshold)),
     highlightRating: Math.round(num(v.highlightRating, 0, 5, 0)),
     highlightLabel: [0, 1, 2, 4, 8, 16].includes(v.highlightLabel as number) ? v.highlightLabel as number : 0,
+    useFaces: typeof v.useFaces === "boolean" ? v.useFaces : d.useFaces,
+    eyeMode: v.eyeMode === "anyFace" ? "anyFace" : "mainSubject",
   };
 }
 

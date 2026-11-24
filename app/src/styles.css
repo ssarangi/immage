@@ -3702,3 +3702,7 @@ html[data-scheme="light"] .strip-slot.grid::before { background: color-mix(in sr
 .eye-badge.closed { color: #ff6b5a; border-color: #ff6b5a99; }
 .eye-badge.semi { color: #ffc766; }
 html[dir="rtl"] .eye-badge { right: auto; left: 8px; }
+
+.cull-faces { margin-top: 4px; }
+.cull-check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.cull-glyph.warn { color: #ffb454; }
